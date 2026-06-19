@@ -1,0 +1,150 @@
+## 📜 Especificação Técnica Estruturada: Regras de Negócio e Diretrizes (SPF) [v2.0 - Corrigida]
+
+### 1. Constituição do Sistema (Regras Imutáveis)
+
+✅ **Verdade Absoluta, Componentização e Compliance Legal**
+├── [ ] 🛡️ **HARDENING:** Documentação > Código (Divergência = Bug ou Mudança Formal de Escopo)
+├── [ ] 🔒 **ISOLAMENTO:** `PessoaFisicaForm` sem lógica hardcoded (Tipo injetado via props/sessão, validado no Backend)
+├── [ ] 🛡️ **SANITIZAÇÃO:** Backend centraliza formatação (CPF/CNPJ alphanum, Phone/CEP digits, Strings trim)
+├── [ ] ⚠️ **AIR-GAP:** `contratos_legado_flat` NÃO recebe vínculos (Apenas financeiro + Titular ID/Nome)
+└── [ ] ⚖️ **COMPLIANCE SUSEP:** Sistema atua exclusivamente como Estipulante; risco, indenização e assistência funeral são responsabilidade integral da Seguradora Parceira
+
+✅ **Validação Etária e Exceções de Edição**
+├── [ ] **Regra Geral:** Validação de idade limite APENAS no ato do cadastro inicial
+├── [ ] **Modo EDIÇÃO:** Validação desativada para permitir correções administrativas em pessoas que envelheceram (direito adquirido)
+└── [ ] 🚨 **EXCEÇÃO CRÍTICA:** Se `data_nascimento` for alterada na edição, validação de idade é REAPLICADA considerando a **IDADE ATUAL NA DATA DA EDIÇÃO** (não a data original), tratando-se como nova declaração de dado cadastral
+
+✅ **Idempotência e Atomicidade Financeira**
+├── [ ] 💰 **IDEMPOTÊNCIA:** Constraints compostas obrigatórias em `transacoes_bonificacao` e `transacoes_pagamento`
+└── [ ] 🛡️ **ATOMICIDADE:** Recálculo de `nivel_profundidade` (Árvore de Patrocínio) na MESMA transação de realocação
+
+✅ **Gestão de Sinistro (Óbito) e Carência Contratual**
+├── [ ] 🚨 **CARÊNCIA LEGAL (CÓDIGO CIVIL):** Bloqueio automático de cobertura e acionamento de sinistro se óbito ocorrer dentro dos períodos de carência (ex: 72h acidental, 6 meses natural, 24 meses suicídio - Art. 798 CC)
+└── [ ] 💰 **REMISSÃO DE PLANO:** Gatilho automático para isenção de mensalidades para Dependentes/Sub-dependentes por X meses após óbito do Titular. **PREVALÊNCIA:** Em caso de divergência entre `configuracoes_regras_negocio` e Apólice/Condições Gerais, prevalece o prazo definido na **Apólice/Condições Gerais** (segurança jurídica)
+
+✅ **Régua de Inadimplência e Suspensão (Grace Period)**
+├── [ ] 🛡️ **SUSPENSÃO DE COBERTURA:** Job diário altera status para `SUSPENSO` no D+X de atraso, bloqueando acionamento de sinistros no frontend/app
+├── [ ] 💰 **RÉCITA (REINTEGRAÇÃO):** Fluxo de reativação exige pagamento de mensalidades em atraso + carência proporcional recalculada
+└── [ ] 🚨 **CANCELAMENTO LIMINAR:** Notificação prévia obrigatória (CDC/ANS) na UI antes e depois de migrar contrato de `SUSPENSO` para `CANCELADO`
+
+✅ **Blindagem Tributária, LGPD e Risco Trabalhista**
+├── [ ] 💰 **CONFIGURAÇÃO DE SAQUE PF:** Ambiente de Configurações deve possuir chave para ativar/desativar saques de bonificações quando revendedor for Pessoa Física
+├── [ ] 💰 **RETENÇÃO NA FONTE (RPA):** Quando ativo, cálculo e retenção automática de IRRF e INSS sobre `transacoes_pagamento` (saques de bonificações PF)
+├── [ ] 🛡️ **ANTI-VÍNCULO:** Sistema NÃO pode possuir módulos de "cumprimento de horário", "metas punitivas" ou "subordinação hierárquica funcional" para revendedores (apenas patrocínio comercial)
+└── [ ] 🚨 **DIREITO AO ESQUECIMENTO:** Job de anonimização de dados sensíveis (CPF, Saúde) após 5 anos do cancelamento/óbito, mantendo apenas logs financeiros imutáveis (SUSEP/Receita)
+
+✅ **Hardening de Fraude, AML e Conflito de Rede**
+├── [ ] ⚠️ **AIR-GAP (AUTO-PATROCÍNIO):** Revendedor NÃO pode gerar bonificação sobre próprio contrato nem sobre contratos de dependentes diretos de sua árvore familiar imediata
+├── [ ] 🔒 **VELOCIDADE DE SAQUE:** Limite diário/mensal de saque de bonificações; valores acima de X exigem aprovação manual (Maker/Checker) do Financeiro
+└── [ ] 🚨 **CONFLITO DE REDE:** Bloqueio de indicação cruzada onde CPF do indicado já possua histórico ativo como cliente/revendedor em outra árvore de patrocínio
+
+✅ **Ciclo de Vida, CDC e Endossos**
+├── [ ] 🚨 **EXPULSÃO POR MAIORIDADE:** Job diário identifica dependentes `FILHO` que completaram 21 anos e remove da cobertura (ou força migração para novo contrato Titular)
+├── [ ] 💰 **ARREPENDIMENTO CDC (7 DIAS):** Botão de cancelamento no app com estorno *pro-rata* integral e estorno de bonificações em cascata, sem multa. Status final obrigatório: `CANCELADO_CDC`
+└── [ ] 🛡️ **ENDOSSOS AUTOMATIZADOS:** Fluxo estruturado para Upgrade/Downgrade de plano e exclusão voluntária de dependentes (recalculando `valor_parcela_base` na próxima fatura)
+
+✅ **Resiliência Operacional (SLA 24/7)**
+├── [ ] ⚠️ **AIR-GAP DE DADOS CLÍNICOS:** Proibição absoluta de armazenar *causa mortis*, atestados de óbito completos ou dados de saúde no banco relacional principal (apenas hash/token em S3 com acesso restrito via IAM)
+└── [ ] 🚨 **INTEGRIDADE DE PDF:** Assinatura digital (Hash SHA-256) em todos os PDFs de apólices e certificados gerados, garantindo não-repúdio em disputas judiciais
+
+---
+
+### 2. Fluxos de Negócio e Validações (Checklists)
+
+✅ **Fluxo de Contratação e Identificação Unificada**
+├── [ ] **Etapa 1:** Seleção Exclusiva de Plano (`INDIVIDUAL` ou `FAMILIAR`)
+├── [ ] **Etapa 2:** Cadastro Titular (Profissão, Endereço e Contato obrigatórios)
+├── [ ] **Etapa 4:** Cadastro Agregado (Profissão é obrigatório)
+├── [ ] 🔒 **UNICIDADE:** Máximo de 1 contrato ativo (`AGUARDANDO_APROVACAO` ou `APROVADO`) por Titular. Status `CANCELADO_CDC`, `CANCELADO` e `REJEITADO` NÃO bloqueiam nova contratação
+├── [ ] **Identificação:** CPF Blur → Validação Algorítmica → API Backend (`GET /buscar-por-cpf`)
+└── [ ] 🛡️ **HARDENING:** Bloqueio imediato se CPF existir com Data de Nascimento divergente
+
+✅ **Elegibilidade e Hierarquia de Vínculos**
+├── [ ] **Dependentes:** Máx 8 (Plano FAMILIAR), Parentesco restrito a `CONJUGE`, `FILHO`
+├── [ ] **Agregados:** Máx 4 (Global por contrato), Profissão obrigatório, Endereço/Contato são o mesmo do Titular
+├── [ ] **Sub-dependentes:** Permitidos APENAS se Agregado pai for `CASADO` ou `UNIAO_ESTAVEL` ou tiver filhos menores de 21 anos (**VALIDAÇÃO EM CAMADA DE SERVIÇO**, não em DB Constraint simples)
+├── [ ] 💰 **COBERTURA:** Filhos > `IDADE_COBERTURA` mas <= `IDADE_LIMITE` recebem tag "SEM DIREITO À PROTEÇÃO"
+└── [ ] 🚨 **PRESERVAÇÃO SELETIVA:** Alteração de Estado Civil de Agregado remove APENAS Sub-dependente `CONJUGE` (Filhos mantidos)
+
+✅ **Aprovação Manual, Bonificação (Comissionamento) e Estornos**
+├── [ ] **Submissão:** Cria contrato (`AGUARDANDO_APROVACAO`), Comissões (`PENDENTE_APROVACAO`, `saldo_bloqueado`)
+├── [ ] **Aprovação:** SuperAdmin preenche Capital/Código → Status `APROVADO` → Comissões `LIBERADO` → `saldo_disponivel`
+├── [ ] **Rejeição:** Status `REJEITADO` → Comissões `ESTORNADO` → `saldo_bloqueado` zerado
+├── [ ] 💰 **ESTORNO PÓS-APROVAÇÃO:** Cancelamento debita `saldo_disponivel`. Se resultado < 0, gera `saldo_devedor` positivo
+└── [ ] 💰 **ABATIMENTO:** Uso de `saldo_disponivel` para parcelas (Gera boleto residual se pagamento parcial). Saldo negativo impede novos saques até regularização
+
+✅ **Comunicação e Transparência (Manual de Conformidade)**
+├── [ ] 🚫 **TERMOS PROIBIDOS:** Nunca usar "nosso seguro", "nós garantimos", "compre nosso seguro"
+├── [ ] ✅ **TERMOS APROVADOS:** Usar "acesso a seguro", "benefício garantido pela [Seguradora]", "assistência funeral via parceiro"
+├── [ ] ⚖️ **DISCLAIMER OBRIGATÓRIO:** Rodapé de todas as telas de oferta/landing page deve conter CNPJ/SUSEP da Seguradora e declaração de Estipulante
+├── [ ] 📄 **ACESSO A DOCUMENTOS:** Área logada deve ter link direto "Meus Documentos de Proteção" apontando para Condições Gerais e Certificado Individual
+└── [ ] 🔄 **FLUXO DE CANCELAMENTO:** Usuário deve poder cancelar proteção diretamente na plataforma, mantendo assinatura dos demais serviços (Anti-Venda Casada)
+
+---
+
+### 3. Modelo de Dados e Constraints (Schemas Resumidos)
+
+📊 **Tabela: `pessoas_fisicas`**
+├── **Chaves:** `id` (PK), `titular_raiz_id` (FK, Condicional)
+├── 🔒 **SANITIZAÇÃO:** `cpf` (VARCHAR 14, Unique, Alphanum)
+├── 🚨 **IMUTABILIDADE:** `tipo_registro` (Definido por endpoint, nunca exposto como editável)
+└── ⚠️ **AIR-GAP:** `agregado_pai_id` REMOVIDO (Relação hierárquica exclusiva na tabela `vinculos`)
+
+📊 **Tabela: `vinculos`**
+├── **Chaves:** `id` (PK), `titular_raiz_id` (FK), `pessoa_vinculada_id` (FK), `agregado_pai_id` (FK Condicional)
+├── 🔒 **CHECK CONSTRAINTS (DB Level)**
+│   ├── Dependentes: `parentesco` IN ('CONJUGE', 'FILHO')
+│   ├── Sub-dependentes: `parentesco` IN ('CONJUGE', 'FILHO') + `agregado_pai_id` NOT NULL (Integridade Referencial Apenas)
+│   └── Agregados: 9 tipos de parentesco permitidos
+├── ⚠️ **NOTA TÉCNICA:** Regras complexas de elegibilidade de sub-dependentes (estado civil do pai, idade dos filhos) residem na **Camada de Serviço**. O DB garante apenas a estrutura do vínculo
+└── 🛡️ **HARDENING:** `data_fim_vinculo` (Exclusão lógica, nunca DELETE físico)
+
+📊 **Tabela: `contratos` & `dados_aprovacao_seguradora`**
+├── **Chaves:** `id` (PK), `titular_id` (FK), `plano_id`, `seguradora_id`
+├── 🔒 **UNICIDADE:** `idx_contrato_ativo_por_titular` (WHERE status IN ('AGUARDANDO_APROVACAO', 'APROVADO')). Status `CANCELADO_CDC` fica FORA desta constraint
+├── 🚨 **VALIDAÇÃO:** `data_inicio` >= `data_aprovacao` (ou NULL no cadastro)
+├── 🛡️ **IMUTABILIDADE:** `capital_segurado_informado` (Read-only pós-aprovação, exige endosso)
+├── 📝 **MARKDOWN:** `clausulas_markdown` (Sanitização Server-Side obrigatória, PDF sem JS)
+└── 🚨 **STATUS EXPANDIDO:** Enums `SUSPENSO` (inadimplência) e `CANCELADO_CDC` (arrependimento legal) distintos de `CANCELADO` administrativo
+
+📊 **Tabela: `patrocinios` (Árvore de Rede)**
+├── **Chaves:** `revendedor_id` (FK), `patrocinador_id` (FK)
+├── 🔒 **UNICIDADE:** `idx_patrocinio_ativo_por_revendedor` (WHERE `data_fim_vinculo` IS NULL)
+├── 🛡️ **ATOMICIDADE:** Recálculo em cascata de subordinados na mesma transação
+├── 🚨 **HISTÓRICO:** UPDATE/DELETE proibidos em registros ativos (Apenas INSERT + `data_fim_vinculo`)
+└── ⚠️ **AIR-GAP (AML):** Constraint ou Trigger para impedir auto-patrocínio e ciclos familiares diretos
+
+📊 **Tabela: `transacoes_bonificacao` & `transacoes_pagamento`**
+├── 💰 **IDEMPOTÊNCIA:** `idx_bonificacao_unica` (`origem_contrato_id`, `carteira_id`, `nivel_origem`)
+├── 🔒 **BLOQUEIO OPERACIONAL:** `transacoes_pagamento` (saque) exige `saldo_disponivel` > 0. **NÃO BLOQUEIA** lançamentos de estorno/crédito que gerem saldo negativo
+├── 🛡️ **RESILIÊNCIA:** Campo `saldo_devedor` explícito. Abatimento automático de bonificações futuras prioritariamente para cobrir saldo devedor antes de liberar `saldo_disponivel`
+└── 💰 **TRIBUTAÇÃO:** Campos adicionais para retenção IRRF/INSS quando saque PF estiver ativo nas configurações
+
+📊 **Tabela: `configuracoes_regras_negocio` (Novas Chaves Obrigatórias)**
+├── [ ] `SAQUE_PF_ATIVO` (BOOLEAN): Habilita/Desabilita saque para Pessoa Física
+├── [ ] `LIMITE_SAQUE_DIARIO` (DECIMAL): Teto para saque sem aprovação manual
+├── [ ] `MESES_REMISSAO_OBITO_PADRAO` (INT): Meses de isenção pós-óbito (usado apenas se Apólice não especificar)
+├── [ ] `DIAS_SUSPENSAO_INADIMPLENCIA` (INT): Dias de atraso para mudar status para SUSPENSO
+└── [ ] `HASH_ASSINATURA_PDF_SALT` (VARCHAR): Salt para assinatura digital de documentos
+
+---
+
+### 4. Ambientes e Permissões (Matriz de Acesso)
+
+✅ **Diretrizes de Isolamento de Funções**
+├── [ ] **SuperAdmin:** Fila de Aprovação, CRUD Seguradoras/Regras, Gestão de Rede, Financeiro Global, Logs de Anonimização
+├── [ ] **Supervisor:** Mesmo acesso de Cliente/Revendedor, mais Visão Hierárquica e Auxílio Cadastral (Sem acesso a Aprovação/Financeiro/Configurações Globais)
+├── [ ] **Financeiro:** Contas a Pagar, Inadimplência, Reconciliation, Aprovação de Saques > Limite, Gestão de Saldo Devedor (Sem acesso a Dados Cadastrais/Saúde/Cláusulas)
+├── [ ] **Técnico/Suporte:** Correção Cadastral (Sem trava de idade exceto data_nasc), Logs, Diagnóstico (Sem acesso a Financeiro/Aprovação)
+└── [ ] **Cliente/Revendedor:** Dashboard, Autogestão, Indicações, Abatimento de Parcelas, Solicitação de Saque (Sem acesso a dados de terceiros)
+
+---
+
+### 5. Diretrizes Anti-Conflito (Hardening de Engenharia)
+
+✅ **Prevenção de Dívida Técnica e Falhas de Race Condition**
+├── [ ] 🛡️ **HARDENING:** Liberação de bonificação ACOPLADA à transação de aprovação (Nunca em job assíncrono separado)
+├── [ ] 🔒 **INTEGRIDADE:** Backend valida `tipo_registro` vs Rota (Previne injeção de tipos via manipulação de Frontend)
+├── [ ] 🚨 **DETERMINISMO:** Queries de vínculos exigem `ORDER BY id ASC` (Garante consistência visual em PDFs e relatórios)
+├── [ ] 🛡️ **FUTURO-PROOF:** CPF VARCHAR(14) mantido (Ajuste apenas de Regex/Máscara no Frontend quando letras forem oficializadas)
+└── [ ] ⚖️ **SEPARAÇÃO FINANCEIRA:** Nota Fiscal ao cliente incide APENAS sobre serviço/clube; prêmio de seguro transita como repasse (não é receita tributável ISS)

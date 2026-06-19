@@ -1,0 +1,431 @@
+// Granpaz - Saúde & Proteção
+// SaaS multi-tenant platform for administration of collective benefits
+// (life insurance and funeral coverage) — Estipulante per SUSEP guidelines
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// 1. Pessoas Físicas — People registry
+// ─────────────────────────────────────────────────────────
+model PessoaFisica {
+  id              String   @id @default(cuid())
+  nomeCompleto    String
+  dataNascimento  DateTime
+  cpf             String?  @unique
+  genero          String?  // 'M' or 'F'
+  estadoCivil     String   @default("SOLTEIRO")
+  tipoRegistro    String   // TITULAR / DEPENDENTE / AGREGADO / SUB_DEPENDENTE
+  titularRaizId   String?  // FK to self — required if not TITULAR
+  profissao       String?
+  email           String?
+  telefone        String?
+  cep             String?
+  logradouro      String?
+  numero          String?
+  complemento     String?
+  bairro          String?
+  cidade          String?
+  estado          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+
+  // Self-referential: root titular
+  titularRaiz     PessoaFisica?  @relation("TitularRaizDependentes", fields: [titularRaizId], references: [id])
+  dependentes     PessoaFisica[] @relation("TitularRaizDependentes")
+
+  // Vinculos where this person is the root
+  vinculosComoTitular  Vinculo[] @relation("VinculoTitular")
+  // Vinculos where this person is the linked person
+  vinculosComoVinculado Vinculo[] @relation("VinculoPessoa")
+  // Vinculos where this person is the aggregate parent
+  vinculosComoAgregadoPai Vinculo[] @relation("VinculoAgregadoPai")
+
+  // Contracts as titular
+  contratos           Contrato[]
+  // Sponsorship as revendedor
+  patrociniosComoRevendedor  Patrocinio[] @relation("PatrocinioRevendedor")
+  // Sponsorship as patrocinador
+  patrociniosComoPatrocinador Patrocinio[] @relation("PatrocinioPatrocinador")
+
+  // Digital wallet
+  carteiraDigital     CarteiraDigital?
+
+  // Contracts where this person is patrocinador
+  contratosPatrocinados Contrato[] @relation("ContratoPatrocinador")
+
+  // Claims
+  sinistros           Sinistro[]
+
+  // LGPD logs
+  logsAnonimizacao    LogAnonimizacaoLGPD[]
+
+  // Users linked to this person
+  users               User[]
+
+  @@map("pessoas_fisicas")
+}
+
+// ─────────────────────────────────────────────────────────
+// 2. Vínculos — Relationship hierarchy
+// ─────────────────────────────────────────────────────────
+model Vinculo {
+  id                 String    @id @default(cuid())
+  titularRaizId      String
+  pessoaVinculadaId  String
+  tipoVinculo        String    // DEPENDENTE / AGREGADO / SUB_DEPENDENTE
+  parentesco         String    // CONJUGE / FILHO / PAI_MAE / SOGRO / ENTREADO / NETO / AVO / IRMAO / TIO
+  agregadoPaiId      String?   // FK to pessoas_fisicas — required if SUB_DEPENDENTE
+  dataInicioVinculo  DateTime  @default(now())
+  dataFimVinculo     DateTime? // logical deletion
+
+  titularRaiz        PessoaFisica @relation("VinculoTitular", fields: [titularRaizId], references: [id])
+  pessoaVinculada    PessoaFisica @relation("VinculoPessoa", fields: [pessoaVinculadaId], references: [id])
+  agregadoPai        PessoaFisica? @relation("VinculoAgregadoPai", fields: [agregadoPaiId], references: [id])
+
+  @@map("vinculos")
+}
+
+// ─────────────────────────────────────────────────────────
+// 3. Planos — Plan definitions
+// ─────────────────────────────────────────────────────────
+model Plano {
+  id               String   @id @default(cuid())
+  nome             String
+  tipo             String   // INDIVIDUAL / FAMILIAR
+  valorBase        Float
+  valorTaxaAdesao  Float
+  valorPorAgregado Float   @default(0)
+  maxDependentes   Int      @default(8)
+  maxAgregados     Int      @default(4)
+  ativo            Boolean  @default(true)
+  descricao        String?
+  createdAt        DateTime @default(now())
+
+  contratos        Contrato[]
+
+  @@map("planos")
+}
+
+// ─────────────────────────────────────────────────────────
+// 4. Seguradoras — Insurance companies (admin only)
+// ─────────────────────────────────────────────────────────
+model Seguradora {
+  id               String   @id @default(cuid())
+  nome             String
+  cnpj             String
+  codigoSeguradora String
+  telefoneSinistro String
+  processoSusep    String?
+  clausulasMarkdown String?
+  ativa            Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now())
+
+  contratos        Contrato[]
+
+  @@map("seguradoras")
+}
+
+// ─────────────────────────────────────────────────────────
+// 5. Contratos — Contracts
+// ─────────────────────────────────────────────────────────
+model Contrato {
+  id                  String    @id @default(cuid())
+  titularId           String
+  planoId             String
+  seguradoraId        String?   // nullable until approved
+  status              String    // AGUARDANDO_APROVACAO / APROVADO / REJEITADO / CANCELADO / SUSPENSO / CANCELADO_CDC
+  valorParcelaBase    Float
+  valorTaxaAdesao     Float
+  dataInicio          DateTime?
+  dataCancelamento    DateTime?
+  motivoCancelamento  String?
+  patrocinadorId      String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @default(now())
+
+  titular             PessoaFisica  @relation(fields: [titularId], references: [id])
+  plano               Plano         @relation(fields: [planoId], references: [id])
+  seguradora          Seguradora?   @relation(fields: [seguradoraId], references: [id])
+  patrocinador        PessoaFisica? @relation("ContratoPatrocinador", fields: [patrocinadorId], references: [id])
+
+  // 1:1 approval data
+  dadosAprovacao      DadosAprovacaoSeguradora?
+
+  // Bonus transactions originating from this contract
+  transacoesBonificacaoOrigem TransacaoBonificacao[]
+
+  // Payment transactions linked to this contract
+  transacoesPagamento TransacaoPagamento[]
+
+  // Bills to pay
+  contasAPagar        ContaAPagar[]
+
+  // Claims
+  sinistros           Sinistro[]
+
+  // Premium waiver
+  remissao            RemissaoContrato?
+
+  @@map("contratos")
+}
+
+// ─────────────────────────────────────────────────────────
+// 6. Dados Aprovação Seguradora — Approval data (1:1 with contratos)
+// ─────────────────────────────────────────────────────────
+model DadosAprovacaoSeguradora {
+  id                        String    @id @default(cuid())
+  contratoId                String    @unique
+  capitalSeguradoInformado  Float?
+  codigoSeguradoraInformado String?
+  adminAprovadorId          String?
+  dataAprovacao             DateTime?
+  observacoesGestor         String?
+
+  contrato                  Contrato  @relation(fields: [contratoId], references: [id])
+  // adminAprovador links to User — we keep it as a plain String FK
+  // since User is defined later and we avoid circular issues
+
+  @@map("dados_aprovacao_seguradora")
+}
+
+// ─────────────────────────────────────────────────────────
+// 7. Patrocínios — Network tree (sponsorship)
+// ─────────────────────────────────────────────────────────
+model Patrocinio {
+  id                 String    @id @default(cuid())
+  revendedorId       String
+  patrocinadorId     String
+  nivelProfundidade  Int
+  dataEntrada        DateTime  @default(now())
+  dataFimVinculo     DateTime?
+  motivoRealocacao   String?
+
+  revendedor         PessoaFisica  @relation("PatrocinioRevendedor", fields: [revendedorId], references: [id])
+  patrocinador       PessoaFisica  @relation("PatrocinioPatrocinador", fields: [patrocinadorId], references: [id])
+
+  @@map("patrocinios")
+}
+
+// ─────────────────────────────────────────────────────────
+// 8. Carteiras Digitais — Digital wallets
+// ─────────────────────────────────────────────────────────
+model CarteiraDigital {
+  id              String   @id @default(cuid())
+  titularId       String   @unique
+  saldoDisponivel Float    @default(0)
+  saldoBloqueado  Float    @default(0)
+  saldoDevedor    Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+
+  titular         PessoaFisica @relation(fields: [titularId], references: [id])
+
+  // Bonus transactions credited to this wallet
+  transacoesBonificacao TransacaoBonificacao[]
+  // Payment transactions from this wallet
+  transacoesPagamento   TransacaoPagamento[]
+
+  @@map("carteiras_digitais")
+}
+
+// ─────────────────────────────────────────────────────────
+// 9. Transações Bonificação — Bonus transactions
+// ─────────────────────────────────────────────────────────
+model TransacaoBonificacao {
+  id                 String   @id @default(cuid())
+  origemContratoId   String
+  carteiraId         String
+  nivelOrigem        Int
+  valor              Float
+  percentualAplicado Float
+  status             String   // PENDENTE_APROVACAO / LIBERADO / ESTORNADO
+  createdAt          DateTime @default(now())
+
+  origemContrato     Contrato       @relation(fields: [origemContratoId], references: [id])
+  carteira           CarteiraDigital @relation(fields: [carteiraId], references: [id])
+
+  @@map("transacoes_bonificacao")
+}
+
+// ─────────────────────────────────────────────────────────
+// 10. Transações Pagamento — Payment transactions
+// ─────────────────────────────────────────────────────────
+model TransacaoPagamento {
+  id                   String    @id @default(cuid())
+  carteiraId           String
+  contaAPagarId        String?
+  contratoId           String?
+  tipoTransacao        String    // ABATIMENTO / SAQUE
+  valorAbatido         Float
+  saldoRestanteParcela Float?
+  valorIrrfRetido      Float?
+  valorInssRetido      Float?
+  status               String    // CONCLUIDO / ESTORNADO / PENDENTE_APROVACAO
+  dataTransacao        DateTime  @default(now())
+
+  carteira             CarteiraDigital @relation(fields: [carteiraId], references: [id])
+  contaAPagar          ContaAPagar?    @relation(fields: [contaAPagarId], references: [id])
+  contrato             Contrato?       @relation(fields: [contratoId], references: [id])
+
+  @@map("transacoes_pagamento")
+}
+
+// ─────────────────────────────────────────────────────────
+// 11. Contas a Pagar — Bills to pay
+// ─────────────────────────────────────────────────────────
+model ContaAPagar {
+  id                    String    @id @default(cuid())
+  contratoId            String
+  descricao             String
+  valor                 Float
+  valorRestante         Float
+  dataVencimento        DateTime
+  status                String    // PENDENTE / PAGO / VENCIDO / CANCELADO
+  boletoUrl             String?
+  gatewayTransactionId  String?
+  createdAt             DateTime  @default(now())
+
+  contrato              Contrato         @relation(fields: [contratoId], references: [id])
+  transacoesPagamento   TransacaoPagamento[]
+
+  @@map("contas_a_pagar")
+}
+
+// ─────────────────────────────────────────────────────────
+// 12. Webhooks Recebidos — Received webhooks (anti-duplication)
+// ─────────────────────────────────────────────────────────
+model WebhookRecebido {
+  id           String   @id @default(cuid())
+  transactionId String
+  source       String
+  payload      String   // JSON stored as Text in SQLite
+  processedAt  DateTime @default(now())
+
+  @@unique([transactionId, source])
+  @@map("webhooks_recebidos")
+}
+
+// ─────────────────────────────────────────────────────────
+// 13. Sinistros — Claims
+// ─────────────────────────────────────────────────────────
+model Sinistro {
+  id                String    @id @default(cuid())
+  contratoId        String
+  pessoaVinculadaId String
+  tipoSinistro      String    // OBITO_NATURAL / OBITO_ACIDENTAL / SUICIDIO / INVALIDEZ_TOTAL
+  dataOcorrencia    DateTime
+  status            String    // EM_ANALISE / APROVADO / NEGADO_CARENCIA / NEGADO_FRAUDE / NEGADO_EXCLUSAO
+  documentoS3Hash   String?   // AIR-GAP: never store clinical data
+  observacoes       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now())
+
+  contrato          Contrato     @relation(fields: [contratoId], references: [id])
+  pessoaVinculada   PessoaFisica @relation(fields: [pessoaVinculadaId], references: [id])
+
+  @@map("sinistros")
+}
+
+// ─────────────────────────────────────────────────────────
+// 14. Remissões Contrato — Post-mortem premium waivers
+// ─────────────────────────────────────────────────────────
+model RemissaoContrato {
+  id               String   @id @default(cuid())
+  contratoId       String   @unique
+  dataInicioRemissao DateTime
+  dataFimRemissao  DateTime
+  mesesAplicados   Int
+  origemPrazo      String   // APOLICE_SEGURADORA / CONFIGURACAO_PADRAO
+
+  contrato         Contrato @relation(fields: [contratoId], references: [id])
+
+  @@map("remissoes_contrato")
+}
+
+// ─────────────────────────────────────────────────────────
+// 15. Logs Anonimização LGPD — LGPD anonymization logs
+// ─────────────────────────────────────────────────────────
+model LogAnonimizacaoLGPD {
+  id                  String   @id @default(cuid())
+  pessoaFisicaId      String
+  dataAnonimizacao    DateTime @default(now())
+  motivo              String   // OBITO_5_ANOS / CANCELAMENTO_5_ANOS
+  camposAnonimizados  String   // JSON stored as Text in SQLite
+  hashOriginalSalt    String
+
+  pessoaFisica        PessoaFisica @relation(fields: [pessoaFisicaId], references: [id])
+
+  @@map("logs_anonimizacao_lgpd")
+}
+
+// ─────────────────────────────────────────────────────────
+// 16. Configurações Regras Negócio — Business rules configuration
+// ─────────────────────────────────────────────────────────
+model ConfiguracaoRegraNegocio {
+  id          String   @id @default(cuid())
+  chave       String   @unique
+  valor       String
+  tipoParse   String   // INT / DECIMAL / BOOLEAN / VARCHAR
+  descricao   String
+  updatedAt   DateTime @default(now())
+
+  @@map("configuracoes_regras_negocio")
+}
+
+// ─────────────────────────────────────────────────────────
+// 17. Audit Logs — Audit trail (append-only)
+// ─────────────────────────────────────────────────────────
+model AuditLog {
+  id              String   @id @default(cuid())
+  entidade        String
+  entidadeId      String
+  acao            String   // CREATE / UPDATE / DELETE / ESTORNO / APROVACAO
+  atorId          String?
+  valoresAnteriores String? // JSON stored as Text in SQLite
+  valoresNovos    String?   // JSON stored as Text in SQLite
+  ipAddress       String?
+  observacao      String?
+  createdAt       DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────
+// 18. Users — System users (for auth/RBAC)
+// ─────────────────────────────────────────────────────────
+model User {
+  id              String   @id @default(cuid())
+  nome            String
+  email           String   @unique
+  senhaHash       String
+  role            String   // SUPERADMIN / SUPERVISOR / FINANCEIRO / SUPORTE / CLIENTE
+  pessoaFisicaId  String?
+  ativo           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+
+  pessoaFisica    PessoaFisica? @relation(fields: [pessoaFisicaId], references: [id])
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+// 19. Níveis Bonificação — Bonus levels configuration
+// ─────────────────────────────────────────────────────────
+model NivelBonificacao {
+  id          String   @id @default(cuid())
+  nivel       Int
+  percentual  Float
+  descricao   String
+  ativo       Boolean  @default(true)
+
+  @@map("niveis_bonificacao")
+}

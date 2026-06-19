@@ -1,0 +1,366 @@
+# 📄 SPEC-07: Módulo Institucional e Vendas (Frontend Público)
+**Sistema:** Saúde & Proteção (Clube de Benefícios e Cobertura Funeral)
+**Módulo:** 7. Landing Page, Conversão e Compliance de Marketing (Granpaz)
+
+---
+
+## 1. Metadados e Controle de Versão
+
+| Atributo | Valor |
+| :--- | :--- |
+| **ID do Ticket** | `SPF-WEB-007` |
+| **Autor** | Principal Software Architect |
+| **Revisores** | Tech Lead Frontend, Head de Marketing, DPO, Head Jurídico |
+| **Aprovadores** | CTO, CMO (Chief Marketing Officer) |
+| **Data** | 20/06/2026 |
+| **Versão** | 1.0.0 |
+| **Status** | ✅ Aprovado para Desenvolvimento |
+
+### Changelog
+| Versão | Data | Autor | Descrição |
+| :--- | :--- | :--- | :--- |
+| 0.1.0 | 15/06/2026 | Arquitetura | Draft inicial baseado na copy institucional e manual de conformidade. |
+| 1.0.0 | 20/06/2026 | Arquitetura | Especificação exaustiva, Air-Gap de Seguradora, Core Web Vitals e Blindagem SUSEP/PROCON. |
+
+### Links de Referência
+├── 🎨 **Figma:** `[PLACEHOLDER_FIGMA_LANDING_PAGE_GRANPAZ]`
+├── 🎫 **Jira:** `[PLACEHOLDER_JIRA_EPIC_MARKETING]`
+├── 📖 **Swagger:** `[PLACEHOLDER_SWAGGER_V1_PUBLIC]`
+└── 🗄️ **Repositório:** `[PLACEHOLDER_GIT_REPO]/spf-web-public`
+
+---
+
+## 2. Contexto e Escopo
+
+### Problem Statement
+A aquisição de clientes para o Plano Granpaz exige uma Landing Page de alta conversão que, simultaneamente, respeite rigorosamente as diretrizes da SUSEP e do Código de Defesa do Consumidor (CDC). A ausência de um frontend público estaticamente gerado e otimizado para Core Web Vitals resulta em altas taxas de rejeição (Bounce Rate) e perda de receita. 
+
+Sob a ótica jurídica, a utilização de termos proibidos (ex: "nosso seguro", "nós garantimos") ou a omissão do Disclaimer de Estipulante no rodapé expõe a administradora a multas milionárias e processos do PROCON por venda casada ou propaganda enganosa. Este módulo estabelece a infraestrutura de Edge Rendering (SSG/ISR) para a Landing Page, o componente de Checkout Público (Air-Gap de Seguradora) e a validação automatizada de copywriting para garantir conformidade contínua.
+
+### Objetivos
+| Categoria | Métrica / KPI | Alvo |
+| :--- | :--- | :--- |
+| **Performance** | Largest Contentful Paint (LCP) da Landing Page | `< 1.2s` (Mobile 4G) |
+| **Performance** | Cumulative Layout Shift (CLS) | `< 0.05` |
+| **Conversão** | Taxa de conversão (Visitante → Submissão de Contrato) | `> 4.5%` |
+| **Compliance** | Ocorrências de termos proibidos ("nosso seguro") no DOM | `0` (Bloqueio em Build Time) |
+| **SEO** | Score Lighthouse (Performance + SEO) | `> 95/100` |
+
+### Out of Scope (Não será implementado nesta versão)
+1.  **Área Logada do Cliente:** Dashboard, App Mobile e Autogestão (Cobertos por outros módulos).
+2.  **Blog Institucional / CMS Complexo:** Foco estrito na Landing Page de conversão (Granpaz).
+3.  **Cálculo de Prêmio de Seguro em Tempo Real:** O frontend público exibe apenas o valor do Clube/Mensalidade.
+4.  **Integração com Chatbots de IA:** Suporte inicial via WhatsApp (Link estático).
+5.  **Marketplace de Benefícios:** Listagem de rede credenciada (Fase 2).
+
+### Premissas e Restrições
+├── **Stack:** Next.js 14+ (App Router), React Server Components (RSC), Tailwind CSS, Vercel/Cloudflare Edge.
+├── **Compliance:** SUSEP (Circular 666/2022), CDC (Art. 39 - Venda Casada), LGPD (Cookies e Rastreamento).
+├── **Air-Gap Obrigatório:** O Checkout Público NUNCA carrega, exibe ou permite seleção de `seguradoras` ou `capital_segurado`.
+└── **Imutabilidade de Copy:** Textos institucionais são versionados no código (i18n/JSON). Alterações exigem PR com aprovação do Jurídico.
+
+### Glossário
+| Termo | Definição |
+| :--- | :--- |
+| **Estipulante** | Pessoa jurídica (Saúde & Proteção) que contrata seguro coletivo. O frontend deve deixar isso explícito. |
+| **Air-Gap de Seguradora** | Isolamento onde o cliente final seleciona apenas o "Plano Comercial", sem saber ou escolher a Seguradora parceira. |
+| **Venda Casada** | Prática ilegal (CDC Art. 39, I) de condicionar a venda de um serviço à aquisição de outro. O seguro deve ser benefício intrínseco ou opcional claro. |
+| **SSG/ISR** | Static Site Generation / Incremental Static Regeneration. Estratégia de cache para performance máxima. |
+| **Disclaimer** | Aviso legal obrigatório no rodapé detalhando o papel da Estipulante e da Seguradora. |
+
+---
+
+## 3. Arquitetura e Design de Alto Nível
+
+### 3.1 Diagrama C4 - Container
+```mermaid
+graph TD
+    subgraph "Edge / CDN"
+        CDN[Cloudflare / Vercel Edge]
+    end
+    subgraph "Frontend Público"
+        LP[Landing Page Granpaz<br/>Next.js SSG/ISR]
+        CHK[Checkout Público<br/>React Server Components]
+    end
+    subgraph "Core API"
+        API[API Gateway<br/>Public Routes]
+        Cfg[Config Service]
+    end
+    
+    User((Usuário)) -->|1. Acessa LP| CDN
+    CDN -->|2. Cache Hit| LP
+    LP -->|3. Clica CTA| CHK
+    CHK -->|4. GET /planos| API
+    API -->|5. Read| Cfg
+    CHK -->|6. POST /contratos| API
+```
+
+### 3.2 Diagrama de Fluxo de Dados (DFD) - Conversão e Air-Gap
+```mermaid
+sequenceDiagram
+    participant User as Visitante
+    participant LP as Landing Page
+    participant CHK as Checkout (Next.js)
+    participant API as API Core
+    
+    User->>LP: 1. Lê Copy e Disclaimer
+    LP->>User: 2. Exibe "Plano Granpaz" (Sem citar Seguradora)
+    User->>LP: 3. Clica "Quero Proteger Minha Família"
+    LP->>CHK: 4. Navega para /checkout
+    CHK->>API: 5. GET /planos?tipo=FAMILIAR
+    API-->>CHK: 6. Retorna Planos (Sem seguradora_id)
+    User->>CHK: 7. Seleciona Plano e preenche Titular
+    CHK->>API: 8. POST /contratos (Payload cego)
+    API-->>CHK: 9. 201 Created (AGUARDANDO_APROVACAO)
+    CHK->>User: 10. Tela de Sucesso (Sem apólice ainda)
+```
+
+### 3.3 Architecture Decision Records (ADRs)
+| ID | Decisão | Alternativas Consideradas | Justificativa | Consequências |
+| :--- | :--- | :--- | :--- | :--- |
+| **ADR-01** | **SSG com ISR (Revalidação 1h)** | CSR (Create React App) ou SSR puro. | LCP < 1.2s é crítico para conversão em Mobile 4G. SSG entrega HTML pronto na Edge. ISR permite atualizar preços de planos sem novo deploy. | Exige Edge Network (Vercel/Cloudflare). |
+| **ADR-02** | **Air-Gap de Seguradora no Checkout** | Exibir "Seguradora Parceira X" no checkout. | 🚨 **COMPLIANCE SUSEP:** Evita caracterização de corretagem direta. O cliente compra o "Clube Granpaz". A Seguradora é definida no Backoffice (Módulo 2). | Frontend só conhece `plano_id` e `valor_mensalidade`. |
+| **ADR-03** | **Validação de Copy em Build Time** | Revisão manual periódica. | Previne que desenvolvedores ou_marketing_ injetem termos proibidos ("nosso seguro") via CMS ou código. | Script de linting customizado (`eslint-plugin-susep`) bloqueia o build. |
+| **ADR-04** | **Disclaimer Hardcoded no Layout** | CMS dinâmico para o rodapé. | O rodapé legal é imutável sem aprovação jurídica. Hardcode garante que nenhuma página pública exista sem o aviso de Estipulante. | Alterações no CNPJ da Seguradora parceira exigem PR e Code Review do DPO. |
+
+### 3.4 Modelo de Entidades (Domínio de Marketing)
+├── `Planos` (Lidos via API) ──── (N) `LandingPage` (Renderização)
+├── `Configuracoes` (Idades, Preços) ──── (N) `Checkout`
+└── `Leads` (Opcional) ──── (1) `CRM` (Integração futura)
+
+---
+
+## 4. Especificação Funcional Detalhada
+
+### 4.1 Regras de Negócio (Determinísticas)
+| ID | Regra de Negócio (SE / ENTÃO / SENÃO) |
+| :--- | :--- |
+| **RN-01** | 🛡️ **SE** a página for renderizada no domínio público **ENTÃO** o rodapé DEVE conter o Disclaimer de Estipulante, CNPJ da Administradora e aviso SUSEP. **SENÃO** (se faltar), o build falha (Linting Error). |
+| **RN-02** | 🚨 **SE** o copywriting contiver termos como "nosso seguro", "nós garantimos", "compre nosso seguro" ou "corretora" **ENTÃO** o pipeline de CI/CD bloqueia o deploy. **EXCEÇÃO:** Nenhuma. (Air-Gap Semântico). |
+| **RN-03** | 💰 **SE** o usuário acessar o Checkout Público **ENTÃO** a API deve retornar APENAS `plano_id`, `nome`, `valor_base` e `tipo`. **SENÃO** (se tentar retornar `seguradora_id` ou `capital_segurado`), a API lança exceção de segurança e o frontend exibe erro genérico. |
+| **RN-04** | ⚖️ **SE** o usuário tentar contratar plano `FAMILIAR` **ENTÃO** o checkout deve exibir claramente que a "Proteção Funeral é um benefício intrínseco do Clube". **SENÃO** (se for interpretado como venda casada), o PROCON pode multar. O termo "Seguro" deve ser substituído por "Proteção" ou "Benefício". |
+| **RN-05** | 🔒 **SE** o usuário clicar em "Cancelar" ou "Voltar" no Checkout **ENTÃO** o sistema deve limpar o estado local (LocalStorage/SessionStorage) de dados sensíveis (CPF, Endereço). **EXCEÇÃO:** UTM parameters de marketing são preservados. |
+
+### 4.2 Critérios de Aceite (Gherkin)
+```gherkin
+Feature: Compliance de Copywriting e Disclaimer
+
+Scenario: Renderizacao da Landing Page com Disclaimer Obrigatorio
+    Given o usuario acessa a URL raiz "/"
+    When a pagina carrega completamente
+    Then o elemento "footer" deve conter o texto "Saúde & Proteção Administração de Benefícios"
+    And o elemento "footer" deve conter o texto "atua exclusivamente como Estipulante"
+    And o elemento "footer" deve conter o aviso "O registro deste plano na SUSEP não implica..."
+    And nenhum elemento da pagina contem o texto "nosso seguro"
+
+Scenario: Bloqueio de Termos Proibidos em Build Time
+    Given um desenvolvedor altera o arquivo "copy.json"
+    And insere a frase "Nós garantimos o pagamento do seu funeral"
+    When o comando "npm run build" é executado
+    Then o build falha com erro "SUSEP_VIOLATION: Termo proibido detectado"
+    And o deploy é abortado
+```
+
+```gherkin
+Feature: Checkout Publico com Air-Gap de Seguradora
+
+Scenario: Listagem de Planos sem Exposicao de Seguradora
+    Given o usuario esta na tela de selecao de planos
+    When a API "GET /planos" responde
+    Then o frontend exibe os cards "Granpaz Individual" e "Granpaz Familiar"
+    And o frontend exibe o valor mensal (ex: "R$ 29,90/mês")
+    And o DOM nao contem nenhum atributo "data-seguradora-id"
+    And o DOM nao contem nenhum texto com nome de Seguradora Parceira
+```
+
+### 4.3 Matriz de Estados (Lead / Checkout)
+```mermaid
+stateDiagram-v2
+    [*] --> LP_VISITANTE: Acesso via Campanha
+    LP_VISITANTE --> CHK_INICIADO: Clica CTA Principal
+    CHK_INICIADO --> CHK_TITULAR: Seleciona Plano
+    CHK_TITULAR --> CHK_DEPENDENTES: Preenche Titular
+    CHK_DEPENDENTES --> CHK_PAGAMENTO: Preenche Vínculos
+    CHK_PAGAMENTO --> SUCESSO: Submete Contrato (201)
+    CHK_PAGAMENTO --> ERRO_VALIDACAO: Falha (400/409)
+    ERRO_VALIDACAO --> CHK_TITULAR: Corrige Dados
+    SUCESSO --> [*]
+```
+
+### 4.4 Edge Cases e Exceções (30% da Seção - Foco Crítico)
+| Cenário | Condição / Falha | Comportamento Esperado do Sistema |
+| :--- | :--- | :--- |
+| **EC-01: Falha na API de Planos** | A API `GET /planos` retorna `500` ou timeout. | O Checkout exibe estado de "Manutenção Técnica" com CTA para WhatsApp do Suporte. A LP continua no ar (SSG Cache). |
+| **EC-02: Bot de Scraping / Fraude** | IP conhecido por fraude tenta submeter 100 contratos em 1 minuto. | WAF (Cloudflare/AWS WAF) bloqueia o IP com `403 Forbidden`. Rate Limiting na API (`10 req/min/IP`). |
+| **EC-03: JS Desabilitado no Browser** | Usuário com NoScript tenta acessar o Checkout. | A LP (SSG) é legível. O Checkout exibe mensagem: "Habilite o JavaScript para contratar o Plano Granpaz". |
+| **EC-04: Conflito de CPF (409)** | Usuário tenta contratar mas já possui contrato ativo (`AGUARDANDO_APROVACAO`). | Frontend trata o `409 Conflict` e exibe modal: "Você já possui uma proposta em análise. Acompanhe pelo App." com link para Login. |
+| **EC-05: Alteração de Preço via ISR** | O preço do plano muda no DB, mas o Edge Cache ainda tem o HTML antigo. | O ISR (Incremental Static Regeneration) atualiza a página em background. O Checkout sempre busca o preço *fresco* via API no momento do clique. |
+| **EC-06: Violação de Venda Casada** | Usuário reclama que foi "obrigado" a contratar o seguro. | A Copy da LP e o Checkout possuem checkbox (ou texto claro) informando que o Granpaz é um "Clube de Benefícios com Proteção Intrínseca". O termo "Seguro" é evitado na oferta principal. |
+
+### 4.5 Validações de Entrada (Frontend & API)
+| Campo | Regra | Mensagem de Erro | HTTP Code |
+| :--- | :--- | :--- | :--- |
+| `utm_source` | String, max 50 chars | - (Sanitizado silenciosamente) | - |
+| `plano_id` | UUID válido, ativo no DB | "Plano selecionado indisponível." | 400 |
+| `cpf` | Algorítmica + Unique (Módulo 1) | "CPF já possui proposta ativa." | 409 |
+| `email` | RFC 5322, Lowercase | "E-mail inválido." | 400 |
+
+---
+
+## 5. Especificação Não-Funcional
+
+### 5.1 Performance (Core Web Vitals)
+├── **LCP (Largest Contentful Paint):** `< 1.2s` (Imagem Hero otimizada em WebP/AVIF, `priority={true}`).
+├── **FID (First Input Delay):** `< 50ms` (Hydration seletiva de componentes interativos).
+├── **CLS (Cumulative Layout Shift):** `< 0.05` (Dimensões explícitas em todas as imagens e iframes).
+└── **TTFB (Time to First Byte):** `< 200ms` (Edge Caching global).
+
+### 5.2 Escalabilidade
+├── **Edge Network:** Distribuição via Vercel Edge Network ou Cloudflare Pages. Suporta picos de tráfego (ex: Black Friday) sem escalar servidores de origem.
+├── **API:** Rate Limiting de `100 req/s` por IP para endpoints públicos de leitura (`/planos`).
+
+### 5.3 Resiliência
+├── **SLO:** `99.99%` de disponibilidade para a Landing Page (SSG).
+├── **Fallback de API:** Se a API de Configurações cair, o Checkout usa um *hardcoded fallback* de planos básicos (apenas para não perder a venda, com posterior reconciliação manual).
+├── **Cache Stale-While-Revalidate:** O Edge serve o HTML antigo enquanto busca o novo em background.
+
+### 5.4 Segurança e Compliance
+├── **CSP (Content Security Policy):** `default-src 'self'; script-src 'self' 'unsafe-inline' (apenas para GTM); img-src 'self' data: https:;`
+├── **Sanitização:** Inputs do Checkout são sanitizados contra XSS antes de enviados à API.
+├── **LGPD:** Banner de Cookies com opt-in explícito para rastreamento de marketing (Meta Pixel, GA4). Cookies estritamente necessários isentos.
+├── **Air-Gap Semântico:** Script de CI (`eslint-plugin-susep`) varre o código fonte buscando regex de termos proibidos.
+
+### 5.5 Observabilidade
+├── **Métricas (Web Vitals API):**
+│   ├── `web_vitals_lcp_seconds{page="landing"}`
+│   ├── `web_vitals_cls_score{page="checkout"}`
+│   └── `checkout_conversion_rate{utm_source="meta"}`
+├── **Logs (Edge):** Logs de acesso da CDN (Cloudflare/Vercel) para análise de geo-localização e bloqueios de WAF.
+└── **Alertas:** Queda na taxa de conversão > 20% em relação à média móvel de 7 dias.
+
+### 5.6 Acessibilidade e i18n
+├── **A11y (WCAG 2.1 AA):**
+│   ├── Contraste mínimo 4.5:1 em todos os textos.
+│   ├── Navegação completa via teclado (Focus Trap em Modais).
+│   ├── Tags `alt` descritivas em todas as imagens.
+│   ├── Hierarquia de headings (`h1` -> `h2` -> `h3`) estrita.
+└── **i18n:** Preparado para PT-BR e ES (Espanhol). Moeda formatada via `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`.
+
+---
+
+## 6. Interface e Contratos
+
+### 6.1 API (OpenAPI 3.0 - Rotas Públicas)
+```yaml
+paths:
+  /api/v1/public/planos:
+    get:
+      summary: Lista planos comerciais ativos (Air-Gap)
+      responses:
+        '200':
+          description: Lista de planos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    nome: { type: string }
+                    tipo: { type: string, enum: [INDIVIDUAL, FAMILIAR] }
+                    valor_base: { type: number }
+                    valor_por_agregado: { type: number }
+        '503': { description: Serviço indisponível }
+
+  /api/v1/public/contratos:
+    post:
+      summary: Submissão de contrato via Checkout Público
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContratoPublicoPayload'
+      responses:
+        '201': { description: Contrato criado (AGUARDANDO_APROVACAO) }
+        '400': { description: Erro de validação }
+        '409': { description: CPF já possui contrato ativo }
+```
+
+### 6.2 Estrutura de Páginas (Next.js App Router)
+├── `/` (Landing Page Granpaz - SSG)
+│   ├── `HeroSection` (Promessa + CTA)
+│   ├── `ProblemSection` (Storytelling)
+│   ├── `SolutionSection` (Benefícios)
+│   ├── `FAQSection` (Quebra de Objeções)
+│   └── `Footer` (Disclaimer SUSEP Obrigatório)
+├── `/checkout` (Fluxo de Contratação - ISR/CSR)
+│   ├── `Step1: Plano`
+│   ├── `Step2: Titular`
+│   ├── `Step3: Vínculos`
+│   └── `Step4: Pagamento/Resumo`
+└── `/sucesso` (Confirmação - SSG)
+
+### 6.3 Schema.org (SEO)
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Plano Granpaz",
+  "description": "Clube de benefícios com assistência funeral nacional e amparo financeiro.",
+  "brand": {
+    "@type": "Brand",
+    "name": "Saúde & Proteção"
+  },
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "BRL",
+    "price": "29.90",
+    "availability": "https://schema.org/InStock"
+  }
+}
+```
+
+### 6.4 Mock Strategy
+├── **API de Planos:** Mock no MSW (Mock Service Worker) retornando 2 planos fixos para testes de UI.
+├── **Gateway de Pagamento:** Em ambiente de dev, o checkout simula o sucesso sem acionar o gateway real.
+
+---
+
+## 7. Estratégia de Entrega e Mitigação de Riscos
+
+### 7.1 Plano de Rollback/Migração
+├── **Migração:** Greenfield. Substituição da LP legada (se houver) via troca de DNS ou Rota.
+├── **Rollback:** Reversão do deploy na Vercel/Cloudflare (1 clique). O SSG anterior é restaurado instantaneamente.
+└── **Zero Downtime:** Deploy atômico. A nova versão só recebe tráfego após passar nos testes de Lighthouse CI.
+
+### 7.2 Feature Flags
+├── `NEW_CHECKOUT_FLOW_ENABLED`: Se `true`, habilita o novo fluxo de checkout multi-step. Se `false`, redireciona para LP legada ou formulário simples.
+├── `MARKETING_PIXELS_ENABLED`: Controla o disparo de Meta Pixel / GA4 (desligado em caso de problema de LGPD).
+
+### 7.3 Matriz de Riscos
+| Risco | Probabilidade | Impacto | Plano de Mitigação |
+| :--- | :--- | :--- | :--- |
+| **Multa SUSEP/PROCON por Copy** | Baixa | Crítico | 🛡️ **Air-Gap Semântico.** Script de CI bloqueia termos proibidos. Rodapé com Disclaimer é hardcoded e imutável sem PR do Jurídico. |
+| **Baixa Conversão (LCP Alto)** | Média | Alto (Receita) | Lighthouse CI no pipeline. Bloqueia deploy se LCP > 1.5s. Imagens otimizadas via Next/Image. |
+| **Venda Casada (CDC Art. 39)** | Média | Crítico | Copy revisada por jurídico. Checkbox de ciência de que é um "Clube de Benefícios". |
+| **Fraude de Leads (Bots)** | Alta | Médio | WAF na Edge. Rate Limiting na API. Captcha invisível (reCAPTCHA v3) no submit. |
+
+### 7.4 Dependências Externas
+├── **Módulo 1 (Cadastro):** O Checkout Público consome a API de submissão de contratos do Módulo 1.
+├── **Jurídico/DPO:** Aprovação obrigatória de qualquer alteração no `copy.json` ou no Disclaimer do Rodapé.
+├── **Marketing:** Fornecimento de UTMs e configuração de Pixels de conversão.
+
+---
+
+## 8. Checklist de Validação do SPEC
+
+- [ ] **Compliance SUSEP:** O rodapé de todas as páginas públicas contém o Disclaimer de Estipulante e o aviso da SUSEP?
+- [ ] **Air-Gap Semântico:** O script de CI (`eslint-plugin-susep`) está bloqueando termos como "nosso seguro" e "corretora"?
+- [ ] **Air-Gap de Dados:** O Checkout Público NUNCA recebe ou exibe `seguradora_id` ou `capital_segurado`?
+- [ ] **Performance:** O Lighthouse CI está configurado para bloquear deploys com LCP > 1.5s ou CLS > 0.1?
+- [ ] **SEO:** O `schema.org` de Produto está injetado no `<head>` da Landing Page?
+- [ ] **Acessibilidade:** A LP possui contraste 4.5:1 e navegação completa via teclado?
+- [ ] **LGPD:** O banner de cookies está implementado com opt-in explícito para rastreamento?
+- [ ] **Edge Cases:** O sistema trata o erro `409 Conflict` (CPF já cadastrado) redirecionando para o App/Login?
+- [ ] **QA Testability:** Os cenários Gherkin permitem que o QA valide a ausência de termos proibidos no DOM?

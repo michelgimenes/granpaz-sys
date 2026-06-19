@@ -1,0 +1,1688 @@
+# Documento de Especificação Técnica (SPEC)
+## Módulo Financeiro e de Bonificação (Multinível) - v0.1 Draft
+
+Antes de gerar o SPEC completo, identifiquei lacunas críticas no contexto fornecido que impedem uma especificação "Zero Ambiguidade". Preciso das seguintes clarificações:
+
+## 🔴 PERGUNTAS CLARIFICATÓRIAS CRÍTICAS
+
+### 1. Gateway de Pagamentos e Boletos
+- **Qual gateway/banco** será utilizado para emissão de boletos? (Ex: Bradesco, Santander, Pagar.me, Iugu, Asaas)
+- **Webhooks**: Qual endpoint receberá confirmações de pagamento? Timeout esperado?
+- **PIX**: Haverá integração com PIX (copia e cola/QR Code)? Qual PSP?
+
+### 2. Infraestrutura de Mensageria e Jobs
+- **Message Broker**: RabbitMQ, AWS SQS, Kafka ou Redis Streams?
+- **Job Scheduler**: Cron nativo, Bull/BullMQ, AWS EventBridge, Temporal?
+- **Retry Policy**: Backoff exponencial? Dead Letter Queue?
+
+### 3. Cache e Performance
+- **Redis**: Será usado para cache de saldos de carteira? TTL?
+- **Rate Limiting**: Limite de requisições por revendedor/endpoint?
+- **Concorrência**: Como tratar múltiplos abatimentos simultâneos na mesma carteira?
+
+### 4. Observabilidade e Logs
+- **Stack**: ELK, Datadog, New Relic, Grafana Cloud?
+- **Formato de Logs**: JSON estruturado com correlation_id?
+- **Tracing Distribuído**: OpenTelemetry, Jaeger?
+
+### 5. Notificações
+- **Canais**: Email (SendGrid/AWS SES), SMS (Twilio), Push (Firebase)?
+- **Templates**: Onde são gerenciados? Versionados?
+
+### 6. Segurança e Compliance
+- **Criptografia**: Dados sensíveis em repouso (AES-256)?
+- **HSM/KMS**: AWS KMS, HashiCorp Vault?
+- **Auditoria**: Imutabilidade de logs financeiros (WORM storage)?
+
+---
+
+**Enquanto aguardo as respostas, gero abaixo o SPEC completo marcando pontos não definidos como `[TBD - DECISÃO PENDENTE]` e listando como riscos.**
+
+---
+
+## 1. Metadados e Controle de Versão
+
+| Campo | Valor |
+|-------|-------|
+| **ID do Ticket** | GRAPAZ-FIN-001 |
+| **Autor** | Principal Software Architect |
+| **Revisores** | Tech Lead Backend, Tech Lead Frontend, Product Owner, QA Lead |
+| **Aprovadores** | CTO, Head of Engineering, Compliance Officer |
+| **Data** | 2026-06-20 |
+| **Versão** | 0.1 (Draft) |
+| **Status** | 🟡 Em Revisão |
+
+### Changelog
+
+| Versão | Data | Autor | Descrição |
+|--------|------|-------|-----------|
+| 0.1 | 2026-06-20 | Principal Architect | Draft inicial com base em documentação de negócio |
+
+### Links de Referência
+
+| Recurso | URL | Status |
+|---------|-----|--------|
+| Figma | `[TBD - Link do protótipo de alta fidelidade]` | ⏳ Pendente |
+| Jira Epic | `[TBD - Link da Epic GRAPAZ-FIN]` | ⏳ Pendente |
+| Swagger/OpenAPI | `[TBD - Link da documentação da API]` | ⏳ Pendente |
+| Repositório | `[TBD - Link do repositório backend]` | ⏳ Pendente |
+| Design System | `[TBD - Link do Storybook/Figma]` | ⏳ Pendente |
+
+---
+
+## 2. Contexto e Escopo
+
+### Problem Statement
+
+O módulo financeiro do Sistema de Gestão Saúde & Proteção (SPF) enfrenta três problemas críticos que impedem a escalabilidade do modelo de negócio:
+
+**1. Fragilidade Financeira e Risco de Fraude:** O sistema atual não possui idempotência robusta em transações de bonificação multinível, resultando em duplicidade de pagamentos em cenários de retry de rede ou falhas parciais. Além disso, a ausência de controles de saldo devedor permite que revendedores realizem saques ou abatimentos mesmo após cancelamentos de contratos que deveriam estornar bonificações já liberadas.
+
+**2. Inconsistência Tributária e Compliance:** A mistura de receita tributável (clube de benefícios) com repasse de risco (prêmio de seguro) em uma única transação financeira gera exposição fiscal (ISS indevido sobre prêmios) e viola diretrizes SUSEP. O sistema não possui separação contábil clara, nem retenção automática de IRRF/INSS em saques de Pessoa Física, criando passivos trabalhistas e tributários.
+
+**3. Opacidade Operacional:** A falta de reconciliação automática entre boletos pagos, bonificações liberadas e abatimentos via carteira digital impede auditoria financeira confiável. O time financeiro não possui visibilidade em tempo real de saldos devedores, transações pendentes de aprovação manual ou conflitos de rede (CPF ativo em múltiplas árvores de patrocínio).
+
+### Objetivos
+
+#### KPIs de Negócio
+
+| Métrica | Meta | Justificativa |
+|---------|------|---------------|
+| **Redução de Estornos Manuais** | < 0.5% do total de transações/mês | Minimizar intervenção humana e erro operacional |
+| **Tempo Médio de Liberação de Bonificação** | < 2s após aprovação de contrato | Garantir experiência fluida para revendedores |
+| **Acurácia de Reconciliação Financeira** | 100% (zero divergências) | Compliance fiscal e auditoria SUSEP |
+| **Taxa de Saques Bloqueados por Saldo Devedor** | 100% dos casos aplicáveis | Prevenção de fraude e perda financeira |
+
+#### KPIs Técnicos
+
+| Métrica | Meta | Justificativa |
+|---------|------|---------------|
+| **Latência p99 (Abatimento de Parcela)** | < 200ms | UX responsiva em operações críticas |
+| **Throughput (Transações/segundo)** | > 500 TPS | Suportar picos de fim de mês (dia 5 e 20) |
+| **Disponibilidade (SLA)** | 99.95% | Crítico para operações financeiras |
+| **Taxa de Erros (5xx)** | < 0.1% | Confiabilidade do sistema |
+| **Idempotência (Duplicidade)** | 0 ocorrências | Garantia via constraints compostas |
+
+### Out of Scope (Não Será Implementado Nesta Versão)
+
+1. **Integração com PIX como método de pagamento principal** (apenas boleto bancário via gateway `[TBD]`)
+2. **Sistema de split automático de pagamentos** entre administradora e seguradora parceira (processo manual via conciliação)
+3. **Marketplace de serviços adicionais** (saúde, odontologia) no checkout financeiro
+4. **Cashback ou programa de fidelidade** para clientes finais (apenas bonificação para revendedores)
+5. **Emissão automática de DARF/GPS para saques PJ** (apenas PF via RPA)
+6. **Integração com ERPs externos** (SAP, Totvs) via API bidirecional
+7. **Sistema de empréstimo consignado** sobre saldo de bonificação
+
+### Premissas e Restrições
+
+#### Stack Tecnológica (Imutável)
+
+| Camada | Tecnologia | Justificativa |
+|--------|------------|---------------|
+| **Backend** | Node.js 20 LTS + TypeScript 5.3 | Performance I/O, tipagem forte |
+| **Framework** | NestJS 10.x | Arquitetura modular, DI, decorators |
+| **ORM** | Prisma 5.x | Type-safe queries, migrations automáticas |
+| **Banco de Dados** | PostgreSQL 16 | ACID, JSONB, constraints avançadas |
+| **Cache** | Redis 7.x `[TBD - Cluster ou Single?]` | Latência sub-millisecond |
+| **Mensageria** | `[TBD - RabbitMQ/SQS/Kafka?]` | `[TBD]` |
+| **Job Queue** | BullMQ 5.x | Retry policies, dead letter queues |
+| **API Gateway** | Kong / AWS API Gateway `[TBD]` | Rate limiting, auth |
+| **Observabilidade** | `[TBD - Datadog/New Relic/Grafana?]` | `[TBD]` |
+
+#### Compliance e Regulatório
+
+- **SUSEP Circular 666/2022**: Sistema atua exclusivamente como Estipulante; risco e indenização são responsabilidade da Seguradora Parceira
+- **LGPD Art. 5º**: Dados financeiros pessoais (CPF, renda) são considerados dados sensíveis e exigem criptografia em repouso
+- **Receita Federal**: Retenção de IRRF conforme tabela progressiva vigente (2026) e INSS sobre RPA (11% até teto)
+- **CDC Art. 49**: Direito de arrependimento em 7 dias com estorno integral e zero multa
+
+#### Restrições de Orçamento e Prazo
+
+- **Orçamento Infra**: Máximo R$ 5.000/mês em cloud (AWS/GCP) para este módulo
+- **Deadline Imutável**: Go-live em 2026-09-15 (início do Q4, pico de vendas Black Friday)
+- **Equipe**: 2 Backend Seniors, 1 Frontend Senior, 1 QA, 0.5 DevOps
+
+### Glossário
+
+| Termo | Definição | Exemplo |
+|-------|-----------|---------|
+| **Bonificação** | Remuneração paga a revendedores por indicação/fechamento de novos clientes. **NUNCA** usar "comissão" ou "comissionamento" para evitar caracterização de corretagem (SUSEP) | R$ 50,00 por novo contrato |
+| **Carteira Digital** | Conta virtual do revendedor com saldos: disponível, bloqueado, devedor | Saldo Disponível: R$ 500,00 |
+| **Estorno** | Reversão de bonificação já liberada, debitando do saldo disponível (pode gerar saldo devedor) | Contrato cancelado → estorna R$ 50,00 |
+| **Abatimento** | Uso de saldo disponível para quitar parcelas de contratos próprios ou de terceiros | Revendedor paga parcela de R$ 100,00 com saldo |
+| **Saldo Devedor** | Valor negativo na carteira após estorno que excedeu saldo disponível | Saldo: -R$ 100,00 (bloqueia novos saques) |
+| **Idempotência** | Garantia de que operação executada múltiplas vezes produz mesmo resultado | Constraint UNIQUE impede bonificação duplicada |
+| **Maker/Checker** | Fluxo de aprovação manual para operações acima de limite configurado | Saque > R$ 1.000,00 exige aprovação do Financeiro |
+| **RPA (Recibo de Pagamento Autônomo)** | Documento fiscal para pagamentos a Pessoa Física sem vínculo empregatício | Saque PF com retenção IRRF/INSS |
+| **Air-Gap Financeiro** | Separação contábil estrita entre receita tributável (clube) e repasse de risco (prêmio) | NF emitida apenas sobre serviço, não sobre prêmio |
+
+---
+
+## 3. Arquitetura e Design de Alto Nível
+
+### Diagrama C4 - Nível Container
+
+```mermaid
+C4Container
+    title Diagrama de Containers - Módulo Financeiro e Bonificação
+
+    Person(revendedor, "Revendedor", "Utiliza dashboard para gerenciar carteira")
+    Person(cliente, "Cliente Final", "Paga boletos mensais")
+    Person(admin, "SuperAdmin/Financeiro", "Aprova contratos, saques e faz reconciliação")
+
+    Container(spa, "SPA Frontend", "React 18 + Vite", "Interface de carteira, abatimento e saques")
+    Container(api_gateway, "API Gateway", "Kong/AWS API Gateway", "Rate limiting, auth, routing")
+    Container(financial_service, "Financial Service", "NestJS + TypeScript", "Gestão de carteiras, transações e reconciliação")
+    Container(bonus_service, "Bonus Service", "NestJS + TypeScript", "Cálculo e liberação de bonificações multinível")
+    Container(contract_service, "Contract Service", "NestJS + TypeScript", "Gestão de contratos e aprovações")
+    Container(payment_gateway, "Payment Gateway", "[TBD - Pagar.me/Iugu/Bradesco]", "Emissão de boletos e confirmação de pagamentos")
+    ContainerDb(postgres, "PostgreSQL 16", "Armazena carteiras, transações, contas")
+    ContainerDb(redis, "Redis 7", "Cache de saldos e locks distribuídos")
+    ContainerQueue(message_broker, "[TBD - RabbitMQ/SQS]", "Eventos assíncronos e job queues")
+    Container(notification_service, "Notification Service", "NestJS", "Email/SMS/Push")
+
+    Rel(revendedor, spa, "Interage via", "HTTPS")
+    Rel(cliente, payment_gateway, "Paga boleto via", "HTTPS/Webhook")
+    Rel(admin, spa, "Gerencia via", "HTTPS")
+    
+    Rel(spa, api_gateway, "Chama APIs", "HTTPS/REST")
+    Rel(api_gateway, financial_service, "Roteia", "gRPC/HTTP")
+    Rel(api_gateway, bonus_service, "Roteia", "gRPC/HTTP")
+    
+    Rel(financial_service, postgres, "Lê/Escreve", "TCP/5432")
+    Rel(financial_service, redis, "Cache/Locks", "TCP/6379")
+    Rel(financial_service, message_broker, "Publica eventos", "AMQP/HTTP")
+    
+    Rel(bonus_service, postgres, "Lê/Escreve", "TCP/5432")
+    Rel(bonus_service, contract_service, "Consulta árvore", "gRPC")
+    
+    Rel(contract_service, financial_service, "Notifica aprovação", "Evento")
+    Rel(payment_gateway, financial_service, "Webhook confirmação", "HTTPS")
+    
+    Rel(financial_service, notification_service, "Dispara notificações", "Evento")
+
+    UpdateLayoutConfig($c4ShapeInColumns=3, $c4BoundaryInColumns=2)
+```
+
+### Diagrama de Fluxo de Dados (DFD) - Abatimento de Parcela via Bonificação
+
+```mermaid
+sequenceDiagram
+    participant R as Revendedor
+    participant FE as Frontend
+    participant API as Financial Service
+    participant DB as PostgreSQL
+    participant Redis as Redis Cache
+    participant Queue as Message Broker
+    participant NS as Notification Service
+
+    R->>FE: Seleciona parcela para abater
+    FE->>API: POST /carteiras/{id}/abatimentos
+    API->>DB: Inicia transação (BEGIN)
+    API->>Redis: Adquire lock distribuído (SET NX)
+    API->>DB: Consulta saldo_disponivel (FOR UPDATE)
+    alt Saldo < Valor Abatimento
+        API-->>FE: 400 Bad Request (Saldo insuficiente)
+    else Saldo OK
+        API->>DB: Insere transacoes_pagamento
+        API->>DB: Debita saldo_disponivel
+        API->>DB: Atualiza contas_a_pagar (valor_restante)
+        alt Valor Restante = 0
+            API->>DB: Status = PAGO
+        else Valor Restante > 0
+            API->>DB: Status = PARCIALMENTE_PAGO
+            API->>Queue: Publica evento GerarBoletoResidual
+        end
+        API->>DB: COMMIT
+        API->>Redis: Libera lock (DEL)
+        API-->>FE: 200 OK + novo saldo
+        API->>Queue: Publica evento AbatimentoRealizado
+        Queue->>NS: Consome evento
+        NS->>R: Envia email/SMS de confirmação
+    end
+```
+
+### Architecture Decision Records (ADRs)
+
+| # | Decisão | Alternativas Consideradas | Justificativa | Consequências |
+|---|---------|---------------------------|---------------|---------------|
+| ADR-001 | **Usar PostgreSQL com constraints compostas para idempotência** | 1. Application-level locking (Redis)<br>2. Tabela de auditoria separada<br>3. Message queue com deduplication | PostgreSQL já garante ACID; constraints são mais rápidas que locks distribuídos; sem dependência externa | ✅ Zero duplicidade<br>⚠️ Exige migrations cuidadosas<br>✅ Auditoria nativa |
+| ADR-002 | **Separar Financial Service e Bonus Service em microsserviços** | 1. Monolito único<br>2. Módulos dentro do mesmo serviço | Separação de responsabilidades; bonus tem lógica complexa de árvore; financial precisa de alta disponibilidade | ✅ Escalabilidade independente<br>⚠️ Complexidade de rede<br>✅ Times podem trabalhar em paralelo |
+| ADR-003 | **Usar BullMQ para jobs assíncronos (geração de boletos, notificações)** | 1. RabbitMQ puro<br>2. AWS SQS + Lambda<br>3. Cron jobs nativos | BullMQ oferece retry policies, dead letter queues, rate limiting out-of-the-box; integração nativa com Node.js | ✅ Retry automático com backoff<br>⚠️ Dependência de Redis<br>✅ Dashboard de monitoramento |
+| ADR-004 | **Implementar saldo devedor como campo explícito (não calculado)** | 1. Calcular em tempo real (SUM transações)<br>2. Bloquear operações que gerariam negativo | Performance (evita queries pesadas); clareza em auditoria; permite regras de priorização de abatimento futuro | ✅ Queries rápidas<br>⚠️ Exige trigger/job de atualização<br>✅ Histórico imutável |
+| ADR-005 | **Não usar eventos assíncronos para liberação de bonificação (síncrono na aprovação)** | 1. Publicar evento e processar via worker<br>2. Webhook para serviço de bonus | Garante atomicidade: bonificação só é liberada se contrato for realmente aprovado; evita race conditions | ✅ Consistência imediata<br>⚠️ Acoplamento temporal<br>✅ Simplicidade de debugging |
+| ADR-006 | **Cache de saldo de carteira no Redis com invalidation via eventos** | 1. Sempre consultar DB<br>2. Cache no frontend (localStorage) | Latência sub-millisecond para dashboard; evita sobrecarga do DB em picos | ✅ UX instantânea<br>⚠️ Complexidade de invalidation<br>⚠️ Risco de stale data se evento falhar |
+
+### Modelo de Domínio e Relacionamentos
+
+```mermaid
+erDiagram
+    CARTEIRAS_DIGITAIS {
+        uuid id PK
+        uuid titular_id FK
+        decimal saldo_disponivel
+        decimal saldo_bloqueado
+        decimal saldo_devedor
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TRANSACOES_BONIFICACAO {
+        uuid id PK
+        uuid carteira_id FK
+        uuid origem_contrato_id FK
+        decimal valor
+        enum status "PENDENTE_APROVACAO|LIBERADO|ESTORNADO"
+        int nivel_origem
+        timestamp data_geracao
+        timestamp data_liberacao
+        timestamp data_estorno
+    }
+
+    TRANSACOES_PAGAMENTO {
+        uuid id PK
+        uuid carteira_id FK
+        uuid conta_a_pagar_id FK
+        uuid contrato_id FK
+        decimal valor_abatido
+        decimal saldo_restante_parcela
+        enum status "CONCLUIDO|ESTORNADO"
+        timestamp data_transacao
+        text observacoes
+    }
+
+    CONTAS_A_PAGAR {
+        uuid id PK
+        text descricao
+        decimal valor
+        decimal valor_restante
+        date data_vencimento
+        enum status "PENDENTE|PARCIALMENTE_PAGO|PAGO|CANCELADO"
+        uuid fornecedor_id FK
+        uuid contrato_id FK
+    }
+
+    CONTRATOS {
+        uuid id PK
+        uuid titular_id FK
+        enum status "AGUARDANDO_APROVACAO|APROVADO|REJEITADO|CANCELADO|SUSPENSO|CANCELADO_CDC"
+    }
+
+    PATROCINIOS {
+        uuid id PK
+        uuid revendedor_id FK
+        uuid patrocinador_id FK
+        int nivel_profundidade
+        timestamp data_fim_vinculo
+    }
+
+    CARTEIRAS_DIGITAIS ||--o{ TRANSACOES_BONIFICACAO : "recebe"
+    CARTEIRAS_DIGITAIS ||--o{ TRANSACOES_PAGAMENTO : "realiza"
+    TRANSACOES_BONIFICACAO }o--|| CONTRATOS : "origem"
+    TRANSACOES_PAGAMENTO }o--|| CONTAS_A_PAGAR : "abate"
+    TRANSACOES_PAGAMENTO }o--|| CONTRATOS : "referencia"
+    CONTRATOS ||--o{ CONTAS_A_PAGAR : "gera"
+    PATROCINIOS }o--|| CARTEIRAS_DIGITAIS : "vincula revendedor"
+```
+
+---
+
+## 4. Especificação Funcional Detalhada
+
+### 4.1 Regras de Negócio (Formato SE-ENTÃO-SENÃO)
+
+#### RN-001: Base de Cálculo da Bonificação
+
+**SE** contrato for aprovado  
+**ENTÃO** calcular bonificação aplicando `percentual_indicacao` ou `percentual_fechamento` (conforme nível na árvore) sobre:  
+- Taxa de Adesão (se pagamento único)  
+- Valor da Parcela Mensal/Anual  
+**SENÃO** (se tentar incluir prêmio de seguro ou capital segurado)  
+**EXCEÇÃO** Bloquear operação com erro `BONUS_BASE_CALCULO_INVALIDO` e logar auditoria
+
+**Justificativa:** Compliance SUSEP - bonificação remunera atividade comercial, não intermediação de seguro
+
+---
+
+#### RN-002: Idempotência de Bonificação
+
+**SE** sistema tentar criar `transacoes_bonificacao` com mesma combinação `(origem_contrato_id, carteira_id, nivel_origem)`  
+**ENTÃO** PostgreSQL constraint UNIQUE impedirá inserção (violates unique constraint)  
+**SENÃO** (se aplicação tentar retry sem verificar constraint)  
+**EXCEÇÃO** Retornar `409 Conflict` com mensagem "Bonificação já processada para este contrato e nível"
+
+**Implementação:**
+```sql
+CREATE UNIQUE INDEX idx_bonificacao_unica
+ON transacoes_bonificacao (origem_contrato_id, carteira_id, nivel_origem);
+```
+
+---
+
+#### RN-003: Abatimento de Parcela com Saldo Insuficiente
+
+**SE** revendedor tentar abater parcela  
+**E** `saldo_disponivel` <= 0  
+**ENTÃO** bloquear operação e retornar erro `SALDO_INSUFICIENTE`  
+**SENÃO** (se `saldo_disponivel` > 0 mas < `valor_parcela`)  
+**EXCEÇÃO** Permitir abatimento parcial, gerar boleto residual com `valor_restante`
+
+**Cálculo:**
+```typescript
+const valorAbatido = Math.min(saldoDisponivel, valorParcela);
+const saldoRestante = valorParcela - valorAbatido;
+const statusConta = saldoRestante === 0 ? 'PAGO' : 'PARCIALMENTE_PAGO';
+```
+
+---
+
+#### RN-004: Estorno Pós-Aprovação (Cancelamento de Contrato)
+
+**SE** contrato com status `APROVADO` for cancelado  
+**ENTÃO** para cada `transacoes_bonificacao` com status `LIBERADO`:  
+1. Alterar status para `ESTORNADO`  
+2. Debitar `valor` de `saldo_disponivel` da carteira  
+3. **SE** `saldo_disponivel` < 0 após débito:  
+   - Transferir valor absoluto para `saldo_devedor`  
+   - Zerar `saldo_disponivel`  
+**SENÃO** (se bonificação já foi usada em `transacoes_pagamento`)  
+**EXCEÇÃO** Manter débito negativo (saldo devedor), **NÃO** reverter pagamento da parcela (boleto já foi emitido/pago)
+
+---
+
+#### RN-005: Saque de Bonificação com Retenção Tributária (PF)
+
+**SE** revendedor for Pessoa Física  
+**E** `configuracoes_regras_negocio.SAQUE_PF_ATIVO = true`  
+**E** `valor_saque` > 0  
+**ENTÃO**:  
+1. Calcular IRRF conforme tabela progressiva 2026  
+2. Calcular INSS (11% até teto R$ 908,85 em 2026)  
+3. Persistir `valor_irrf_retido` e `valor_inss_retido`  
+4. Creditar apenas `valor_liquido = valor_bruto - irrf - inss`  
+5. Gerar DARF/GPS no módulo Financeiro  
+**SENÃO** (se `SAQUE_PF_ATIVO = false`)  
+**EXCEÇÃO** Bloquear saque com erro `SAQUE_PF_DESATIVADO`
+
+---
+
+#### RN-006: Maker/Checker para Saques Acima do Limite
+
+**SE** `valor_saque` > `configuracoes_regras_negocio.LIMITE_SAQUE_DIARIO`  
+**ENTÃO**:  
+1. Criar `transacoes_pagamento` com status `PENDENTE_APROVACAO`  
+2. Notificar Financeiro via dashboard e email  
+3. Bloquear crédito até aprovação manual  
+**SENÃO** (se `valor_saque` <= limite)  
+**EXCEÇÃO** Processar imediatamente (status `CONCLUIDO`)
+
+---
+
+#### RN-007: Bloqueio de Saque com Saldo Devedor
+
+**SE** revendedor possuir `saldo_devedor` > 0  
+**ENTÃO**:  
+1. Bloquear novos saques  
+2. Priorizar abatimento automático de futuras bonificações para cobrir saldo devedor antes de liberar `saldo_disponivel`  
+**SENÃO** (se revendedor tentar saque mesmo com saldo devedor)  
+**EXCEÇÃO** Retornar erro `SALDO_DEVEDOR_EXISTENTE` com mensagem: "Regularize seu saldo devedor de R$ X antes de realizar novos saques"
+
+---
+
+#### RN-008: Recorrência Automática (Geração de Parcelas)
+
+**SE** job diário executar às 02:00 AM  
+**E** contrato.status = `APROVADO`  
+**E** contrato.periodicidade = `MENSAL`  
+**E** última parcela quitada/vencida há > 5 dias  
+**ENTÃO**:  
+1. Recalcular valor baseado em agregados ativos no momento  
+2. Criar nova `contas_a_pagar` com `data_vencimento` = próximo ciclo  
+3. Gerar boleto e atualizar `contratos_legado_flat` (apenas campos financeiros)  
+**SENÃO** (se contrato estiver `SUSPENSO`)  
+**EXCEÇÃO** Não gerar nova parcela até regularização
+
+---
+
+#### RN-009: Anti-Conflito de Rede (Cross-Tree)
+
+**SE** tentativa de cadastro de novo revendedor  
+**E** CPF já existe em outra árvore de patrocínio ativa (`data_fim_vinculo IS NULL`)  
+**ENTÃO** bloquear com erro `CONFLITO_DE_REDE`  
+**SENÃO** (se CPF existe mas com `data_fim_vinculo` preenchido)  
+**EXCEÇÃO** Permitir cadastro (revendedor inativo pode ser reativado em nova árvore)
+
+---
+
+#### RN-010: Air-Gap de Auto-Patrocínio
+
+**SE** tentativa de criar vínculo de patrocínio  
+**E** `revendedor_id` = `patrocinador_id`  
+**OU** `revendedor_id` é dependente direto (cônjuge/filho) de `patrocinador_id`  
+**ENTÃO** bloquear com erro `AUTO_PATROCINIO_PROIBIDO`  
+**SENÃO** (se for parentesco indireto: irmão, tio, primo)  
+**EXCEÇÃO** Permitir (mas logar auditoria para revisão manual)
+
+---
+
+### 4.2 Critérios de Aceite (Gherkin)
+
+#### Feature: Abatimento de Parcela via Bonificação
+
+```gherkin
+Scenario: Revendedor abate parcela integral com saldo suficiente
+  Given revendedor "João" possui saldo_disponivel de R$ 500,00
+  And contrato "C123" possui parcela pendente de R$ 100,00
+  When João solicita abatimento integral da parcela
+  Then sistema debita R$ 100,00 de saldo_disponivel
+  And saldo_disponivel passa a ser R$ 400,00
+  And parcela status muda para "PAGO"
+  And nenhum boleto residual é gerado
+  And João recebe notificação de confirmação
+
+Scenario: Revendedor abate parcela parcialmente
+  Given revendedor "Maria" possui saldo_disponivel de R$ 50,00
+  And contrato "C456" possui parcela pendente de R$ 100,00
+  When Maria solicita abatimento de R$ 50,00
+  Then sistema debita R$ 50,00 de saldo_disponivel
+  And saldo_disponivel passa a ser R$ 0,00
+  And parcela status muda para "PARCIALMENTE_PAGO"
+  And valor_restante da parcela é R$ 50,00
+  And boleto residual de R$ 50,00 é gerado automaticamente
+  And Maria recebe notificação com link do boleto
+
+Scenario: Revendedor tenta abater com saldo insuficiente
+  Given revendedor "Pedro" possui saldo_disponivel de R$ 0,00
+  And contrato "C789" possui parcela pendente de R$ 100,00
+  When Pedro tenta solicitar abatimento
+  Then sistema retorna erro 400 "SALDO_INSUFICIENTE"
+  And saldo_disponivel permanece R$ 0,00
+  And parcela status permanece "PENDENTE"
+  And nenhuma transação é criada
+
+Scenario: Revendedor com saldo devedor tenta abater
+  Given revendedor "Ana" possui saldo_devedor de R$ 100,00
+  And saldo_disponivel de R$ 50,00
+  And contrato "C101" possui parcela pendente de R$ 50,00
+  When Ana tenta solicitar abatimento
+  Then sistema retorna erro 400 "SALDO_DEVEDOR_EXISTENTE"
+  And mensagem: "Regularize seu saldo devedor de R$ 100,00 antes de realizar novos saques"
+  And nenhuma transação é criada
+```
+
+#### Feature: Estorno de Bonificação Pós-Cancelamento
+
+```gherkin
+Scenario: Cancelamento de contrato estorna bonificações liberadas
+  Given contrato "C200" foi aprovado e gerou bonificação de R$ 50,00 para revendedor "Carlos"
+  And Carlos possui saldo_disponivel de R$ 200,00
+  When administrador cancela contrato "C200"
+  Then sistema altera status da bonificação para "ESTORNADO"
+  And sistema debita R$ 50,00 de saldo_disponivel de Carlos
+  And saldo_disponivel passa a ser R$ 150,00
+  And Carlos recebe notificação de estorno com motivo
+
+Scenario: Estorno gera saldo devedor
+  Given contrato "C201" foi aprovado e gerou bonificação de R$ 100,00 para revendedor "Lucas"
+  And Lucas possui saldo_disponivel de R$ 30,00
+  When administrador cancela contrato "C201"
+  Then sistema altera status da bonificação para "ESTORNADO"
+  And sistema debita R$ 100,00 de saldo_disponivel de Lucas
+  And saldo_disponivel passa a ser R$ 0,00
+  And saldo_devedor passa a ser R$ 70,00
+  And Lucas recebe notificação de saldo devedor
+
+Scenario: Estorno de bonificação já utilizada em pagamento
+  Given contrato "C202" foi aprovado e gerou bonificação de R$ 100,00 para revendedor "Marta"
+  And Marta usou R$ 100,00 para pagar parcela (transacao_pagamento criada)
+  And saldo_disponivel é R$ 0,00
+  When administrador cancela contrato "C202"
+  Then sistema altera status da bonificação para "ESTORNADO"
+  And sistema debita R$ 100,00 de saldo_disponivel (ficando negativo)
+  And saldo_devedor passa a ser R$ 100,00
+  And pagamento da parcela NÃO é revertido (boleto já foi emitido)
+  And Marta recebe notificação de saldo devedor
+```
+
+#### Feature: Saque de Bonificação com Retenção Tributária
+
+```gherkin
+Scenario: Saque PF com retenção IRRF e INSS
+  Given configuracoes_regras_negocio.SAQUE_PF_ATIVO = true
+  And revendedor "Roberto" (PF) possui saldo_disponivel de R$ 5.000,00
+  When Roberto solicita saque de R$ 5.000,00
+  Then sistema calcula IRRF conforme tabela progressiva (ex: R$ 646,33)
+  And sistema calcula INSS (11% de R$ 908,85 = R$ 99,97)
+  And sistema persiste valor_irrf_retido = R$ 646,33
+  And sistema persiste valor_inss_retido = R$ 99,97
+  And sistema credita valor_liquido = R$ 4.253,70 na conta bancária
+  And sistema gera DARF para IRRF
+  And sistema gera GPS para INSS
+  And saldo_disponivel passa a ser R$ 0,00
+  And Roberto recebe email com comprovante e guias
+
+Scenario: Saque PF com SAQUE_PF_ATIVO = false
+  Given configuracoes_regras_negocio.SAQUE_PF_ATIVO = false
+  And revendedor "Fernanda" (PF) possui saldo_disponivel de R$ 1.000,00
+  When Fernanda solicita saque
+  Then sistema retorna erro 400 "SAQUE_PF_DESATIVADO"
+  And mensagem: "Saques para Pessoa Física estão temporariamente desabilitados"
+  And saldo_disponivel permanece R$ 1.000,00
+
+Scenario: Saque acima do limite exige aprovação manual
+  Given configuracoes_regras_negocio.LIMITE_SAQUE_DIARIO = R$ 1.000,00
+  And revendedor "Gabriel" possui saldo_disponivel de R$ 5.000,00
+  When Gabriel solicita saque de R$ 2.000,00
+  Then sistema cria transacao_pagamento com status "PENDENTE_APROVACAO"
+  And sistema notifica time Financeiro via dashboard
+  And sistema envia email para Gabriel: "Seu saque de R$ 2.000,00 está pendente de aprovação"
+  And saldo_disponivel permanece R$ 5.000,00 até aprovação
+  And saldo_bloqueado aumenta R$ 2.000,00
+```
+
+#### Feature: Liberação de Bonificação na Aprovação de Contrato
+
+```gherkin
+Scenario: Aprovação de contrato libera bonificações pendentes
+  Given contrato "C300" está com status "AGUARDANDO_APROVACAO"
+  And árvore de patrocínio: Revendedor A (nível 1) -> Revendedor B (nível 2) -> Revendedor C (nível 3)
+  And transacoes_bonificacao criadas:
+    | carteira_id | valor  | status                | nivel_origem |
+    | A           | 50,00  | PENDENTE_APROVACAO   | 1            |
+    | B           | 25,00  | PENDENTE_APROVACAO   | 2            |
+    | C           | 10,00  | PENDENTE_APROVACAO   | 3            |
+  When SuperAdmin aprova contrato "C300" com capital_segurado R$ 10.000,00
+  Then sistema altera status do contrato para "APROVADO"
+  And sistema altera status de todas as 3 bonificações para "LIBERADO"
+  And sistema preenche data_liberacao com timestamp atual
+  And sistema move R$ 50,00 de saldo_bloqueado para saldo_disponivel de A
+  And sistema move R$ 25,00 de saldo_bloqueado para saldo_disponivel de B
+  And sistema move R$ 10,00 de saldo_bloqueado para saldo_disponivel de C
+  And sistema gera PDF de apólice
+  And revendedores A, B, C recebem notificação de bonificação liberada
+
+Scenario: Rejeição de contrato estorna bonificações pendentes
+  Given contrato "C301" está com status "AGUARDANDO_APROVACAO"
+  And transacoes_bonificacao criadas para revendedores D, E, F
+  When SuperAdmin rejeita contrato "C301" com motivo "Documentação incompleta"
+  Then sistema altera status do contrato para "REJEITADO"
+  And sistema altera status de todas as bonificações para "ESTORNADO"
+  And sistema preenche data_estorno com timestamp atual
+  And sistema zera saldo_bloqueado de D, E, F (valores removidos, não transferidos)
+  And revendedores D, E, F recebem notificação de rejeição com motivo
+```
+
+#### Feature: Recorrência Automática (Geração de Parcelas)
+
+```gherkin
+Scenario: Job diário gera parcela para contrato ativo
+  Given contrato "C400" está com status "APROVADO"
+  And periodicidade = "MENSAL"
+  And última parcela (vencimento 2026-05-10) foi quitada em 2026-05-08
+  And data atual é 2026-06-20 (> 5 dias após vencimento)
+  When job diário executa às 02:00 AM
+  Then sistema recalcula valor baseado em agregados ativos (ex: R$ 150,00)
+  And sistema cria nova contas_a_pagar com:
+    | campo          | valor          |
+    | descricao      | Parcela Jun/26 |
+    | valor          | 150,00         |
+    | data_vencimento| 2026-07-10     |
+    | status         | PENDENTE       |
+  And sistema gera boleto bancário
+  And sistema atualiza contratos_legado_flat (apenas campos financeiros)
+  And sistema envia email com boleto para titular
+
+Scenario: Job não gera parcela para contrato suspenso
+  Given contrato "C401" está com status "SUSPENSO" (inadimplente)
+  And data atual é 2026-06-20
+  When job diário executa
+  Then sistema NÃO cria nova contas_a_pagar
+  And sistema loga: "Contrato C401 ignorado (status SUSPENSO)"
+```
+
+---
+
+### 4.3 Matriz de Estados
+
+#### Diagrama de Máquina de Estados - `transacoes_bonificacao`
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDENTE_APROVACAO: Contrato submetido
+    PENDENTE_APROVACAO --> LIBERADO: Contrato aprovado
+    PENDENTE_APROVACAO --> ESTORNADO: Contrato rejeitado
+    
+    LIBERADO --> ESTORNADO: Contrato cancelado (pós-aprovação)
+    
+    ESTORNADO --> [*]
+    LIBERADO --> [*]
+    
+    note right of PENDENTE_APROVACAO
+        Saldo movido para
+        saldo_bloqueado
+    end note
+    
+    note right of LIBERADO
+        Saldo movido para
+        saldo_disponivel
+    end note
+    
+    note right of ESTORNADO
+        Se já estava em
+        saldo_disponivel,
+        debita e pode gerar
+        saldo_devedor
+    end note
+```
+
+#### Diagrama de Máquina de Estados - `transacoes_pagamento` (Abatimento/Saque)
+
+```mermaid
+stateDiagram-v2
+    [*] --> CONCLUIDO: Saque <= limite (processamento imediato)
+    [*] --> PENDENTE_APROVACAO: Saque > limite (Maker/Checker)
+    
+    PENDENTE_APROVACAO --> CONCLUIDO: Financeiro aprova
+    PENDENTE_APROVACAO --> ESTORNADO: Financeiro rejeita
+    
+    CONCLUIDO --> ESTORNADO: Administrador estorna manualmente
+    
+    ESTORNADO --> [*]
+    CONCLUIDO --> [*]
+    
+    note right of PENDENTE_APROVACAO
+        Saldo movido para
+        saldo_bloqueado até
+        aprovação
+    end note
+```
+
+#### Diagrama de Máquina de Estados - `contas_a_pagar`
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDENTE: Job cria parcela
+    PENDENTE --> PARCIALMENTE_PAGO: Abatimento parcial via bonificação
+    PENDENTE --> PAGO: Abatimento integral ou pagamento via boleto
+    PENDENTE --> CANCELADO: Contrato cancelado
+    
+    PARCIALMENTE_PAGO --> PAGO: Pagamento do boleto residual
+    PARCIALMENTE_PAGO --> CANCELADO: Contrato cancelado
+    
+    PAGO --> [*]
+    CANCELADO --> [*]
+```
+
+---
+
+### 4.4 Edge Cases e Exceções (30% da Seção)
+
+#### 4.4.1 Cenários de Concorrência e Race Conditions
+
+##### EC-001: Múltiplos Abatimentos Simultâneos na Mesma Carteira
+
+**Cenário:** Revendedor abre duas abas do navegador e clica "Abater Parcela" simultaneamente em duas parcelas diferentes, ambas com valor R$ 300,00. Saldo disponível é R$ 500,00.
+
+**Comportamento Esperado:**
+1. Primeira requisição adquire lock distribuído no Redis (`SET carteira:{id}:lock NX PX 5000`)
+2. Primeira requisição inicia transação PostgreSQL (`BEGIN`)
+3. Primeira requisição consulta saldo com `SELECT saldo_disponivel FROM carteiras_digitais WHERE id = ? FOR UPDATE` (lock de linha)
+4. Segunda requisição tenta adquirir lock no Redis e falha (timeout 5s)
+5. Segunda requisição retorna `409 Conflict` com mensagem: "Operação em andamento. Tente novamente em alguns segundos."
+6. Primeira requisição processa abatimento, commit, libera lock
+
+**Implementação:**
+```typescript
+async function abaterParcela(carteiraId: string, contaId: string, valor: number) {
+  const lockKey = `carteira:${carteiraId}:lock`;
+  const lockAcquired = await redis.set(lockKey, '1', 'EX', 5, 'NX');
+  
+  if (!lockAcquired) {
+    throw new ConflictException('Operação em andamento. Tente novamente.');
+  }
+  
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const carteira = await tx.carteirasDigitais.findUnique({
+        where: { id: carteiraId },
+        lock: 'UPDATE' // SELECT ... FOR UPDATE
+      });
+      
+      if (carteira.saldoDisponivel < valor) {
+        throw new BadRequestException('Saldo insuficiente');
+      }
+      
+      // Processar abatimento...
+      
+      return { success: true };
+    });
+  } finally {
+    await redis.del(lockKey);
+  }
+}
+```
+
+##### EC-002: Aprovação de Contrato e Cancelamento Simultâneos
+
+**Cenário:** SuperAdmin clica "Aprovar" no contrato C500. No mesmo milissegundo, job de cancelamento por inadimplência tenta cancelar o mesmo contrato.
+
+**Comportamento Esperado:**
+1. Aprovação adquire lock de linha em `contratos` (`SELECT ... FOR UPDATE`)
+2. Aprovação inicia transação e altera status para `APROVADO`
+3. Job de cancelamento tenta adquirir lock e bloqueia (wait)
+4. Aprovação commit e libera lock
+5. Job de cancelamento adquire lock, verifica status = `APROVADO`, e **aborta** (não cancela contrato recém-aprovado)
+6. Job loga: "Contrato C500 ignorado (status alterado durante processamento)"
+
+**Constraint de Banco:**
+```sql
+-- Trigger para impedir cancelamento de contrato aprovado há menos de 1 minuto
+CREATE OR REPLACE FUNCTION impedir_cancelamento_imediato()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'CANCELADO' 
+     AND OLD.status = 'APROVADO'
+     AND NOW() - OLD.updated_at < INTERVAL '1 minute'
+  THEN
+    RAISE EXCEPTION 'Contrato recém-aprovado não pode ser cancelado imediatamente';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_impedir_cancelamento
+BEFORE UPDATE ON contratos
+FOR EACH ROW
+EXECUTE FUNCTION impedir_cancelamento_imediato();
+```
+
+##### EC-003: Webhook de Pagamento Duplicado (Gateway Retry)
+
+**Cenário:** Gateway de pagamento envia webhook de confirmação de pagamento do boleto B100. Rede falha, gateway faz retry 3 vezes com mesmo payload.
+
+**Comportamento Esperado:**
+1. Primeiro webhook recebido: sistema cria `contas_a_pagar` com status `PAGO`, gera bonificação, etc.
+2. Segundo webhook recebido: sistema verifica idempotency key (campo `gateway_transaction_id` na tabela `webhooks_recebidos`)
+3. Sistema detecta duplicação e retorna `200 OK` (sem processar novamente)
+4. Sistema loga: "Webhook duplicado ignorado (transaction_id: X)"
+
+**Implementação:**
+```typescript
+// Middleware de idempotência
+async function idempotencyMiddleware(req, res, next) {
+  const idempotencyKey = req.headers['x-idempotency-key'] || req.body.transaction_id;
+  
+  if (!idempotencyKey) {
+    return next();
+  }
+  
+  const existing = await prisma.webhooksRecebidos.findUnique({
+    where: { transactionId: idempotencyKey }
+  });
+  
+  if (existing) {
+    return res.status(200).json({ message: 'Already processed', duplicate: true });
+  }
+  
+  await prisma.webhooksRecebidos.create({
+    data: {
+      transactionId: idempotencyKey,
+      payload: req.body,
+      processedAt: new Date()
+    }
+  });
+  
+  next();
+}
+```
+
+---
+
+#### 4.4.2 Cenários de Dados Nulos e Inconsistentes
+
+##### EC-004: Bonificação para Revendedor sem Carteira Criada
+
+**Cenário:** Revendedor antigo (cadastrado antes da implementação de carteiras digitais) indica novo cliente. Sistema tenta criar `transacoes_bonificacao` mas `carteiras_digitais` não existe para este `titular_id`.
+
+**Comportamento Esperado:**
+1. Sistema detecta ausência de carteira (`carteiras_digitais.findUnique` retorna `null`)
+2. Sistema cria carteira automaticamente com saldos zerados
+3. Sistema prossegue com criação de bonificação
+4. Sistema loga: "Carteira criada automaticamente para revendedor {id}"
+
+**Implementação:**
+```typescript
+async function garantirCarteira(titularId: string): Promise<CarteiraDigital> {
+  let carteira = await prisma.carteirasDigitais.findUnique({
+    where: { titularId }
+  });
+  
+  if (!carteira) {
+    carteira = await prisma.carteirasDigitais.create({
+      data: {
+        titularId,
+        saldoDisponivel: 0,
+        saldoBloqueado: 0,
+        saldoDevedor: 0
+      }
+    });
+    logger.info(`Carteira criada automaticamente para revendedor ${titularId}`);
+  }
+  
+  return carteira;
+}
+```
+
+##### EC-005: Contrato sem Vínculos de Patrocínio (Indicação Direta)
+
+**Cenário:** Cliente final contrata diretamente via landing page, sem indicação de revendedor. Sistema tenta gerar bonificação mas não encontra `patrocinios` ativos.
+
+**Comportamento Esperado:**
+1. Sistema consulta `patrocinios` onde `revendedor_id = titular_id` do contrato
+2. Não encontra registros (cliente não é revendedor)
+3. Sistema **não** cria `transacoes_bonificacao`
+4. Sistema loga: "Contrato C600 sem árvore de patrocínio (indicação direta)"
+5. Sistema prossegue com aprovação normal
+
+---
+
+#### 4.4.3 Cenários de Timeout e Falhas de Dependências Externas
+
+##### EC-006: Timeout na Geração de Boleto (Gateway Indisponível)
+
+**Cenário:** Sistema tenta gerar boleto via API do gateway, mas gateway retorna timeout após 30s.
+
+**Comportamento Esperado:**
+1. Sistema tenta 3 vezes com backoff exponencial (1s, 2s, 4s)
+2. Se todas falharem:
+   - Sistema cria `contas_a_pagar` com status `PENDENTE` mas sem `boleto_url`
+   - Sistema publica evento `BoletoGeracaoFalhou` na fila
+   - Job de retry tenta novamente em 1h, 6h, 24h
+   - Sistema envia email para titular: "Estamos com instabilidade na geração do seu boleto. Tentaremos novamente em breve."
+   - Sistema notifica DevOps via PagerDuty
+3. Frontend exibe: "Boleto em processamento. Você receberá por email em até 24h."
+
+**Implementação:**
+```typescript
+const retryPolicy = {
+  maxAttempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 1000 // 1s, 2s, 4s
+  },
+  retryableErrors: ['TIMEOUT', 'NETWORK_ERROR', '503']
+};
+
+async function gerarBoleto(contaId: string): Promise<string> {
+  try {
+    return await retryWithBackoff(
+      () => paymentGateway.createBoleto(contaId),
+      retryPolicy
+    );
+  } catch (error) {
+    await prisma.contasAPagar.update({
+      where: { id: contaId },
+      data: { status: 'PENDENTE', boletoUrl: null }
+    });
+    
+    await messageBroker.publish('BoletoGeracaoFalhou', { contaId, error: error.message });
+    await notificationService.sendEmail(titularId, 'boleto_pendente');
+    
+    throw new ServiceUnavailableException('Falha ao gerar boleto');
+  }
+}
+```
+
+##### EC-007: Redis Indisponível (Cache de Saldos)
+
+**Cenário:** Redis cluster cai durante pico de acesso ao dashboard de revendedores.
+
+**Comportamento Esperado:**
+1. Sistema detecta falha de conexão com Redis (timeout 100ms)
+2. Sistema ativa modo "fallback para DB"
+3. Todas as consultas de saldo vão direto para PostgreSQL (mais lento, mas funcional)
+4. Sistema loga warning: "Redis indisponível, usando fallback para DB"
+5. Sistema envia alerta para DevOps (PagerDuty nível 2)
+6. Quando Redis voltar, sistema repopula cache gradualmente (cache warming)
+
+**Implementação:**
+```typescript
+class SaldoService {
+  async getSaldoDisponivel(carteiraId: string): Promise<number> {
+    try {
+      const cached = await redis.get(`carteira:${carteiraId}:saldo`);
+      if (cached) return parseFloat(cached);
+    } catch (error) {
+      logger.warn('Redis indisponível, usando fallback para DB');
+    }
+    
+    // Fallback para DB
+    const carteira = await prisma.carteirasDigitais.findUnique({
+      where: { id: carteiraId }
+    });
+    
+    return carteira.saldoDisponivel;
+  }
+}
+```
+
+---
+
+#### 4.4.4 Cenários de Dados Inválidos e Validações
+
+##### EC-008: Valor de Abatimento Negativo ou Zero
+
+**Cenário:** Frontend envia `valor_abatido = -100` ou `0` devido a bug de manipulação de input.
+
+**Comportamento Esperado:**
+1. Backend valida: `if (valor <= 0) throw new BadRequestException('Valor deve ser positivo')`
+2. Retorna `400 Bad Request` com mensagem clara
+3. Loga auditoria: "Tentativa de abatimento com valor inválido: {valor}"
+
+##### EC-009: Conta a Pagar já Cancelada
+
+**Cenário:** Revendedor tenta abater parcela que já foi cancelada (contrato cancelado).
+
+**Comportamento Esperado:**
+1. Sistema consulta `contas_a_pagar` e verifica `status = 'CANCELADO'`
+2. Retorna `409 Conflict`: "Esta parcela foi cancelada e não pode ser abatida"
+3. Não cria transação
+
+##### EC-010: Saque para Conta Bancária Inválida
+
+**Cenário:** Revendedor cadastra conta bancária com agência/dígito incorretos. Gateway rejeita transferência.
+
+**Comportamento Esperado:**
+1. Gateway retorna erro `INVALID_BANK_ACCOUNT`
+2. Sistema altera `transacoes_pagamento.status` para `ESTORNADO`
+3. Sistema credita valor de volta em `saldo_disponivel`
+4. Sistema envia email: "Seu saque de R$ X foi estornado. Motivo: conta bancária inválida. Atualize seus dados e tente novamente."
+5. Sistema loga auditoria
+
+---
+
+### 4.5 Validações de Entrada
+
+| Campo | Regra | Mensagem de Erro | HTTP Code |
+|-------|-------|------------------|-----------|
+| `carteira_id` | UUID válido, existe em `carteiras_digitais` | "Carteira não encontrada" | 404 |
+| `conta_a_pagar_id` | UUID válido, existe em `contas_a_pagar`, status != `CANCELADO` | "Parcela inválida ou cancelada" | 400 |
+| `valor_abatido` | Decimal > 0, <= `saldo_disponivel`, <= `valor_restante` da parcela | "Valor inválido ou saldo insuficiente" | 400 |
+| `valor_saque` | Decimal > 0, <= `saldo_disponivel` | "Valor de saque inválido" | 400 |
+| `origem_contrato_id` | UUID válido, existe em `contratos` | "Contrato de origem não encontrado" | 404 |
+| `nivel_origem` | Integer > 0, existe em `niveis_bonificacao` | "Nível de bonificação inválido" | 400 |
+| `observacoes` | String, max 500 chars, sanitizada (XSS) | "Observações muito longas ou contêm caracteres inválidos" | 400 |
+
+---
+
+## 5. Especificação Não-Funcional
+
+### 5.1 Performance
+
+| Métrica | Meta | Método de Medição | Ferramenta |
+|---------|------|-------------------|------------|
+| **Latência p50 (Abatimento)** | < 50ms | APM traces | `[TBD - Datadog/New Relic]` |
+| **Latência p99 (Abatimento)** | < 200ms | APM traces | `[TBD]` |
+| **Latência p50 (Consulta Saldo)** | < 10ms (cache hit) | APM traces | `[TBD]` |
+| **Latência p99 (Consulta Saldo)** | < 50ms (cache miss) | APM traces | `[TBD]` |
+| **Throughput (Transações/segundo)** | > 500 TPS | Load testing | k6 / Gatling |
+| **Tempo de Geração de Boleto** | < 2s (p95) | APM traces | `[TBD]` |
+| **Tempo de Cálculo de Bonificação** | < 100ms para árvore de 10 níveis | Benchmark | Custom script |
+
+### 5.2 Escalabilidade
+
+| Componente | Estratégia de Scaling | Limite de Recursos | Trigger de Auto-Scaling |
+|------------|----------------------|-------------------|------------------------|
+| **Financial Service** | Horizontal (Kubernetes HPA) | Min: 2 pods, Max: 10 pods | CPU > 70% por 5min |
+| **PostgreSQL** | Vertical + Read Replicas | 16GB RAM, 4 vCPU, 1 Read Replica | Connections > 80% max_connections |
+| **Redis** | Cluster mode (6 nodes) | 3 masters, 3 replicas | Memory > 80% ou Evictions > 0 |
+| **Message Broker** | `[TBD - Cluster RabbitMQ/Shards SQS]` | `[TBD]` | Queue depth > 10.000 mensagens |
+| **BullMQ Workers** | Horizontal ( múltiplos processos) | Max: 20 workers por job type | Queue latency > 30s |
+
+### 5.3 Resiliência
+
+#### SLA/SLO
+
+| Serviço | SLA | SLO | Error Budget (mensal) |
+|---------|-----|-----|----------------------|
+| **Financial Service** | 99.95% | 99.9% | 43 minutos de downtime |
+| **PostgreSQL** | 99.99% | 99.95% | 21 minutos de downtime |
+| **Redis** | 99.9% | 99.5% | 3.6 horas de downtime |
+
+#### Retry Policies
+
+| Operação | Max Retries | Backoff | Dead Letter Queue |
+|----------|-------------|---------|-------------------|
+| **Geração de Boleto** | 3 | Exponencial (1s, 2s, 4s) | `boleto_geracao_falhas` |
+| **Envio de Email** | 5 | Exponencial (1s, 2s, 4s, 8s, 16s) | `email_falhas` |
+| **Webhook para Seguradora** | 10 | Exponencial com jitter (max 1h) | `webhook_seguradora_falhas` |
+| **Cálculo de Bonificação** | 2 | Linear (5s, 10s) | `bonus_calculo_falhas` |
+
+#### Circuit Breaker
+
+```typescript
+const circuitBreakerConfig = {
+  paymentGateway: {
+    failureThreshold: 5, // 5 falhas consecutivas
+    resetTimeout: 60000, // 60s em estado OPEN
+    timeout: 30000 // 30s timeout por requisição
+  },
+  emailService: {
+    failureThreshold: 10,
+    resetTimeout: 30000,
+    timeout: 10000
+  }
+};
+```
+
+#### Fallbacks
+
+| Cenário | Fallback | Impacto |
+|---------|----------|---------|
+| **Redis indisponível** | Consultar DB direto | Latência aumenta 10x |
+| **Gateway de pagamento offline** | Criar conta sem boleto, retry via job | Cliente recebe boleto por email em até 24h |
+| **Email service offline** | Persistir em tabela `emails_pendentes`, job retry em 1h | Notificação atrasada |
+| **Message broker offline** | Persistir eventos em DB, job publica quando broker voltar | Processamento assíncrono atrasado |
+
+### 5.4 Segurança
+
+#### AuthN/AuthZ
+
+| Camada | Estratégia | Implementação |
+|--------|------------|---------------|
+| **API Gateway** | JWT validation | Kong plugin JWT |
+| **Service-to-Service** | mTLS | Certificados X.509 |
+| **Autorização** | RBAC (Role-Based Access Control) | Decorators `@Roles('ADMIN', 'FINANCEIRO')` |
+| **Revendedor** | Apenas acesso à própria carteira | Middleware `@OwnsResource('carteira')` |
+
+#### Criptografia
+
+| Dado | Em Repouso | Em Trânsito |
+|------|------------|-------------|
+| **CPF** | AES-256-GCM (campo `cpf_encrypted`) | TLS 1.3 |
+| **Dados Bancários** | AES-256-GCM | TLS 1.3 |
+| **Senhas** | bcrypt (cost 12) | TLS 1.3 |
+| **Logs** | Plaintext (apenas dados não sensíveis) | TLS 1.3 |
+
+#### Sanitização
+
+```typescript
+// Exemplo de sanitização de observações
+function sanitizeInput(input: string): string {
+  return input
+    .replace(/<script.*?>.*?<\/script>/gi, '') // Remove XSS
+    .replace(/javascript:/gi, '') // Remove javascript: protocol
+    .replace(/on\w+=/gi, '') // Remove event handlers
+    .trim()
+    .substring(0, 500); // Limita tamanho
+}
+```
+
+#### Conformidade
+
+- **LGPD**: Dados financeiros pessoais criptografados; logs de acesso auditáveis; direito ao esquecimento via job de anonimização após 5 anos
+- **SUSEP**: Separação contábil clara entre receita (clube) e repasse (prêmio); bonificação nunca calculada sobre prêmio
+- **PCI-DSS**: Não armazenar dados de cartão (gateway tokeniza); apenas referência de transação
+
+### 5.5 Observabilidade
+
+#### Métricas (Prometheus/Grafana)
+
+| Métrica | Tipo | Labels | Alerta |
+|---------|------|--------|--------|
+| `financial_transactions_total` | Counter | `type`, `status` | - |
+| `financial_transaction_duration_seconds` | Histogram | `operation` | p99 > 500ms |
+| `wallet_balance_total` | Gauge | `type` (disponivel, bloqueado, devedor) | - |
+| `bonus_calculation_duration_seconds` | Histogram | - | p99 > 200ms |
+| `boleto_generation_failures_total` | Counter | `error_type` | > 10 em 5min |
+| `redis_connection_errors_total` | Counter | - | > 5 em 1min |
+
+#### Logs Estruturados (JSON)
+
+```json
+{
+  "timestamp": "2026-06-20T14:30:00.000Z",
+  "level": "INFO",
+  "service": "financial-service",
+  "operation": "abater_parcela",
+  "carteira_id": "uuid-123",
+  "conta_id": "uuid-456",
+  "valor_abatido": 100.00,
+  "saldo_anterior": 500.00,
+  "saldo_novo": 400.00,
+  "duration_ms": 45,
+  "correlation_id": "req-789",
+  "user_id": "revendedor-101"
+}
+```
+
+#### Traces Distribuídos (OpenTelemetry)
+
+```
+[Trace ID: abc123]
+├─ [Span] POST /carteiras/{id}/abatimentos (45ms)
+│  ├─ [Span] Redis SET lock (2ms)
+│  ├─ [Span] PostgreSQL BEGIN (1ms)
+│  ├─ [Span] PostgreSQL SELECT saldo (5ms)
+│  ├─ [Span] PostgreSQL INSERT transacao (10ms)
+│  ├─ [Span] PostgreSQL UPDATE saldo (8ms)
+│  ├─ [Span] PostgreSQL COMMIT (12ms)
+│  ├─ [Span] Redis DEL lock (1ms)
+│  └─ [Span] BullMQ enqueue notification (6ms)
+```
+
+#### Alertas Críticos (PagerDuty)
+
+| Alerta | Condição | Severidade | Ação |
+|--------|----------|------------|------|
+| **High Error Rate** | 5xx > 1% por 5min | Critical | On-call imediatamente |
+| **Redis Down** | Connection failures > 5/min | High | On-call em 15min |
+| **Boleto Generation Failures** | > 10 failures em 5min | High | Investigar gateway |
+| **Database Connection Pool Exhausted** | Connections > 90% | Critical | Scale read replicas |
+| **Dead Letter Queue Growing** | Queue depth > 1000 | Medium | Investigar em 1h |
+
+### 5.6 Acessibilidade e i18n
+
+#### Acessibilidade (WCAG 2.1 AA)
+
+- **Contraste**: Mínimo 4.5:1 para texto normal, 3:1 para texto grande
+- **Keyboard Navigation**: Todas as operações acessíveis via Tab/Enter
+- **Screen Readers**: ARIA labels em todos os botões e inputs
+- **Focus Indicators**: Outline visível em elementos focados
+
+#### Internacionalização (i18n)
+
+- **Idioma Padrão**: Português do Brasil (pt-BR)
+- **Formato de Moeda**: R$ 1.234,56 (Intl.NumberFormat)
+- **Formato de Data**: DD/MM/AAAA (Intl.DateTimeFormat)
+- **Timezone**: America/Sao_Paulo (todas as datas em UTC no DB, convertidas no frontend)
+- **Futuro**: Preparado para Espanhol (es-AR) via i18next
+
+---
+
+## 6. Interface e Contratos
+
+### 6.1 API Endpoints (OpenAPI 3.0)
+
+#### `POST /api/v1/carteiras/{carteiraId}/abatimentos`
+
+**Descrição:** Abate parcela usando saldo disponível da carteira
+
+**Request:**
+```yaml
+parameters:
+  - name: carteiraId
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+    description: ID da carteira do revendedor
+
+requestBody:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        required:
+          - conta_a_pagar_id
+          - valor_abatido
+        properties:
+          conta_a_pagar_id:
+            type: string
+            format: uuid
+            description: ID da parcela a ser abatida
+          valor_abatido:
+            type: number
+            format: decimal
+            minimum: 0.01
+            description: Valor a ser debitado da carteira
+          observacoes:
+            type: string
+            maxLength: 500
+            description: Notas opcionais sobre o abatimento
+```
+
+**Responses:**
+```yaml
+responses:
+  '200':
+    description: Abatimento realizado com sucesso
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            valor_abatido:
+              type: number
+            saldo_restante_parcela:
+              type: number
+            novo_saldo_disponivel:
+              type: number
+            status_parcela:
+              type: string
+              enum: [PAGO, PARCIALMENTE_PAGO]
+            boleto_residual_url:
+              type: string
+              nullable: true
+              description: URL do boleto residual (se pagamento parcial)
+  
+  '400':
+    description: Erro de validação
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              enum:
+                - SALDO_INSUFICIENTE
+                - VALOR_INVALIDO
+                - PARCELA_CANCELADA
+                - SALDO_DEVEDOR_EXISTENTE
+            message:
+              type: string
+  
+  '404':
+    description: Carteira ou parcela não encontrada
+  
+  '409':
+    description: Operação em andamento (lock ativo)
+```
+
+---
+
+#### `POST /api/v1/carteiras/{carteiraId}/saques`
+
+**Descrição:** Solicita saque de bonificação
+
+**Request:**
+```yaml
+requestBody:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        required:
+          - valor
+          - conta_bancaria_id
+        properties:
+          valor:
+            type: number
+            format: decimal
+            minimum: 10.00
+            description: Valor bruto do saque
+          conta_bancaria_id:
+            type: string
+            format: uuid
+            description: ID da conta bancária cadastrada
+```
+
+**Responses:**
+```yaml
+responses:
+  '200':
+    description: Saque processado (imediato ou pendente de aprovação)
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            valor_bruto:
+              type: number
+            valor_liquido:
+              type: number
+            valor_irrf_retido:
+              type: number
+              nullable: true
+            valor_inss_retido:
+              type: number
+              nullable: true
+            status:
+              type: string
+              enum: [CONCLUIDO, PENDENTE_APROVACAO]
+            estimativa_credito:
+              type: string
+              format: date
+              description: Data estimada de crédito na conta
+  
+  '400':
+    description: Erro de validação
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              enum:
+                - SALDO_INSUFICIENTE
+                - SAQUE_PF_DESATIVADO
+                - SALDO_DEVEDOR_EXISTENTE
+                - CONTA_BANCARIA_INVALIDA
+            message:
+              type: string
+  
+  '403':
+    description: Saque acima do limite requer aprovação manual (já criada)
+```
+
+---
+
+#### `GET /api/v1/carteiras/{carteiraId}/extrato`
+
+**Descrição:** Lista transações da carteira (bonificações e pagamentos)
+
+**Request:**
+```yaml
+parameters:
+  - name: carteiraId
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  
+  - name: tipo
+    in: query
+    schema:
+      type: string
+      enum: [bonificacao, pagamento, todos]
+      default: todos
+  
+  - name: data_inicio
+    in: query
+    schema:
+      type: string
+      format: date
+  
+  - name: data_fim
+    in: query
+    schema:
+      type: string
+      format: date
+  
+  - name: page
+    in: query
+    schema:
+      type: integer
+      minimum: 1
+      default: 1
+  
+  - name: limit
+    in: query
+    schema:
+      type: integer
+      minimum: 10
+      maximum: 100
+      default: 20
+```
+
+**Response:**
+```yaml
+responses:
+  '200':
+    description: Extrato paginado
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  tipo:
+                    type: string
+                    enum: [bonificacao, pagamento]
+                  valor:
+                    type: number
+                  status:
+                    type: string
+                  data:
+                    type: string
+                    format: date-time
+                  descricao:
+                    type: string
+            pagination:
+              type: object
+              properties:
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                total:
+                  type: integer
+                totalPages:
+                  type: integer
+```
+
+---
+
+#### `POST /api/v1/admin/saques/{transacaoId}/aprovar`
+
+**Descrição:** Aprova saque pendente (Maker/Checker) - Apenas Financeiro/Admin
+
+**Request:**
+```yaml
+parameters:
+  - name: transacaoId
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+
+requestBody:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        required:
+          - aprovado
+        properties:
+          aprovado:
+            type: boolean
+          motivo_rejeicao:
+            type: string
+            maxLength: 500
+            description: Obrigatório se aprovado = false
+```
+
+**Responses:**
+```yaml
+responses:
+  '200':
+    description: Saque aprovado ou rejeitado
+  
+  '403':
+    description: Usuário não tem permissão
+  
+  '409':
+    description: Saque já processado
+```
+
+---
+
+### 6.2 Banco de Dados (Schema Completo)
+
+#### Tabela: `carteiras_digitais`
+
+```sql
+CREATE TABLE carteiras_digitais (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    titular_id UUID NOT NULL REFERENCES pessoas_fisicas(id),
+    saldo_disponivel DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (saldo_disponivel >= 0),
+    saldo_bloqueado DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (saldo_bloqueado >= 0),
+    saldo_devedor DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (saldo_devedor >= 0),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    CONSTRAINT unique_carteira_por_titular UNIQUE (titular_id)
+);
+
+-- Índices
+CREATE INDEX idx_carteiras_titular ON carteiras_digitais(titular_id);
+CREATE INDEX idx_carteiras_saldo_devedor ON carteiras_digitais(saldo_devedor) WHERE saldo_devedor > 0;
+
+-- Trigger para updated_at
+CREATE TRIGGER trigger_carteiras_updated_at
+BEFORE UPDATE ON carteiras_digitais
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+```
+
+#### Tabela: `transacoes_bonificacao`
+
+```sql
+CREATE TABLE transacoes_bonificacao (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    carteira_id UUID NOT NULL REFERENCES carteiras_digitais(id),
+    origem_contrato_id UUID NOT NULL REFERENCES contratos(id),
+    valor DECIMAL(10,2) NOT NULL CHECK (valor > 0),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDENTE_APROVACAO', 'LIBERADO', 'ESTORNADO')),
+    nivel_origem INT NOT NULL CHECK (nivel_origem > 0),
+    data_geracao TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    data_liberacao TIMESTAMP WITH TIME ZONE,
+    data_estorno TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    CONSTRAINT chk_status_datas CHECK (
+        (status = 'PENDENTE_APROVACAO' AND data_liberacao IS NULL AND data_estorno IS NULL) OR
+        (status = 'LIBERADO' AND data_liberacao IS NOT NULL AND data_estorno IS NULL) OR
+        (status = 'ESTORNADO' AND data_estorno IS NOT NULL)
+    )
+);
+
+-- Índices
+CREATE INDEX idx_transacoes_bonificacao_carteira ON transacoes_bonificacao(carteira_id);
+CREATE INDEX idx_transacoes_bonificacao_contrato ON transacoes_bonificacao(origem_contrato_id);
+CREATE INDEX idx_transacoes_bonificacao_status ON transacoes_bonificacao(status);
+
+-- 🚨 IDEMPOTÊNCIA: Constraint composta crítica
+CREATE UNIQUE INDEX idx_bonificacao_unica
+ON transacoes_bonificacao (origem_contrato_id, carteira_id, nivel_origem);
+
+-- Trigger para updated_at
+CREATE TRIGGER trigger_transacoes_bonificacao_updated_at
+BEFORE UPDATE ON transacoes_bonificacao
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+```
+
+#### Tabela: `transacoes_pagamento`
+
+```sql
+CREATE TABLE transacoes_pagamento (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    carteira_id UUID NOT NULL REFERENCES carteiras_digitais(id),
+    conta_a_pagar_id UUID NOT NULL REFERENCES contas_a_pagar(id),
+    contrato_id UUID REFERENCES contratos(id),
+    valor_abatido DECIMAL(10,2) NOT NULL CHECK (valor_abatido > 0),
+    saldo_restante_parcela DECIMAL(10,2) NOT NULL CHECK (saldo_restante_parcela >= 0),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('CONCLUIDO', 'ESTORNADO', 'PENDENTE_APROVACAO')),
+    data_transacao TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    observacoes TEXT,
+    
+    -- Campos para saques PF
+    valor_irrf_retido DECIMAL(10,2) DEFAULT 0,
+    valor_inss_retido DECIMAL(10,2) DEFAULT 0,
+    tipo_transacao VARCHAR(20) NOT NULL DEFAULT 'ABATIMENTO' CHECK (tipo_transacao IN ('ABATIMENTO', 'SAQUE')),
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índices
+CREATE INDEX idx_transacoes_pagamento_carteira ON transacoes_pagamento(carteira_id);
+CREATE INDEX idx_transacoes_pagamento_conta ON transacoes_pagamento(conta_a_pagar_id);
+CREATE INDEX idx_transacoes_pagamento_contrato ON transacoes_pagamento(contrato_id);
+CREATE INDEX idx_transacoes_pagamento_status ON transacoes_pagamento(status);
+CREATE INDEX idx_transacoes_pagamento_tipo ON transacoes_pagamento(tipo_transacao);
+
+-- Idempotência para abatimentos
+CREATE UNIQUE INDEX idx_abatimento_unico
+ON transacoes_pagamento (conta_a_pagar_id, carteira_id)
+WHERE tipo_transacao = 'ABATIMENTO' AND status = 'CONCLUIDO';
+
+-- Trigger para updated_at
+CREATE TRIGGER trigger_transacoes_pagamento_updated_at
+BEFORE UPDATE ON transacoes_pagamento
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+```
+
+#### Tabela: `contas_a_pagar`
+
+```sql
+CREATE TABLE contas_a_pagar (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    descricao VARCHAR(255) NOT NULL,
+    valor DECIMAL(12,2) NOT NULL CHECK (valor > 0),
+    valor_restante DECIMAL(12,2) NOT NULL CHECK (valor_restante >= 0 AND valor_restante <= valor),
+    data_vencimento DATE NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDENTE', 'PARCIALMENTE_PAGO', 'PAGO', 'CANCELADO')),
+    fornecedor_id UUID,
+    contrato_id UUID REFERENCES contratos(id),
+    boleto_url TEXT,
+    gateway_transaction_id VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índices
+CREATE INDEX idx_contas_a_pagar_contrato ON contas_a_pagar(contrato_id);
+CREATE INDEX idx_contas_a_pagar_status ON contas_a_pagar(status);
+CREATE INDEX idx_contas_a_pagar_vencimento ON contas_a_pagar(data_vencimento);
+CREATE INDEX idx_contas_a_pagar_gateway ON contas_a_pagar(gateway_transaction_id);
+
+-- Trigger para updated_at
+CREATE TRIGGER trigger_contas_a_pagar_updated_at
+BEFORE UPDATE ON contas_a_pagar
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+```
+
+#### Tabela: `webhooks_recebidos` (Idempotência)
+
+```sql
+CREATE TABLE webhooks_recebidos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id VARCHAR(100) NOT NULL,
+    source VARCHAR(50) NOT NULL, -- 'payment_gateway', 'seguradora', etc
+    payload JSONB NOT NULL,
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    CONSTRAINT unique_transaction_id UNIQUE (transaction_id, source)
+);
+
+-- Índice para busca rápida
+CREATE INDEX idx_webhooks_transaction ON webhooks_recebidos(transaction_id, source);
+```
+
+#### Scripts de Migração (Prisma)
+
+```prisma
+// prisma/migrations/20260620000000_init_financial_module/migration.sql
+
+-- Criar tabelas (scripts acima)
+
+-- Popular dados iniciais
+INSERT INTO configuracoes_regras_negocio (chave, valor, descricao) VALUES
+('SAQUE_PF_ATIVO', 'false', 'Habilita/Desabilita saques para Pessoa Física'),
+('LIMITE_SAQUE_DIARIO', '1000.00', 'Limite diário para saque sem aprovação manual'),
+('MESES_REMISSAO_OBITO_PADRAO', '3', 'Meses de isenção pós-óbito (fallback)'),
+('DIAS_SUSPENSAO_INADIMPLENCIA', '30', 'Dias de atraso para susp
