@@ -31,6 +31,13 @@ interface AppStore {
   // Checkout data
   selectedPlanId: string | null
   setSelectedPlanId: (id: string | null) => void
+  checkoutData: {
+    titular: Record<string, unknown> | null
+    vinculos: Array<Record<string, unknown>>
+    selectedPlan: Record<string, unknown> | null
+  }
+  setCheckoutData: (data: Partial<AppStore['checkoutData']>) => void
+  resetCheckout: () => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -39,6 +46,11 @@ export const useAppStore = create<AppStore>((set) => ({
   checkoutStep: 0,
   user: null,
   selectedPlanId: null,
+  checkoutData: {
+    titular: null,
+    vinculos: [],
+    selectedPlan: null,
+  },
   
   setView: (view) => set({ currentView: view }),
   setDashboardTab: (tab) => set({ currentDashboardTab: tab }),
@@ -46,4 +58,14 @@ export const useAppStore = create<AppStore>((set) => ({
   setUser: (user) => set({ user }),
   logout: () => set({ user: null, currentView: 'landing', currentDashboardTab: 'overview' }),
   setSelectedPlanId: (id) => set({ selectedPlanId: id }),
+  setCheckoutData: (data) => set((state) => ({ checkoutData: { ...state.checkoutData, ...data } })),
+  resetCheckout: () => set({
+    checkoutStep: 0,
+    selectedPlanId: null,
+    checkoutData: {
+      titular: null,
+      vinculos: [],
+      selectedPlan: null,
+    },
+  }),
 }))

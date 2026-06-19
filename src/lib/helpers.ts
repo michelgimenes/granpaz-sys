@@ -67,3 +67,16 @@ export function formatCEP(cep: string): string {
   if (digits.length <= 5) return digits
   return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`
 }
+
+// ─────────────────────────────────────────────────────────
+// Re-export sanitization functions from @/lib/sanitization
+// for backward compatibility and convenience
+// ─────────────────────────────────────────────────────────
+export {
+  sanitizeCPF,
+  sanitizePhone,
+  sanitizeCEP,
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePessoaFisica,
+} from '@/lib/sanitization'
