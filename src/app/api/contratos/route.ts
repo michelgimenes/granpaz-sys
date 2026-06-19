@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
-import { sanitizePessoaFisica, sanitizeCPF } from '@/lib/sanitization'
+import { sanitizePessoaFisica, sanitizeCPF, sanitizeString } from '@/lib/sanitization'
 import {
   checkContratoAtivoPorTitular,
   validateAge,
@@ -8,6 +8,7 @@ import {
   validatePlanoPermiteDependentes,
   validateParentescoPorTipo,
   validateFieldFormats,
+  getConfigValue,
 } from '@/lib/validations'
 
 /**
@@ -347,7 +348,7 @@ export async function POST(request: Request) {
       })
     }
 
-    // ─── Create CarteiraDigital for titular (ADR-005 harmonization) ───
+    // ─── Create CarteiraDigital for titular ───
     const existingCarteira = await db.carteiraDigital.findUnique({
       where: { titularId: titularPessoa.id }
     })
@@ -392,6 +393,7 @@ export async function POST(request: Request) {
     })
 
     // ─── Create patrocínio if patrocinadorId provided ───
+    let patrocinioCreated = false
     if (patrocinadorId) {
       const patrocinador = await db.pessoaFisica.findUnique({ where: { id: patrocinadorId } })
       if (patrocinador) {
@@ -408,6 +410,101 @@ export async function POST(request: Request) {
             nivelProfundidade: novoNivel,
           },
         })
+        patrocinioCreated = true
+      }
+    }
+
+    // ─── Bonificação for the sponsorship tree ───
+    let bonificacoesCriadas = 0
+    if (patrocinadorId && patrocinioCreated) {
+      try {
+        // RN-001: Base de cálculo is ONLY on taxa de adesão and parcela mensal
+        const baseCalculo = plano.valorTaxaAdesao + plano.valorBase
+
+        // Get all active bonus levels
+        const niveisBonificacao = await db.nivelBonificacao.findMany({
+          where: { ativo: true },
+          orderBy: { nivel: 'asc' },
+        })
+
+        if (niveisBonificacao.length > 0) {
+          // Build a map for quick lookup
+          const niveisMap = new Map(niveisBonificacao.map(n => [n.nivel, n.percentual]))
+
+          // Traverse the sponsorship tree UP from patrocinador
+          let currentPatrocinadorId: string | null = patrocinadorId
+          let nivelAtual = 1
+
+          while (currentPatrocinadorId && nivelAtual <= niveisBonificacao.length) {
+            const percentual = niveisMap.get(nivelAtual)
+            if (percentual === undefined || percentual === null) break
+
+            // Ensure patrocinador has a carteira
+            let carteiraPatrocinador = await db.carteiraDigital.findUnique({
+              where: { titularId: currentPatrocinadorId },
+            })
+            if (!carteiraPatrocinador) {
+              carteiraPatrocinador = await db.carteiraDigital.create({
+                data: {
+                  titularId: currentPatrocinadorId,
+                  saldoDisponivel: 0,
+                  saldoBloqueado: 0,
+                  saldoDevedor: 0,
+                },
+              })
+            }
+
+            const valorBonificacao = Math.round(baseCalculo * (percentual / 100) * 100) / 100
+
+            // Create TransacaoBonificacao with PENDENTE_APROVACAO
+            try {
+              await db.transacaoBonificacao.create({
+                data: {
+                  origemContratoId: contrato.id,
+                  carteiraId: carteiraPatrocinador.id,
+                  nivelOrigem: nivelAtual,
+                  valor: valorBonificacao,
+                  percentualAplicado: percentual,
+                  status: 'PENDENTE_APROVACAO',
+                },
+              })
+
+              // Add valor to saldoBloqueado
+              await db.carteiraDigital.update({
+                where: { id: carteiraPatrocinador.id },
+                data: {
+                  saldoBloqueado: carteiraPatrocinador.saldoBloqueado + valorBonificacao,
+                  updatedAt: new Date(),
+                },
+              })
+
+              bonificacoesCriadas++
+            } catch (createError: unknown) {
+              // Handle P2002 (unique constraint on @@unique([origemContratoId, carteiraId, nivelOrigem]))
+              const prismaError = createError as { code?: string }
+              if (prismaError?.code === 'P2002') {
+                // Already exists — skip silently (idempotency)
+              } else {
+                throw createError
+              }
+            }
+
+            // Move up the tree: find this patrocinador's own patrocinador
+            const patrocinioSuperior = await db.patrocinio.findFirst({
+              where: { revendedorId: currentPatrocinadorId, dataFimVinculo: null },
+            })
+
+            if (patrocinioSuperior) {
+              currentPatrocinadorId = patrocinioSuperior.patrocinadorId
+            } else {
+              currentPatrocinadorId = null
+            }
+            nivelAtual++
+          }
+        }
+      } catch (bonError) {
+        // EC-005: If bonificação creation fails, log and proceed (don't block contract creation)
+        console.error('Bonificação creation error (non-blocking):', bonError)
       }
     }
 
@@ -425,6 +522,9 @@ export async function POST(request: Request) {
           titularId: titularPessoa.id,
           vinculosCount: vinculosProcessed.length,
           coverageTags: vinculosProcessed.filter(v => v.coverageTag).map(v => v.pessoa.nomeCompleto),
+          patrocinadorId: patrocinadorId || null,
+          patrocinioCreated,
+          bonificacoesCriadas,
         }),
       },
     })
@@ -439,6 +539,8 @@ export async function POST(request: Request) {
       _meta: {
         coverageWarnings,
         vinculosCount: vinculosProcessed.length,
+        patrocinioCreated,
+        bonificacoesCriadas,
       },
     }, { status: 201 })
 

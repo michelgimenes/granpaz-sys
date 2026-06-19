@@ -9,7 +9,7 @@ import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
  * Lacunas fixed:
  * - L31: SuperAdmin role check
  * - L10/L3: Validate motivo (string, min 10 chars, max 1000 chars)
- * - L4: Cascade estorno of bonificações (PENDENTE_APROVACAO → ESTORNADO, saldoBloqueado -= sum)
+ * - L4: Cascade estorno of bonificações (PENDENTE_APROVACAO → ESTORNADO, saldoBloqueado -= sum, dataEstorno set)
  * - L30: Audit log with atorId and ipAddress
  * - L32: Audit acao = 'REJEICAO'
  */
@@ -80,13 +80,15 @@ export async function POST(
     })
 
     if (bonificacoesPendentes.length > 0) {
-      // Update all to ESTORNADO
+      const now = new Date()
+
+      // Update all to ESTORNADO and set dataEstorno
       await db.transacaoBonificacao.updateMany({
         where: {
           origemContratoId: id,
           status: 'PENDENTE_APROVACAO',
         },
-        data: { status: 'ESTORNADO' },
+        data: { status: 'ESTORNADO', dataEstorno: now },
       })
 
       // Group by carteiraId and sum values

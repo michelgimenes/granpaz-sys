@@ -14,7 +14,8 @@ import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
  * - L1: Validate codigoSeguradora not null/empty
  * - L9: Validate dataInicio >= today if provided
  * - L12: Optimistic locking concurrency protection
- * - L2: Bonificação liberation (PENDENTE_APROVACAO → LIBERADO + wallet update)
+ * - EC-004: Create wallet BEFORE bonificação liberation
+ * - L2: Bonificação liberation (PENDENTE_APROVACAO → LIBERADO + wallet update + dataLiberacao)
  * - L30: Audit log with atorId and ipAddress
  * - L32: Audit acao = 'APROVACAO'
  */
@@ -131,6 +132,16 @@ export async function POST(
       },
     })
 
+    // ─── EC-004: Create wallet for titular BEFORE bonificação liberation ───
+    const existingWallet = await db.carteiraDigital.findUnique({
+      where: { titularId: contrato.titularId },
+    })
+    if (!existingWallet) {
+      await db.carteiraDigital.create({
+        data: { titularId: contrato.titularId },
+      })
+    }
+
     // ─── L2: Bonificação liberation ───
     // Find all PENDENTE_APROVACAO transactions for this contract
     const bonificacoesPendentes = await db.transacaoBonificacao.findMany({
@@ -141,13 +152,15 @@ export async function POST(
     })
 
     if (bonificacoesPendentes.length > 0) {
-      // Update all to LIBERADO
+      const now = new Date()
+
+      // Update all to LIBERADO and set dataLiberacao
       await db.transacaoBonificacao.updateMany({
         where: {
           origemContratoId: id,
           status: 'PENDENTE_APROVACAO',
         },
-        data: { status: 'LIBERADO' },
+        data: { status: 'LIBERADO', dataLiberacao: now },
       })
 
       // Group by carteiraId and sum values
@@ -160,6 +173,7 @@ export async function POST(
       }
 
       // Update each carteira: saldoBloqueado -= sum, saldoDisponivel += sum
+      // Also ensure the wallet exists for each carteira (garantirCarteira pattern)
       for (const [carteiraId, sum] of Object.entries(carteiraSums)) {
         const carteira = await db.carteiraDigital.findUnique({ where: { id: carteiraId } })
         if (carteira) {
@@ -173,16 +187,6 @@ export async function POST(
           })
         }
       }
-    }
-
-    // ─── Create wallet for titular if not exists ───
-    const existingWallet = await db.carteiraDigital.findUnique({
-      where: { titularId: contrato.titularId },
-    })
-    if (!existingWallet) {
-      await db.carteiraDigital.create({
-        data: { titularId: contrato.titularId },
-      })
     }
 
     // ─── L30/L32: Audit log with atorId, ipAddress, acao=APROVACAO ───

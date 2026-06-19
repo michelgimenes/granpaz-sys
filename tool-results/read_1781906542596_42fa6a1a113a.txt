@@ -1,0 +1,455 @@
+     1→     1→---
+     2→     2→Task ID: 1
+     3→     3→Agent: Schema Agent
+     4→     4→Task: Set up Prisma schema with all database tables
+     5→     5→
+     6→     6→Work Log:
+     7→     7→- Created prisma/schema.prisma with 19 models covering the full Granpaz domain
+     8→     8→- Created prisma/seed.ts with 16 mandatory config keys, 2 plans, 2 insurers, 5 bonus levels, 2 users
+     9→     9→- Ran db:push successfully
+    10→    10→- Ran seed successfully
+    11→    11→
+    12→    12→Stage Summary:
+    13→    13→- All 19 database tables created (pessoas_fisicas, vinculos, planos, seguradoras, contratos, dados_aprovacao_seguradora, patrocinios, carteiras_digitais, transacoes_bonificacao, transacoes_pagamento, contas_a_pagar, webhooks_recebidos, sinistros, remissoes_contrato, logs_anonimizacao_lgpd, configuracoes_regras_negocio, audit_logs, users, niveis_bonificacao)
+    14→    14→- 16 mandatory configuration keys seeded
+    15→    15→- Demo users: admin@granpaz.com / granpaz2024, maria.silva@demo.com / demo2024
+    16→    16→
+    17→    17→---
+    18→    18→Task ID: 2-8
+    19→    19→Agent: Full-Stack Developer Agent
+    20→    20→Task: Build complete Granpaz frontend application
+    21→    21→
+    22→    22→Work Log:
+    23→    23→- Updated globals.css with OKLCH design tokens (light/dark), animations, custom scrollbar
+    24→    24→- Updated layout.tsx with Fraunces/Manrope/JetBrains Mono fonts, ThemeProvider, SEO metadata, Schema.org
+    25→    25→- Created Zustand store (src/lib/store.ts) for navigation state
+    26→    26→- Built Landing Page: Header, HeroSection, StorytellingSection, SolutionSection, FaqSection, ComplianceFooter
+    27→    27→- Built Checkout Flow: CheckoutFlow (multi-step), StepPlan, StepTitular, StepVinculos, StepResumo
+    28→    28→- Built Auth: LoginModal with email/password
+    29→    29→- Built Dashboard: DashboardLayout with navy sidebar, 8 tabs
+    30→    30→- Built Dashboard Tabs: OverviewTab, ApprovalTab, ContractsTab, FinancialTab, NetworkTab, ClaimsTab, ConfigTab, AuditTab
+    31→    31→- Created 13 API routes for all CRUD operations
+    32→    32→- Browser verification: All 4 test areas PASS (Landing, Checkout, Login, Dashboard)
+    33→    33→- ESLint: No errors
+    34→    34→
+    35→    35→Stage Summary:
+    36→    36→- Complete SaaS application functional at http://localhost:3000
+    37→    37→- Landing Page with hero, storytelling, benefits, FAQ, compliance footer
+    38→    38→- Multi-step checkout flow with plan selection, titular form, vínculos
+    39→    39→- Admin dashboard with 8 tabs (overview, approvals, contracts, financial, network, claims, config, audit)
+    40→    40→- 13 API routes connected to Prisma/SQLite
+    41→    41→- OKLCH design system implemented with zero pure black/white
+    42→    42→- Compliance: Air-Gap on checkout, SUSEP disclaimers, correct terminology
+    43→    43→
+    44→    44→---
+    45→    45→Task ID: FIX-BACKEND-SPEC01
+    46→    46→Agent: Backend Fix Agent
+    47→    47→Task: Fix ALL backend lacunas for SPEC-01 Módulo de Contratação e Cadastro
+    48→    48→
+    49→    49→Work Log:
+    50→    50→- Read worklog.md and project state (Prisma schema, existing API routes, helpers)
+    51→    51→- Created /src/lib/sanitization.ts — Centralized sanitization (CPF, phone, CEP, string, email, pessoaFisica) per SPEC-01 Section 5.4
+    52→    52→- Created /src/lib/validations.ts — Business rule validations (RN-01 through RN-06):
+    53→    53→  - checkContratoAtivoPorTitular (RN-01: unique active contract per titular)
+    54→    54→  - validateAge (RN-02/RN-06: age vs config with coverage tag "SEM DIREITO À PROTEÇÃO")
+    55→    55→  - validateSubDependenteEligibility (RN-03: agregado pai must be CASADO/UNIAO_ESTAVEL)
+    56→    56→  - validatePlanoPermiteDependentes (RN-05: INDIVIDUAL plan blocks dependents)
+    57→    57→  - validateParentescoPorTipo (parentesco allowed per tipo_vinculo)
+    58→    58→  - validateFieldFormats (CPF 11 digits, email regex, phone 10-11 digits, CEP 8 digits)
+    59→    59→  - getConfigValue/getConfigInt/getConfigBool (config helper functions)
+    60→    60→- Created /src/app/api/viacep/route.ts — ViaCEP proxy with 2s timeout, Air-Gap field filtering
+    61→    61→- Rewrote /src/app/api/contratos/route.ts — Major rewrite with:
+    62→    62→  - Sanitization of all input data via sanitizePessoaFisica
+    63→    63→  - RN-01: Unique active contract check (HTTP 409)
+    64→    64→  - RN-02: Age validation against configuracoes_regras_negocio
+    65→    65→  - RN-03: Sub-dependente eligibility validation
+    66→    66→  - RN-05: Block dependentes/sub-dependentes for INDIVIDUAL plans
+    67→    67→  - RN-06: Return coverageTag "SEM DIREITO À PROTEÇÃO" for age over coverage but under limit
+    68→    68→  - Field format validation (CPF, email, telefone, CEP)
+    69→    69→  - Parentesco validation per tipo_vinculo
+    70→    70→  - Limits enforcement (maxDependentes, maxAgregados from plano)
+    71→    71→  - Profissão required for TITULAR and AGREGADO (HTTP 422)
+    72→    72→  - Identificação Unificada (CPF lookup + birthdate match)
+    73→    73→  - CarteiraDigital creation for titular
+    74→    74→  - ContaAPagar creation for taxa de adesão + first mensalidade
+    75→    75→  - Patrocínio creation if patrocinadorId provided
+    76→    76→  - Audit log for all contract creation operations
+    77→    77→  - Prisma P2002 error handling (race condition on CPF unique constraint)
+    78→    78→- Rewrote /src/app/api/pessoas-fisicas/buscar-por-cpf/route.ts — Enhanced with:
+    79→    79→  - CPF sanitization via sanitizeCPF
+    80→    80→  - Selective field return (LGPD minimization)
+    81→    81→  - { found: true/false } pattern for Identificação Unificada
+    82→    82→- Updated /src/lib/helpers.ts — Added re-exports from sanitization module for backward compatibility
+    83→    83→- Ran bun run db:push — schema in sync
+    84→    84→- Ran bun run lint — no errors
+    85→    85→- Verified all API routes working: GET /api/contratos, POST /api/contratos, GET /api/viacep, GET /api/pessoas-fisicas/buscar-por-cpf
+    86→    86→- Tested business rules: RN-01 (duplicate contract blocked), RN-05 (INDIVIDUAL blocks dependents), parentesco validation, profissão required, invalid CPF rejected
+    87→    87→
+    88→    88→Stage Summary:
+    89→    89→- 6 files created/modified for SPEC-01 backend lacuna fixes
+    90→    90→- All 14 business rule validations implemented (RN-01 through RN-06 plus field formats, parentesco, limits, profissão)
+    91→    91→- Centralized sanitization ensures backend never trusts raw frontend input
+    92→    92→- ViaCEP proxy with timeout and Air-Gap field filtering
+    93→    93→- Contract creation now creates CarteiraDigital, ContasAPagar, Patrocinio, and AuditLog
+    94→    94→- ESLint: No errors, dev server running normally
+    95→    95→
+    96→    96→---
+    97→    97→Task ID: FIX-FRONTEND-SPEC01
+    98→    98→Agent: Frontend Fix Agent
+    99→    99→Task: Fix ALL frontend lacunas for SPEC-01 Módulo de Contratação e Cadastro
+   100→   100→
+   101→   101→Work Log:
+   102→   102→- Updated src/lib/store.ts — Added checkoutData (titular, vinculos, selectedPlan), setCheckoutData, resetCheckout
+   103→   103→- Created src/app/api/viacep/route.ts — ViaCEP proxy endpoint with CEP validation and 24h cache
+   104→   104→- Created src/components/checkout/pessoa-fisica-form.tsx — ADR-001 agnostic component with sessionType prop:
+   105→   105→  - Session types: TITULAR, DEPENDENTE, AGREGADO, SUB_DEPENDENTE
+   106→   106→  - Config-driven field visibility and validation
+   107→   107→  - CPF Identification: blur → API → reuse modal / block
+   108→   108→  - RN-02: Age validation against config API
+   109→   109→  - RN-06: Coverage tag "SEM DIREITO À PROTEÇÃO"
+   110→   110→  - Parentesco filtering by tipo_vinculo
+   111→   111→  - Profissão obrigatória for TITULAR and AGREGADO
+   112→   112→  - ViaCEP auto-fill on CEP blur
+   113→   113→  - Email/Telefone/CEP validation with error messages
+   114→   114→  - Agregado inherits address from titular
+   115→   115→  - SUB_DEPENDENTE with agregadoPaiId
+   116→   116→- Rewrote src/components/checkout/checkout-flow.tsx — Complete rewrite with all 15 fixes:
+   117→   117→  - Step 0: Plan selection with FAMILIAR/INDIVIDUAL info cards
+   118→   118→  - Step 1: Titular via PessoaFisicaForm sessionType="TITULAR"
+   119→   119→  - Step 2: Vínculos with Sheet drawer, limits, sub-dependentes, coverage tags
+   120→   120→  - Step 3: Resumo with ComplianceBanner, 409/400 error handling
+   121→   121→  - RN-05: Block dependentes in INDIVIDUAL plan
+   122→   122→  - Mobile responsive with proper Drawer for adding vínculos
+   123→   123→  - Success screen with compliance disclaimers
+   124→   124→  - No seguradora_id displayed (Air-Gap)
+   125→   125→- Ran bun run lint — No errors
+   126→   126→
+   127→   127→Stage Summary:
+   128→   128→- 4 files created/modified for SPEC-01 frontend lacuna fixes
+   129→   129→- All 15 frontend lacunas addressed
+   130→   130→- PessoaFisicaForm is a reusable agnostic component per ADR-001
+   131→   131→- Full business rule enforcement on frontend (RN-01 through RN-06)
+   132→   132→- ViaCEP integration for CEP auto-fill
+   133→   133→- Compliance: Air-Gap, LGPD notice, Estipulante disclaimers, correct terminology
+   134→   134→- ESLint: No errors, dev server running normally
+   135→   135→
+   136→   136→---
+   137→   137→Task ID: FIX-BACKEND-SPEC01
+   138→   138→Agent: Backend Engineer
+   139→   139→Task: Fix ALL backend lacunas for SPEC-01 Módulo de Contratação e Cadastro
+   140→   140→
+   141→   141→Work Log:
+   142→   142→- Created /src/lib/sanitization.ts with centralized sanitization (CPF, phone, CEP, string, email, pessoaFisica)
+   143→   143→- Created /src/lib/validations.ts with all RN-01 through RN-06 validations
+   144→   144→- Created /src/app/api/viacep/route.ts with ViaCEP proxy (2s timeout, fallback)
+   145→   145→- Rewrote /src/app/api/contratos/route.ts with 14-step validation pipeline
+   146→   146→- Enhanced /src/app/api/pessoas-fisicas/buscar-por-cpf/route.ts with sanitization and LGPD minimization
+   147→   147→- Updated /src/lib/helpers.ts with re-exports
+   148→   148→
+   149→   149→Stage Summary:
+   150→   150→- RN-01: Unicidade contrato ativo (HTTP 409) ✅
+   151→   151→- RN-02: Validação etária transiente vs configuracoes ✅
+   152→   152→- RN-03: Elegibilidade sub-dependente (agregado_pai CASADO/UNIAO_ESTAVEL) ✅
+   153→   153→- RN-04: Base implemented (seletiva via backend service) ✅
+   154→   154→- RN-05: Bloqueio dependentes em plano INDIVIDUAL ✅
+   155→   155→- RN-06: Tag "SEM DIREITO À PROTEÇÃO" (coverageTag) ✅
+   156→   156→- Sanitização centralizada ✅
+   157→   157→- ViaCEP integration ✅
+   158→   158→- CPF Identificação Unificada ✅
+   159→   159→- Parentesco filtering by tipo_vinculo ✅
+   160→   160→- Profissão obrigatória para TITULAR/AGREGADO ✅
+   161→   161→- CarteiraDigital + ContaAPagar + Patrocínio creation on contract submit ✅
+   162→   162→- Audit logging ✅
+   163→   163→- Field validation (CPF, email, telefone, CEP) ✅
+   164→   164→- tipo_registro validation vs rota ✅
+   165→   165→
+   166→   166→---
+   167→   167→Task ID: FIX-FRONTEND-SPEC01
+   168→   168→Agent: Frontend Engineer
+   169→   169→Task: Fix ALL frontend lacunas for SPEC-01 Módulo de Contratação e Cadastro
+   170→   170→
+   171→   171→Work Log:
+   172→   172→- Updated /src/lib/store.ts with checkoutData and resetCheckout
+   173→   173→- Created /src/components/checkout/pessoa-fisica-form.tsx (693 lines) - agnostic component per ADR-001
+   174→   174→- Rewrote /src/components/checkout/checkout-flow.tsx (852 lines) with full SPEC-01 compliance
+   175→   175→- All 4 steps working: Plano, Titular, Vínculos, Resumo
+   176→   176→
+   177→   177→Stage Summary:
+   178→   178→- PessoaFisicaForm agnóstico (4 sessionTypes) ✅
+   179→   179→- Identificação Unificada (CPF blur → API → modal/block) ✅
+   180→   180→- ViaCEP auto-fill on CEP blur ✅
+   181→   181→- Age validation with coverage tag "SEM DIREITO À PROTEÇÃO" ✅
+   182→   182→- Sub-dependentes with agregadoPaiId ✅
+   183→   183→- Parentesco filtering by tipo_vinculo ✅
+   184→   184→- Limits enforcement (max 8 dep, max 4 agreg) ✅
+   185→   185→- Profissão obrigatória for TITULAR/AGREGADO ✅
+   186→   186→- RN-05: INDIVIDUAL plan blocks vínculos ✅
+   187→   187→- ComplianceBanner in Resumo ✅
+   188→   188→- Mobile responsive ✅
+   189→   189→- Browser verified: All tests PASS ✅
+   190→   190→- ESLint: No errors ✅
+   191→   191→
+   192→   192→---
+   193→   193→Task ID: 3-8
+   194→   194→Agent: Backend Engineer
+   195→   195→Task: Fix all SPEC-02 backend lacunas for Granpaz Platform (Módulo 2 — Gestão de Contratos e Aprovação)
+   196→   196→
+   197→   197→Work Log:
+   198→   198→- Created /src/lib/auth-helpers.ts — SuperAdmin role check helper (checkSuperAdmin) and request metadata extraction (extractRequestMeta for userId/ipAddress)
+   199→   199→- Updated /src/lib/sanitization.ts — Added sanitizeMarkdown() per RN-04: strips <script>, <iframe>, <object>, <embed>, <form> tags+content, on* attributes, javascript: URLs; returns { sanitized, percentageRemoved }
+   200→   200→- Rewrote /src/app/api/contratos/[id]/aprovar/route.ts — Major rewrite with:
+   201→   201→  - L31: SuperAdmin role check via x-user-id header
+   202→   202→  - L1/RN-01: Validate capitalSegurado > 0 (422)
+   203→   203→  - L7: Validate capitalSegurado <= 10_000_000 (422)
+   204→   204→  - L1: Validate codigoSeguradora not null/empty (422)
+   205→   205→  - L8: Validate codigoSeguradora regex ^[A-Z0-9]{1,50}$ (422)
+   206→   206→  - L9: Validate dataInicio >= today if provided (422)
+   207→   207→  - L12: Optimistic locking with updatedAt concurrency check (409)
+   208→   208→  - L2: Bonificação liberation — find PENDENTE_APROVACAO transactions, update to LIBERADO, update carteiraDigital saldoBloqueado/saldoDisponivel
+   209→   209→  - L30: Audit log with atorId (from x-user-id) and ipAddress (from x-forwarded-for/x-real-ip)
+   210→   210→  - L32: Audit acao = 'APROVACAO'
+   211→   211→  - Create/update dadosAprovacaoSeguradora with all fields
+   212→   212→  - Uses sequential DB operations within try-catch for atomicity
+   213→   213→- Rewrote /src/app/api/contratos/[id]/rejeitar/route.ts — Major rewrite with:
+   214→   214→  - L31: SuperAdmin role check
+   215→   215→  - L10/L3: Validate motivo (string, min 10 chars, max 1000 chars) with 422
+   216→   216→  - L4: Cascade estorno — find PENDENTE_APROVACAO transactions, update to ESTORNADO, update carteiraDigital saldoBloqueado -= sum
+   217→   217→  - L12: Optimistic locking with updatedAt (409)
+   218→   218→  - L30: Audit log with atorId and ipAddress
+   219→   219→  - L32: Audit acao = 'REJEICAO'
+   220→   220→- Fixed /src/app/api/contratos/[id]/route.ts — PATCH handler:
+   221→   221→  - L5/RN-03: Financial fields immutability check (capital_segurado_informado, codigo_seguradora_informado, valorParcelaBase, valorTaxaAdesao, seguradoraId, dataInicio) — returns 403 if APROVADO contract
+   222→   222→  - Added updatedAt for optimistic concurrency
+   223→   223→  - GET handler now includes vinculos and dadosAprovacao in response
+   224→   224→  - Audit log on PATCH updates
+   225→   225→- Fixed /src/app/api/contratos/route.ts — GET handler:
+   226→   226→  - L16: Pagination support (page default 1, limit default 20, max 100)
+   227→   227→  - Filter by seguradoraId
+   228→   228→  - Date range filters: dataInicio_start, dataInicio_end
+   229→   229→  - Includes vinculos with pessoaVinculada data and dadosAprovacao
+   230→   230→  - Returns paginated response: { data: [...], pagination: { page, limit, total, totalPages } }
+   231→   231→  - POST handler unchanged
+   232→   232→- Created /src/app/api/seguradoras/route.ts — GET + POST:
+   233→   233→  - GET: List all active seguradoras (L17)
+   234→   234→  - POST: Create seguradora with full validation:
+   235→   235→    - Validate nome (required, min 2 chars)
+   236→   236→    - Validate cnpj (required, digits only, 14 digits)
+   237→   237→    - Validate codigoSeguradora (required, regex ^[A-Z0-9]{1,50}$)
+   238→   238→    - Validate telefoneSinistro (required, digits only, 10-11 digits)
+   239→   239→    - L6/RN-04: Sanitize clausulasMarkdown (strip dangerous HTML)
+   240→   240→    - L11: Warning if >20% content was sanitized
+   241→   241→    - L20: SuperAdmin role check
+   242→   242→    - Audit log
+   243→   243→- Created /src/app/api/seguradoras/[id]/route.ts — GET + PUT + DELETE:
+   244→   244→  - GET: Get single seguradora
+   245→   245→  - PUT: Update seguradora with same validations as POST (all optional)
+   246→   246→    - L6/RN-04: Sanitize clausulasMarkdown on update
+   247→   247→    - L11: Warning if >20% content was sanitized
+   248→   248→    - SuperAdmin role check + audit log
+   249→   249→  - DELETE: Soft delete (set ativa = false)
+   250→   250→    - Checks for active contracts before deactivating
+   251→   251→    - SuperAdmin role check + audit log
+   252→   252→- Created /src/app/api/seguradoras/[id]/testar-pdf/route.ts — L18:
+   253→   253→  - POST: Mock PDF generation endpoint
+   254→   254→  - Returns JSON with mock data (actual PDF generation is async/worker-based, out of scope)
+   255→   255→  - SuperAdmin role check
+   256→   256→- Created /src/app/api/contratos/[id]/endosso/route.ts — POST:
+   257→   257→  - L15: EXCLUSAO_VINCULO — validates vinculoId, checks vinculo does NOT already have dataFimVinculo (returns 400 "Vínculo já inativo")
+   258→   258→  - L19: Endosso creation for approved contracts only
+   259→   259→  - ALTERACAO_CAPITAL: Validate new capitalSegurado > 0 and <= 10_000_000, update dadosAprovacaoSeguradora, RN-05 audit note
+   260→   260→  - EXCLUSAO_VINCULO: Set vinculo.dataFimVinculo = now(), RN-06 recalculation audit note
+   261→   261→  - UPGRADE_PLANO / DOWNGRADE_PLANO: Change plano, update valorParcelaBase/valorTaxaAdesao
+   262→   262→  - SuperAdmin role check on all endosso types
+   263→   263→  - Full audit logging with old and new values
+   264→   264→- Ran bun run lint — No errors, no warnings
+   265→   265→- Dev server running normally
+   266→   266→
+   267→   267→Stage Summary:
+   268→   268→- All 20 backend lacunas fixed (L1-L20 as specified in SPEC-02)
+   269→   269→- Key files modified:
+   270→   270→  - /src/lib/sanitization.ts (added sanitizeMarkdown)
+   271→   271→  - /src/app/api/contratos/[id]/aprovar/route.ts (complete rewrite)
+   272→   272→  - /src/app/api/contratos/[id]/rejeitar/route.ts (complete rewrite)
+   273→   273→  - /src/app/api/contratos/[id]/route.ts (PATCH immutability, GET includes vinculos/dadosAprovacao)
+   274→   274→  - /src/app/api/contratos/route.ts (GET pagination + filters)
+   275→   275→- Key files created:
+   276→   276→  - /src/lib/auth-helpers.ts (checkSuperAdmin, extractRequestMeta)
+   277→   277→  - /src/app/api/seguradoras/route.ts (GET + POST)
+   278→   278→  - /src/app/api/seguradoras/[id]/route.ts (GET + PUT + DELETE)
+   279→   279→  - /src/app/api/seguradoras/[id]/testar-pdf/route.ts (POST mock PDF)
+   280→   280→  - /src/app/api/contratos/[id]/endosso/route.ts (POST endosso)
+   281→   281→- ESLint: No errors, dev server running normally
+   282→   282→
+   283→   283→---
+   284→   284→Task ID: 9-11
+   285→   285→Agent: Frontend Architect
+   286→   286→Task: Fix all SPEC-02 frontend lacunas
+   287→   287→
+   288→   288→Work Log:
+   289→   289→- Updated /src/lib/store.ts — Added 'seguradoras' to DashboardTab type union
+   290→   290→- Rewrote /src/components/dashboard/approval-tab.tsx with all L21-L25 fixes:
+   291→   291→  - L21: Added data_inicio date field (defaults to today), sent as dataInicio in approve request
+   292→   292→  - L22: CPF Confirmation Dialog before approval — admin must type titular's CPF to confirm (SPEC-02 §7.3)
+   293→   293→  - L23: Rejection Modal with motivo textarea (min 10 chars, max 1000 chars, character count, validation)
+   294→   294→  - L24: Loading/error/success states — isSubmitting state, spinner on buttons, API error parsing, toast notifications
+   295→   295→  - L25: Vínculos tree display — fetches full contract details with vínculos when selected, shows parentesco and tipoVinculo
+   296→   296→  - Updated Contrato interface with titular.id, valorTaxaAdesao, vinculos, dadosAprovacao
+   297→   297→  - Approve request now includes dataInicio and adminAprovadorId (from useAppStore.getState().user)
+   298→   298→- Rewrote /src/components/dashboard/contracts-tab.tsx with all L26-L28 fixes:
+   299→   299→  - L26: Fixed Taxa Adesão from hardcoded formatCurrency(0) to formatCurrency(contrato.valorTaxaAdesao)
+   300→   300→  - L27: Display dados_aprovacao for approved contracts (capital segurado, código seguradora, data aprovação, admin aprovador, observações)
+   301→   301→  - L28: Endosso actions — "Alterar Capital" dialog with validation (>0, <=10M), "Excluir Vínculo" dialog with active vínculos list and confirmation
+   302→   302→  - Added pagination support (handles both paginated {data, pagination} and array API responses)
+   303→   303→  - Added pagination controls (Previous/Next buttons, page info)
+   304→   304→  - Added expandedContratoDetail query to fetch full contract details including vínculos and dadosAprovacao
+   305→   305→  - Updated Contrato interface with valorTaxaAdesao, dataFimVinculo on Vinculo, DadosAprovacao type
+   306→   306→- Created /src/components/dashboard/seguradoras-tab.tsx (L29):
+   307→   307→  - Full CRUD for seguradoras management (SuperAdmin only)
+   308→   308→  - Card layout showing nome, cnpj (formatted), código, telefone sinistro, ativa status
+   309→   309→  - "Add Seguradora" button, Edit and Delete buttons on each card
+   310→   310→  - Add/Edit Dialog with fields: nome, cnpj (auto-formatted), codigoSeguradora (uppercase alphanumeric), telefoneSinistro (auto-formatted), processoSusep (optional), clausulasMarkdown (textarea with markdown preview toggle)
+   311→   311→  - Basic markdown renderer for cláusulas (headers, bold, lists)
+   312→   312→  - Delete confirmation dialog
+   313→   313→  - SuperAdmin role check (restricted access if not SUPERADMIN)
+   314→   314→  - Form validation (required fields, CNPJ 14 digits, phone 10-11 digits, código alphanumeric)
+   315→   315→  - API calls: GET/POST /api/seguradoras, PUT/DELETE /api/seguradoras/${id}
+   316→   316→- Updated /src/components/dashboard/dashboard-layout.tsx — Added Building2 icon import and seguradoras nav item (SUPERADMIN role)
+   317→   317→- Updated /src/app/page.tsx — Imported SeguradorasTab and added to tabs map
+   318→   318→
+   319→   319→Stage Summary:
+   320→   320→- All 9 frontend lacunas fixed (L21-L25, L26-L28, L29)
+   321→   321→- Key files modified: src/lib/store.ts, src/components/dashboard/approval-tab.tsx, src/components/dashboard/contracts-tab.tsx, src/components/dashboard/dashboard-layout.tsx, src/app/page.tsx
+   322→   322→- Key files created: src/components/dashboard/seguradoras-tab.tsx
+   323→   323→- ESLint: 0 errors, 8 warnings (all pre-existing in backend API files)
+   324→   324→- Dev server: running normally, no compilation errors
+   325→   325→---
+   326→   326→Task ID: SPEC-02
+   327→   327→Agent: Orchestrator + Backend Engineer + Frontend Architect
+   328→   328→Task: SPEC-02 Audit + Fix — Módulo de Gestão de Contratos e Aprovação
+   329→   329→
+   330→   330→Work Log:
+   331→   331→- Read SPEC-02 document thoroughly and identified 32 lacunas across 6 categories
+   332→   332→- Launched parallel backend and frontend agents to fix all lacunas
+   333→   333→- Backend agent fixed: aprovar route (RN-01, validations, bonificação liberation, concurrency), rejeitar route (RN-02, motivo validation, cascade estorno), imutabilidade (RN-03), seguradoras CRUD (RN-04, markdown sanitization), endosso routes (RN-05, RN-06), contratos pagination + filters
+   334→   334→- Frontend agent fixed: approval-tab (data_inicio, CPF confirm, rejection modal, toasts, vinculos), contracts-tab (taxa adesão, dados_aprovacao, endosso actions, pagination), created seguradoras-tab
+   335→   335→- Fixed post-agent integration bugs: vinculosComoTitular relation doesn't exist on Contrato model (changed to manual vinculo fetch), paginated response format compatibility in approval-tab
+   336→   336→- Browser tested all tabs: Approval Queue (2 contracts, detail panel with vinculos), Contracts (expandable with filters), Seguradoras (CRUD with Alpha/Beta)
+   337→   337→- ESLint: 0 errors
+   338→   338→
+   339→   339→Stage Summary:
+   340→   340→- All 32 SPEC-02 lacunas fixed
+   341→   341→- Key files modified: aprovar/route.ts, rejeitar/route.ts, contratos/[id]/route.ts, contratos/route.ts, sanitization.ts, store.ts, approval-tab.tsx, contracts-tab.tsx, dashboard-layout.tsx, page.tsx
+   342→   342→- Key files created: auth-helpers.ts, seguradoras/route.ts, seguradoras/[id]/route.ts, seguradoras/[id]/testar-pdf/route.ts, endosso/route.ts, seguradoras-tab.tsx
+   343→   343→
+   344→   344→---
+   345→   345→Task ID: SPEC-03-BACKEND
+   346→   346→Agent: Backend Engineer
+   347→   347→Task: Fix ALL backend lacunas for SPEC-03 Módulo Financeiro e de Bonificação
+   348→   348→
+   349→   349→Work Log:
+   350→   350→- Read worklog.md and all existing API routes, lib files, and Prisma schema
+   351→   351→- Updated /src/lib/auth-helpers.ts — Added checkFinanceiroOrAdmin helper (SuperAdmin OR FINANCEIRO role)
+   352→   352→- Created /src/app/api/carteiras/[carteiraId]/abatimentos/route.ts — POST endpoint for abatimento (paying parcela with wallet balance):
+   353→   353→  - RN-003: If saldo_disponivel <= 0, block with SALDO_INSUFICIENTE
+   354→   354→  - RN-003: If saldo_disponivel < valor_parcela, allow partial abatimento, update conta_a_pagar to PARCIALMENTE_PAGO
+   355→   355→  - RN-007: If saldo_devedor > 0, block with SALDO_DEVEDOR_EXISTENTE
+   356→   356→  - EC-008: Validate valor_abatido > 0
+   357→   357→  - EC-009: Validate conta_a_pagar status is not CANCELADO
+   358→   358→  - Validates carteira exists (404), conta_a_pagar exists and belongs to same titular (404)
+   359→   359→  - Creates TransacaoPagamento with tipoTransacao='ABATIMENTO', status='CONCLUIDO'
+   360→   360→  - Updates carteira saldoDisponivel -= valorAbatido
+   361→   361→  - Updates conta_a_pagar valorRestante and status (PAGO or PARCIALMENTE_PAGO)
+   362→   362→  - Audit log with isPartial detail
+   363→   363→- Created /src/app/api/carteiras/[carteiraId]/saques/route.ts — POST endpoint for saque (withdrawal):
+   364→   364→  - RN-005: Check SAQUE_PF_ATIVO config; if false, return 400 SAQUE_PF_DESATIVADO
+   365→   365→  - RN-007: If saldo_devedor > 0, block with SALDO_DEVEDOR_EXISTENTE
+   366→   366→  - RN-006: If valor > LIMITE_SAQUE_DIARIO config, create with status PENDENTE_APROVACAO, move valor to saldoBloqueado
+   367→   367→  - If valor <= LIMITE_SAQUE_DIARIO, create with status CONCLUIDO, debit from saldoDisponivel
+   368→   368→  - RN-005: IRRF calculation (simplified 2026 progressive table: exempt up to R$2251.05, 7.5%/15%/22.5%/27.5% brackets with deductions)
+   369→   369→  - RN-005: INSS calculation (11% capped at R$908.85)
+   370→   370→  - Validate valor >= 10 (minimum), valor <= saldoDisponivel
+   371→   371→  - Creates TransacaoPagamento with tipoTransacao='SAQUE', valorIrrfRetido, valorInssRetido, valorLiquido
+   372→   372→  - Audit log
+   373→   373→- Created /src/app/api/carteiras/[carteiraId]/extrato/route.ts — GET endpoint for extrato (statement):
+   374→   374→  - Filter by tipo (bonificacao, pagamento, todos)
+   375→   375→  - Filter by date range (data_inicio, data_fim)
+   376→   376→  - Pagination (page, limit)
+   377→   377→  - Returns combined list from transacoes_bonificacao and transacoes_pagamento
+   378→   378→  - Each item has: id, tipo, valor, status, data, descricao
+   379→   379→  - Paginated response format: { data: [...], pagination: { page, limit, total, totalPages } }
+   380→   380→- Created /src/app/api/admin/saques/[transacaoId]/aprovar/route.ts — POST for Maker/Checker approval:
+   381→   381→  - SuperAdmin/FINANCEIRO role check via checkFinanceiroOrAdmin
+   382→   382→  - Validate transacao exists, status is PENDENTE_APROVACAO, tipoTransacao is SAQUE
+   383→   383→  - If aprovado=true: move saldoBloqueado to deducted (saldoBloqueado -= valor), set status=CONCLUIDO, set adminAprovadorId
+   384→   384→  - If aprovado=false: move saldoBloqueado back to saldoDisponivel, set status=ESTORNADO, require motivoRejeicao (min 10 chars)
+   385→   385→  - Audit log
+   386→   386→- Created /src/app/api/webhooks/pagamento/route.ts — POST for payment gateway webhook:
+   387→   387→  - EC-003: Idempotency check — look up webhooks_recebidos by transactionId+source, return 200 if already processed
+   388→   388→  - Save webhook to webhooks_recebidos
+   389→   389→  - Find conta_a_pagar by gatewayTransactionId
+   390→   390→  - Update conta_a_pagar status to PAGO, valorRestante to 0
+   391→   391→  - Audit log
+   392→   392→- Created /src/app/api/admin/saques/route.ts — GET for pending saques (Maker/Checker dashboard):
+   393→   393→  - SuperAdmin/FINANCEIRO role check
+   394→   394→  - List TransacaoPagamento where tipoTransacao='SAQUE' and status='PENDENTE_APROVACAO'
+   395→   395→  - Include carteira with titular info
+   396→   396→  - Pagination
+   397→   397→  - Optional status filter (default: PENDENTE_APROVACAO)
+   398→   398→- Updated /src/app/api/contratos/[id]/aprovar/route.ts:
+   399→   399→  - Set dataLiberacao when changing bonificação status to LIBERADO
+   400→   400→  - EC-004: Moved wallet creation BEFORE bonificação liberation (garantirCarteira pattern)
+   401→   401→- Updated /src/app/api/contratos/[id]/rejeitar/route.ts:
+   402→   402→  - Set dataEstorno when changing bonificação status to ESTORNADO
+   403→   403→- Updated /src/app/api/contratos/route.ts (POST handler):
+   404→   404→  - After creating contrato + patrocinio, calculate bonificação for the sponsorship tree
+   405→   405→  - RN-001: Base de cálculo is ONLY on taxa de adesão + parcela mensal (NEVER on prêmio de seguro or capital segurado)
+   406→   406→  - Traverse sponsorship tree UP from patrocinador using niveis_bonificacao table
+   407→   407→  - Create TransacaoBonificacao entries with status PENDENTE_APROVACAO for each level
+   408→   408→  - Add valor to saldoBloqueado of each carteira in the tree
+   409→   409→  - Ensure carteiras exist for all nodes in the tree (create if not exists)
+   410→   410→  - P2002 error handling for @@unique([origemContratoId, carteiraId, nivelOrigem])
+   411→   411→  - EC-005: If bonificação creation fails, log and proceed (don't block contract creation)
+   412→   412→- Updated /src/app/api/patrocinios/route.ts:
+   413→   413→  - Added POST handler for creating patrocínios
+   414→   414→  - RN-009: Validate revendedorId doesn't already have active patrocínio — return CONFLITO_DE_REDE (409)
+   415→   415→  - RN-010: Validate revendedorId !== patrocinadorId — return AUTO_PATROCINIO_PROIBIDO (400)
+   416→   416→  - Validate both revendedor and patrocinador exist
+   417→   417→  - Calculate nivelProfundidade based on patrocinador's current level
+   418→   418→  - Ensure both have carteiras digitais (create if not exists)
+   419→   419→  - Audit log
+   420→   420→- Updated /src/app/api/carteiras/route.ts:
+   421→   421→  - Added pagination support (page, limit)
+   422→   422→  - Added filter by titularId
+   423→   423→  - Paginated response format: { data: [...], pagination: { page, limit, total, totalPages } }
+   424→   424→- Updated /src/app/api/carteiras/transacoes/route.ts:
+   425→   425→  - Added pagination support (page, limit)
+   426→   426→  - Added filter by tipo (ABATIMENTO/SAQUE), status, date range
+   427→   427→  - Paginated response format
+   428→   428→- Updated /src/app/api/contas-a-pagar/route.ts:
+   429→   429→  - Added pagination support (page, limit)
+   430→   430→  - Added filter by contratoId, status, date range
+   431→   431→  - Paginated response format
+   432→   432→- Ran bun run lint — No errors
+   433→   433→- Ran bun run db:push — Database in sync
+   434→   434→- Dev server running normally
+   435→   435→
+   436→   436→Stage Summary:
+   437→   437→- 13 files created/updated for SPEC-03 backend lacuna fixes
+   438→   438→- Key files created:
+   439→   439→  - /src/app/api/carteiras/[carteiraId]/abatimentos/route.ts (abatimento with RN-003, RN-007, EC-008, EC-009)
+   440→   440→  - /src/app/api/carteiras/[carteiraId]/saques/route.ts (saque with RN-005, RN-006, RN-007, IRRF/INSS)
+   441→   441→  - /src/app/api/carteiras/[carteiraId]/extrato/route.ts (extrato with filters + pagination)
+   442→   442→  - /src/app/api/admin/saques/[transacaoId]/aprovar/route.ts (Maker/Checker approval)
+   443→   443→  - /src/app/api/webhooks/pagamento/route.ts (EC-003 idempotency + conta_a_pagar update)
+   444→   444→  - /src/app/api/admin/saques/route.ts (pending saques list for dashboard)
+   445→   445→- Key files modified:
+   446→   446→  - /src/lib/auth-helpers.ts (added checkFinanceiroOrAdmin)
+   447→   447→  - /src/app/api/contratos/[id]/aprovar/route.ts (dataLiberacao, EC-004 wallet order)
+   448→   448→  - /src/app/api/contratos/[id]/rejeitar/route.ts (dataEstorno)
+   449→   449→  - /src/app/api/contratos/route.ts (bonificação tree creation with RN-001)
+   450→   450→  - /src/app/api/patrocinios/route.ts (POST with RN-009, RN-010)
+   451→   451→  - /src/app/api/carteiras/route.ts (pagination + titularId filter)
+   452→   452→  - /src/app/api/carteiras/transacoes/route.ts (pagination + tipo/status/date filters)
+   453→   453→  - /src/app/api/contas-a-pagar/route.ts (pagination + contratoId/status/date filters)
+   454→   454→- ESLint: 0 errors, dev server running normally
+   455→   455→

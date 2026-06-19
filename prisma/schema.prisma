@@ -240,18 +240,22 @@ model CarteiraDigital {
 // 9. Transações Bonificação — Bonus transactions
 // ─────────────────────────────────────────────────────────
 model TransacaoBonificacao {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   origemContratoId   String
   carteiraId         String
   nivelOrigem        Int
   valor              Float
   percentualAplicado Float
-  status             String   // PENDENTE_APROVACAO / LIBERADO / ESTORNADO
-  createdAt          DateTime @default(now())
+  status             String    // PENDENTE_APROVACAO / LIBERADO / ESTORNADO
+  dataLiberacao      DateTime? // RN-002: set when status → LIBERADO
+  dataEstorno        DateTime? // RN-004: set when status → ESTORNADO
+  createdAt          DateTime  @default(now())
 
   origemContrato     Contrato       @relation(fields: [origemContratoId], references: [id])
   carteira           CarteiraDigital @relation(fields: [carteiraId], references: [id])
 
+  // RN-002: Idempotência — impede bonificação duplicada por contrato+carteira+nível
+  @@unique([origemContratoId, carteiraId, nivelOrigem])
   @@map("transacoes_bonificacao")
 }
 
@@ -266,10 +270,14 @@ model TransacaoPagamento {
   tipoTransacao        String    // ABATIMENTO / SAQUE
   valorAbatido         Float
   saldoRestanteParcela Float?
-  valorIrrfRetido      Float?
-  valorInssRetido      Float?
+  valorIrrfRetido      Float?    @default(0)
+  valorInssRetido      Float?    @default(0)
+  valorLiquido         Float?    // valorAbatido - IRRF - INSS (para SAQUE)
   status               String    // CONCLUIDO / ESTORNADO / PENDENTE_APROVACAO
   dataTransacao        DateTime  @default(now())
+  observacoes          String?   // EC-008/EC-009: notas sobre o abatimento/saque
+  motivoRejeicao       String?   // Maker/Checker: motivo se rejeitado
+  adminAprovadorId     String?   // Maker/Checker: quem aprovou/rejeitou
 
   carteira             CarteiraDigital @relation(fields: [carteiraId], references: [id])
   contaAPagar          ContaAPagar?    @relation(fields: [contaAPagarId], references: [id])
@@ -288,10 +296,11 @@ model ContaAPagar {
   valor                 Float
   valorRestante         Float
   dataVencimento        DateTime
-  status                String    // PENDENTE / PAGO / VENCIDO / CANCELADO
+  status                String    // PENDENTE / PARCIALMENTE_PAGO / PAGO / VENCIDO / CANCELADO
   boletoUrl             String?
   gatewayTransactionId  String?
   createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now())
 
   contrato              Contrato         @relation(fields: [contratoId], references: [id])
   transacoesPagamento   TransacaoPagamento[]
