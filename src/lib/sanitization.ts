@@ -28,6 +28,45 @@ export function sanitizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+/**
+ * Sanitize markdown/HTML content per RN-04
+ * Removes dangerous HTML tags and attributes that could lead to XSS
+ * Returns the sanitized string and the percentage of content removed
+ */
+export function sanitizeMarkdown(content: string): { sanitized: string; percentageRemoved: number } {
+  const originalLength = content.length
+  if (originalLength === 0) return { sanitized: '', percentageRemoved: 0 }
+
+  let result = content
+
+  // Remove <script>...</script> tags and content
+  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+
+  // Remove <iframe>...</iframe> tags and content
+  result = result.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+
+  // Remove <object>...</object> tags and content
+  result = result.replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '')
+
+  // Remove <embed> tags (self-closing or not)
+  result = result.replace(/<embed\b[^>]*\/?>/gi, '')
+
+  // Remove <form>...</form> tags and content
+  result = result.replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '')
+
+  // Remove all on* attributes (onclick, onload, onerror, etc.)
+  result = result.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+
+  // Remove javascript: URLs
+  result = result.replace(/javascript\s*:/gi, '')
+
+  const percentageRemoved = originalLength > 0
+    ? ((originalLength - result.length) / originalLength) * 100
+    : 0
+
+  return { sanitized: result, percentageRemoved }
+}
+
 /** Sanitize all fields of a pessoa fisica payload */
 export function sanitizePessoaFisica(data: Record<string, any>): Record<string, any> {
   const sanitized = { ...data }

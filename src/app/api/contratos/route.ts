@@ -10,24 +10,84 @@ import {
   validateFieldFormats,
 } from '@/lib/validations'
 
-// GET /api/contratos - List contracts
+/**
+ * GET /api/contratos - List contracts with pagination and filters
+ *
+ * Lacunas fixed:
+ * - L16: Pagination support (page, limit)
+ * - Filter by seguradoraId
+ * - Date range filters: dataInicio_start, dataInicio_end
+ * - Include vinculos with pessoaVinculada data
+ * - Include dadosAprovacao in response
+ * - Paginated response format
+ */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
+
+    // ─── Pagination ───
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)))
+    const skip = (page - 1) * limit
+
+    // ─── Filters ───
     const status = searchParams.get('status')
+    const seguradoraId = searchParams.get('seguradoraId')
+    const dataInicioStart = searchParams.get('dataInicio_start')
+    const dataInicioEnd = searchParams.get('dataInicio_end')
 
-    const where = status ? { status } : {}
+    // Build where clause
+    const where: Record<string, unknown> = {}
+    if (status) where.status = status
+    if (seguradoraId) where.seguradoraId = seguradoraId
+    if (dataInicioStart || dataInicioEnd) {
+      where.dataInicio = {}
+      if (dataInicioStart) where.dataInicio.gte = new Date(dataInicioStart)
+      if (dataInicioEnd) where.dataInicio.lte = new Date(dataInicioEnd)
+    }
 
-    const contratos = await db.contrato.findMany({
-      where,
-      include: {
-        titular: { select: { id: true, nomeCompleto: true, cpf: true } },
-        plano: { select: { nome: true, tipo: true } },
+    const [contratos, total] = await Promise.all([
+      db.contrato.findMany({
+        where,
+        include: {
+          titular: { select: { id: true, nomeCompleto: true, cpf: true } },
+          plano: { select: { nome: true, tipo: true } },
+          seguradora: { select: { id: true, nome: true, codigoSeguradora: true } },
+          dadosAprovacao: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      db.contrato.count({ where }),
+    ])
+
+    // Fetch vinculos for each contrato's titular
+    const contratosWithVinculos = await Promise.all(
+      contratos.map(async (contrato) => {
+        const vinculos = await db.vinculo.findMany({
+          where: { titularRaizId: contrato.titularId, dataFimVinculo: null },
+          include: {
+            pessoaVinculada: {
+              select: { id: true, nomeCompleto: true, tipoRegistro: true, dataNascimento: true, cpf: true },
+            },
+          },
+        })
+        return { ...contrato, vinculos }
+      })
+    )
+
+    const totalPages = Math.ceil(total / limit)
+
+    return NextResponse.json({
+      data: contratosWithVinculos,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
       },
-      orderBy: { createdAt: 'desc' },
     })
-
-    return NextResponse.json(contratos)
   } catch (error) {
     console.error('List contratos error:', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
@@ -357,6 +417,8 @@ export async function POST(request: Request) {
         entidade: 'Contrato',
         entidadeId: contrato.id,
         acao: 'CREATE',
+        atorId: request.headers.get('x-user-id'),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
         valoresNovos: JSON.stringify({
           status: 'AGUARDANDO_APROVACAO',
           planoId,

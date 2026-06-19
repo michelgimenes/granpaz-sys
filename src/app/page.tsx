@@ -28,6 +28,7 @@ import { NetworkTab } from '@/components/dashboard/network-tab'
 import { ClaimsTab } from '@/components/dashboard/claims-tab'
 import { ConfigTab } from '@/components/dashboard/config-tab'
 import { AuditTab } from '@/components/dashboard/audit-tab'
+import { SeguradorasTab } from '@/components/dashboard/seguradoras-tab'
 
 function LandingPage() {
   return (
@@ -55,6 +56,7 @@ function DashboardContent() {
     network: <NetworkTab />,
     claims: <ClaimsTab />,
     config: <ConfigTab />,
+    seguradoras: <SeguradorasTab />,
     audit: <AuditTab />,
   }
 

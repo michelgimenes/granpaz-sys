@@ -14,6 +14,7 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
+  Building2,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -25,6 +26,7 @@ const navItems: Array<{ id: DashboardTab; label: string; icon: React.ElementType
   { id: 'network', label: 'Rede / Patrocínio', icon: Network, roles: ['SUPERADMIN', 'SUPERVISOR'] },
   { id: 'claims', label: 'Sinistros', icon: AlertTriangle, roles: ['SUPERADMIN', 'SUPERVISOR', 'SUPORTE'] },
   { id: 'config', label: 'Configurações', icon: Settings, roles: ['SUPERADMIN'] },
+  { id: 'seguradoras', label: 'Seguradoras', icon: Building2, roles: ['SUPERADMIN'] },
   { id: 'audit', label: 'Auditoria', icon: ScrollText, roles: ['SUPERADMIN'] },
 ]
 
