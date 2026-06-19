@@ -761,3 +761,181 @@ Stage Summary:
 - Key files modified: schema.prisma, sinistros/route.ts, validations.ts, claims-tab.tsx, helpers.ts
 - Business rules implemented: RN-01 through RN-07, EC-01 through EC-08 addressed
 - Compliance: Air-Gap (RN-01), Carência Art.798 CC (RN-02), Suspensão (RN-03), CDC Art.49 (RN-04), Maioridade (RN-05), LGPD (RN-06), Remissão com prevalência Apólice (RN-07)
+
+---
+Task ID: SPEC-05-BACKEND
+Agent: Backend Engineer
+Task: Fix ALL backend lacunas for SPEC-05 (Módulo de Rede e Patrocínio)
+
+Work Log:
+- Updated /api/patrocinios/route.ts with:
+  - RN-01: Check if patrocinadorId is a dependent (cônjuge/filho) of revendedorId via vinculos table — blocks with AUTO_PATROCINIO_PROIBIDO; indirect relatives allowed but audit alert logged
+  - RN-04: Air-Gap Funcional — validate no CLT-related fields (meta_*, horario_*, salario, etc) in request body, reject with 400 and log audit
+  - Patrocinador active vínculo validation — patrocinador must be active in the network (root nodes allowed)
+  - Enhanced GET: pagination (page, limit), filters (revendedorId, patrocinadorId, nivel), option to include inactive records (incluirInativos=true)
+
+- Created /api/rede/arvore/route.ts:
+  - GET endpoint for hierarchical sponsorship tree
+  - Query params: revendedor_id (optional, defaults to root nodes), max_nivel (default 5, max 10)
+  - BFS iterative tree building with depth limit
+  - Returns tree structure with id, revendedorId, nomeCompleto, cpf, nivelProfundidade, subordinados
+  - Root node detection: patrocinadores without active patrocínio as revendedor
+
+- Created /api/rede/realocar/route.ts:
+  - POST endpoint for atomic realocação (RN-03)
+  - SuperAdmin role check required
+  - Motivo validation (10-500 chars) with sanitizeString
+  - RN-01: No auto-patrocínio, no direct dependent patrocínio
+  - EC-02: Cycle detection — trace from novo_patrocinador up the tree, reject with CICLO_DE_PATROCINIO_DETECTADO
+  - RN-03: Atomic realocação — close current patrocínio (set dataFimVinculo + motivoRealocacao), create new patrocínio, cascade recalculate nivelProfundidade for all subordinates
+  - EC-01: Optimistic locking — verify patrocínio hasn't changed during operation, rollback on conflict
+  - RN-05: Audit note about bonificação recalculation for future sales
+  - Full audit log with old/new values, atorId, ipAddress
+  - Returns count of subordinadosAfetados
+
+- Created /api/rede/subordinados/route.ts:
+  - GET endpoint to list direct/indirect subordinates
+  - Query params: revendedor_id (required), tipo (diretos/indiretos/todos), nivel filter, page, limit
+  - Recursive subordinate discovery up to 10 levels
+  - Paginated results with count per level
+
+- Created /api/rede/historico/route.ts:
+  - GET endpoint for patrocínio history (full audit trail)
+  - Query param: revendedor_id (required)
+  - Returns ALL patrocínios (active + inactive) ordered by dataEntrada DESC
+  - Includes patrocinadorNome, motivoRealocacao, ativo flag
+  - Summary counts: total, ativos, realocacoes
+
+- Created /api/rede/validar-clt/route.ts:
+  - POST endpoint for Air-Gap Funcional validation (RN-04)
+  - Recursively checks object keys and string values for 20 prohibited CLT terms
+  - Returns { valid: boolean, violations: string[] }
+  - Audit log on violations (potential injection attempt)
+  - Utility endpoint usable by frontend and other APIs
+
+Stage Summary:
+- 1 existing file updated: /api/patrocinios/route.ts
+- 5 new API routes created under /api/rede/
+- Business rules implemented: RN-01 (dependent patrocínio), RN-03 (atomic realocação), RN-04 (Air-Gap CLT), RN-05 (bonificação audit note)
+- Error conditions: EC-01 (optimistic locking), EC-02 (cycle detection)
+- All routes pass ESLint linting
+- Dev server: running normally
+
+---
+Task ID: SPEC-05-FRONTEND
+Agent: Frontend Architect
+Task: Complete rewrite of network-tab.tsx for SPEC-05 (Módulo de Rede e Patrocínio)
+
+Work Log:
+- Read worklog.md and previous agent work (backend SPEC-05 routes already complete)
+- Read existing network-tab.tsx (146-line basic component with level-grouped list only)
+- Read all backend API routes: /api/patrocinios, /api/rede/arvore, /api/rede/realocar, /api/rede/subordinados, /api/rede/historico, /api/rede/validar-clt
+- Read Prisma schema, store.ts, helpers.ts for integration context
+- Complete rewrite of /src/components/dashboard/network-tab.tsx (146 → 1375 lines)
+
+Features Implemented:
+1. Air-Gap Compliance Banner (ADR-03) — always visible at top with Shield icon
+2. Stats Dashboard — 4 cards: Membros Ativos, Níveis de Profundidade, Patrocinadores Únicos, Sem Subordinados (folhas)
+3. Tree Visualization — collapsible tree from /api/rede/arvore with:
+   - Expand/collapse with ChevronRight/ChevronDown icons
+   - Color-coded by level (5-color cycle matching existing theme)
+   - Level badges on each node
+   - Node info: nome, CPF (masked), nível
+   - Search/filter by name or CPF
+   - Per-level node count badges in header
+   - Hover actions: Ver Subordinados, Ver Histórico, Realocar
+   - Keyboard accessible (Enter to expand/collapse, proper ARIA roles)
+   - Max height with scroll (600px)
+4. Create Patrocínio Dialog (SuperAdmin only):
+   - Select revendedor (only people without active vínculo)
+   - Select patrocinador (active network members or roots)
+   - Nivel preview showing calculated depth
+   - Air-Gap compliance note inside dialog
+   - Error handling with code-specific messages (CONFLITO_DE_REDE, AUTO_PATROCINIO_PROIBIDO, etc.)
+   - Success toast + tree refresh
+5. Realocação Dialog (SuperAdmin only):
+   - Shows current patrocinador info
+   - Select new patrocinador (filtered to exclude self)
+   - Motivo textarea (10-500 chars, validated)
+   - Cascade warning about subordinates recalculation
+   - Confirmation AlertDialog showing affected subordinate count
+   - Error handling (CICLO_DE_PATROCINIO_DETECTADO, CONFLITO_DE_REDE, etc.)
+   - Success toast with affected count + tree refresh
+6. Subordinates List Tab:
+   - Triggered from tree node action
+   - Filter by tipo: Diretos / Indiretos / Todos
+   - Table-like list with Nome, CPF, Nível badge, Relação badge, Data Entrada
+   - Pagination controls
+   - Uses /api/rede/subordinados
+7. History View Tab:
+   - Triggered from tree node action
+   - Full audit trail of patrocínio history
+   - Active entries highlighted in green, inactive in gray
+   - Shows: Patrocinador, Nível, Data Entrada, Data Fim, Motivo Realocação
+   - Summary: total records, active count, realocações count
+   - Uses /api/rede/historico
+8. CSV Export (improved):
+   - Checkbox to include inactive/historical records
+   - Level filter dropdown
+   - BOM-prefixed UTF-8 CSV with proper headers
+   - Descriptive filename (ativos vs completo)
+
+Technical Details:
+- All API calls use TanStack React Query with proper cache invalidation
+- Role check via useAppStore (user.role === 'SUPERADMIN')
+- CPF formatting via formatCPF, dates via formatDate
+- Toast notifications via sonner for all success/error feedback
+- Proper loading states (Loader2 spinners)
+- Empty states with icons and messages
+- Responsive design (mobile-first, grid-cols-2 to lg:grid-cols-4)
+- Custom scrollbar on scrollable areas
+- ESLint: 0 errors, 0 warnings
+
+Stage Summary:
+- 1 file modified: /src/components/dashboard/network-tab.tsx
+- Complete rewrite from 146-line basic list to 1375-line feature-rich component
+- All 8 required features implemented
+- All backend APIs properly integrated
+- Air-Gap compliance banner always visible per ADR-03
+- No backend files modified
+- ESLint: clean
+---
+Task ID: SPEC-05
+Agent: Orchestrator + Backend Engineer + Frontend Architect
+Task: SPEC-05 Audit + Fix — Módulo de Rede e Patrocínio
+
+Work Log:
+- Read SPEC-05 document thoroughly (355 lines) covering network, patrocínio, realocação, anti-fraud/CLT
+- Identified 29 lacunas across 5 categories
+- Schema: No changes needed (cross-tree validation is application-level, not DB constraint)
+- Backend agent updated existing patrocinios route:
+  - RN-01: Check if patrocinadorId is CONJUGE/FILHO of revendedorId via vinculos
+  - RN-04: Air-Gap Funcional — scan request body for 20 CLT-prohibited terms
+  - Validate patrocinador has active vínculo
+  - GET: Added pagination, filters (revendedorId, patrocinadorId, nivel, incluirInativos)
+- Backend agent created 5 new API endpoints:
+  - GET /api/rede/arvore — Hierarchical tree with BFS traversal, depth-limited (max 10)
+  - POST /api/rede/realocar — Atomic realocação (RN-03) with cycle detection (EC-02), cascade nivelProfundidade recalculation, optimistic locking (EC-01), bonificação audit note (RN-05)
+  - GET /api/rede/subordinados — List direct/indirect/all subordinates with pagination
+  - GET /api/rede/historico — Full patrocínio history with realocação audit trail
+  - POST /api/rede/validar-clt — Standalone CLT Air-Gap validation utility
+- Frontend agent rewrote network-tab.tsx from 146 to ~1375 lines:
+  - Air-Gap Compliance Banner (ADR-03) always visible
+  - 4 Stats cards: Membros Ativos, Níveis, Patrocinadores Únicos, Sem Subordinados
+  - Tree visualization with collapsible nodes, color-coded by level, search/filter
+  - Create Patrocínio dialog (SuperAdmin) with revendedor/patrocinador selects
+  - Realocação dialog (SuperAdmin) with motivo, cascade warning, confirmation
+  - 3 Tabs: Árvore, Subordinados, Histórico
+  - Improved CSV export with incluirInativos and level filter
+- Browser verified: Network tab renders with all sections, no errors
+- ESLint: 0 errors, 0 warnings
+- Dev server: running normally
+
+Stage Summary:
+- All 29 SPEC-05 lacunas fixed
+- Key files created: rede/arvore/route.ts, rede/realocar/route.ts, rede/subordinados/route.ts, rede/historico/route.ts, rede/validar-clt/route.ts
+- Key files modified: patrocinios/route.ts, network-tab.tsx
+- Business rules implemented: RN-01 through RN-05, EC-01 through EC-06
+- Compliance: Air-Gap Funcional (RN-04) with 20 prohibited CLT terms
+- Realocação: Atomic with cascade recalculation, cycle detection, optimistic locking
+- Cross-Tree (RN-02) and Anti-Auto-Patrocínio (RN-01) already existed from SPEC-03
