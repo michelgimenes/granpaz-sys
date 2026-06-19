@@ -26,6 +26,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://granpaz.com.br'),
   title: "Granpaz | Plano de Proteção Familiar",
   description:
     "O plano de proteção familiar que cuida de quem você mais ama. Cobertura em todo o Brasil, apoio financeiro e proteção em vida. Saúde & Proteção Administração de Benefícios.",
@@ -41,6 +42,9 @@ export const metadata: Metadata = {
   authors: [{ name: "Saúde & Proteção Administração de Benefícios" }],
   icons: {
     icon: "/favicon.ico",
+  },
+  alternates: {
+    canonical: '/',
   },
   openGraph: {
     title: "Granpaz | Plano de Proteção Familiar",
@@ -66,6 +70,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
+        {/* Schema.org — Organização */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -80,6 +85,28 @@ export default function RootLayout({
                 "@type": "ContactPoint",
                 contactType: "customer service",
                 availableLanguage: "Portuguese",
+              },
+            }),
+          }}
+        />
+        {/* Schema.org — Produto (SPEC-07 §6.3) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Product",
+              name: "Plano Granpaz",
+              description: "Clube de benefícios com assistência funeral nacional e amparo financeiro.",
+              brand: {
+                "@type": "Brand",
+                name: "Saúde & Proteção",
+              },
+              offers: {
+                "@type": "Offer",
+                priceCurrency: "BRL",
+                price: "29.90",
+                availability: "https://schema.org/InStock",
               },
             }),
           }}

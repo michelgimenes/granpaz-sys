@@ -3,16 +3,17 @@
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Shield, ArrowRight } from 'lucide-react'
+import copy from '@/lib/copy.json'
 
 export function HeroSection() {
   const { setView } = useAppStore()
 
   return (
     <section className="relative min-h-[85vh] flex items-center overflow-hidden" aria-label="Seção principal">
-      {/* Background gradient overlay */}
+      {/* Gradiente de fundo overlay */}
       <div className="hero-gradient absolute inset-0" aria-hidden="true" />
-      
-      {/* Decorative elements */}
+
+      {/* Elementos decorativos */}
       <div className="absolute top-20 right-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl" aria-hidden="true" />
       <div className="absolute bottom-20 left-10 w-96 h-96 bg-brand-accent/5 rounded-full blur-3xl" aria-hidden="true" />
 
@@ -20,22 +21,20 @@ export function HeroSection() {
         <div className="max-w-3xl">
           {/* Pre-headline */}
           <p className="text-sm sm:text-base font-semibold tracking-widest text-primary uppercase mb-4 animate-fade-up">
-            Para pais e mães que pensam no futuro da família
+            {copy.hero.preHeadline}
           </p>
 
           {/* Headline */}
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight mb-6 animate-fade-up" style={{ animationDelay: '0.1s' }}>
-            A dor de uma perda não avisa quando vai chegar.{' '}
+            {copy.hero.headline}{' '}
             <span className="text-primary">
-              Mas a proteção da sua família pode começar hoje.
+              {copy.hero.headlineHighlight}
             </span>
           </h1>
 
           {/* Sub-headline */}
           <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-8 max-w-2xl animate-fade-up" style={{ animationDelay: '0.2s' }}>
-            O <strong className="text-foreground">Granpaz</strong> é o plano de proteção familiar que oferece
-            assistência funeral em todo o Brasil, indenização por morte e proteção em vida
-            — com valores acessíveis para você cuidar de quem mais ama.
+            Com o <strong className="text-foreground">Plano Granpaz</strong>, você garante assistência funeral completa em todo o Brasil e amparo financeiro em caso de fatalidades. Tudo sem burocracia e por um valor que cabe perfeitamente no seu bolso.
           </p>
 
           {/* CTA */}
@@ -46,7 +45,7 @@ export function HeroSection() {
               className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-base px-8 py-6 h-auto"
             >
               <Shield className="mr-2 h-5 w-5" aria-hidden="true" />
-              Quero Proteger Minha Família Agora
+              {copy.hero.ctaPrimary}
               <ArrowRight className="ml-2 h-5 w-5" aria-hidden="true" />
             </Button>
             <Button
@@ -58,24 +57,18 @@ export function HeroSection() {
                 el?.scrollIntoView({ behavior: 'smooth' })
               }}
             >
-              Conhecer o Plano
+              {copy.hero.ctaSecondary}
             </Button>
           </div>
 
-          {/* Trust indicators */}
+          {/* Indicadores de confiança */}
           <div className="flex flex-wrap items-center gap-6 mt-10 pt-8 border-t border-border/50 animate-fade-up" style={{ animationDelay: '0.4s' }}>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-state-success" aria-hidden="true" />
-              <span className="text-sm text-muted-foreground">Cobertura nacional</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-state-success" aria-hidden="true" />
-              <span className="text-sm text-muted-foreground">Sem burocracia</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-state-success" aria-hidden="true" />
-              <span className="text-sm text-muted-foreground">A partir de R$ 29,90/mês</span>
-            </div>
+            {copy.hero.trustIndicators.map((indicator, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-state-success" aria-hidden="true" />
+                <span className="text-sm text-muted-foreground">{indicator}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

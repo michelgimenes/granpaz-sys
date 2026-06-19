@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -11,6 +11,7 @@ import { PessoaFisicaForm } from './pessoa-fisica-form'
 import { formatCPF, formatCurrency, formatDate } from '@/lib/helpers'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -105,6 +106,19 @@ function ComplianceBanner() {
 export function CheckoutFlow() {
   const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView, checkoutData, setCheckoutData, resetCheckout } = useAppStore()
 
+  // Captura de parâmetros UTM na montagem (SPEC-07 §4.5 / RN-05)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
+    utmKeys.forEach(key => {
+      const value = params.get(key)
+      if (value) {
+        sessionStorage.setItem(key, value.substring(0, 50)) // Máx 50 chars por especificação
+      }
+    })
+  }, [])
+
   // Local state for titular and vinculos
   const [titularData, setTitularData] = useState<Record<string, unknown> | null>(
     checkoutData.titular as Record<string, unknown> | null
@@ -123,14 +137,21 @@ export function CheckoutFlow() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submissionSuccess, setSubmissionSuccess] = useState(false)
 
-  // Fetch plans
-  const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
+  // EC-06 / RN-04: Reconhecimento do Clube de Benefícios
+  const [clubeAcknowledged, setClubeAcknowledged] = useState(false)
+
+  // 409 Conflict modal
+  const [showCpfConflictModal, setShowCpfConflictModal] = useState(false)
+
+  // Fetch plans — com retry e tratamento de erro
+  const { data: plans = [], isLoading: plansLoading, error: plansError } = useQuery<Plan[]>({
     queryKey: ['plans'],
     queryFn: async () => {
       const res = await fetch('/api/planos')
       if (!res.ok) throw new Error('Erro ao carregar planos')
       return res.json()
     },
+    retry: 2,
   })
 
   // Computed counts
@@ -197,6 +218,16 @@ export function CheckoutFlow() {
 
     setIsSubmitting(true)
     try {
+      // Coletar parâmetros UTM do sessionStorage (SPEC-07 §4.5 / RN-05)
+      const utmData = {} as Record<string, string>
+      if (typeof window !== 'undefined') {
+        const utmKeysArr = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
+        utmKeysArr.forEach(key => {
+          const value = sessionStorage.getItem(key)
+          if (value) utmData[key] = value
+        })
+      }
+
       const res = await fetch('/api/contratos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -223,11 +254,12 @@ export function CheckoutFlow() {
             estado: v.estado || null,
             agregadoPaiId: v.agregadoPaiId || null,
           })),
+          utm: Object.keys(utmData).length > 0 ? utmData : undefined,
         }),
       })
 
       if (res.status === 409) {
-        toast.error('Você já possui uma proposta em análise. Aguarde a aprovação.')
+        setShowCpfConflictModal(true)
         return
       }
 
@@ -253,6 +285,7 @@ export function CheckoutFlow() {
 
   const handleBack = () => {
     if (checkoutStep === 0) {
+      resetCheckout() // RN-05: Limpar dados sensíveis ao sair do checkout
       setView('landing')
     } else {
       setCheckoutStep(checkoutStep - 1)
@@ -278,8 +311,10 @@ export function CheckoutFlow() {
             </div>
             <h2 className="font-serif text-2xl font-bold text-foreground">Contratação Realizada!</h2>
             <p className="text-muted-foreground text-sm">
-              Sua proposta foi enviada com sucesso. Você receberá um e-mail de confirmação e acompanhamento do status de aprovação.
+              Sua proposta foi enviada com sucesso e está <strong className="text-foreground">aguardando aprovação</strong>.{' '}
+              Nenhuma apólice foi emitida ainda — você receberá um e-mail de confirmação e acompanhamento do status de aprovação.
             </p>
+            <Badge variant="secondary" className="text-xs">Status: Aguardando Aprovação</Badge>
             <ComplianceBanner />
             <div className="flex gap-3 pt-2">
               <Button variant="outline" onClick={() => setView('landing')} className="flex-1">
@@ -358,6 +393,27 @@ export function CheckoutFlow() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
+            ) : plansError ? (
+              /* L05: Fallback de manutenção quando API de planos falha */
+              <div className="text-center py-12 space-y-4">
+                <AlertCircle className="h-12 w-12 text-state-warning mx-auto" />
+                <h3 className="font-serif text-xl font-bold text-foreground">Manutenção Técnica</h3>
+                <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                  No momento, nossos sistemas estão em manutenção. Por favor, tente novamente em alguns minutos ou entre em contato com nosso suporte.
+                </p>
+                <a
+                  href="https://wa.me/5511999999999"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-state-success text-white px-6 py-3 rounded-lg font-semibold hover:bg-state-success/90 transition-colors"
+                >
+                  <Phone className="h-4 w-4" />
+                  Falar com Suporte via WhatsApp
+                </a>
+                <Button variant="outline" onClick={() => setView('landing')} className="mt-2">
+                  Voltar para Página Inicial
+                </Button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {plans.map(plan => (
@@ -415,6 +471,10 @@ export function CheckoutFlow() {
                             <li>• Até {plan.maxAgregados} agregados (outros parentes)</li>
                             <li>• Sub-dependentes de agregados casados</li>
                           </ul>
+                          {/* EC-06 / L04: Benefício Intrínseco do Clube */}
+                          <p className="text-xs text-primary font-medium mt-1">
+                            Proteção Funeral é um benefício intrínseco do Clube de Benefícios.
+                          </p>
                         </div>
                       ) : (
                         <div className="p-3 rounded-lg bg-muted/50 border border-border/50 space-y-1">
@@ -820,6 +880,22 @@ export function CheckoutFlow() {
             {/* Compliance Banner */}
             <ComplianceBanner />
 
+            {/* EC-06 / RN-04: Reconhecimento do Clube de Benefícios */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10">
+              <input
+                type="checkbox"
+                id="clube-ack"
+                checked={clubeAcknowledged}
+                onChange={(e) => setClubeAcknowledged(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-border accent-primary"
+                required
+              />
+              <label htmlFor="clube-ack" className="text-xs text-muted-foreground leading-relaxed">
+                Declaro que compreendo que o Granpaz é um <strong className="text-foreground">Clube de Benefícios</strong> e que a{' '}
+                <strong className="text-foreground">Proteção Funeral é um benefício intrínseco</strong>, não caracterizando venda casada (CDC Art. 39).
+              </label>
+            </div>
+
             {/* Navigation buttons */}
             <div className="flex gap-3 pt-2">
               <Button variant="outline" onClick={() => setCheckoutStep(2)} className="gap-2">
@@ -828,7 +904,7 @@ export function CheckoutFlow() {
               </Button>
               <Button
                 onClick={handleFinalSubmit}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !clubeAcknowledged}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2 flex-1 sm:flex-none"
               >
                 {isSubmitting ? (
@@ -847,6 +923,26 @@ export function CheckoutFlow() {
           </div>
         )}
       </main>
+
+      {/* L10: Modal de Conflito 409 — Proposta já existente */}
+      <Dialog open={showCpfConflictModal} onOpenChange={setShowCpfConflictModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-serif">Proposta já existente</DialogTitle>
+            <DialogDescription>
+              Você já possui uma proposta em análise. Acompanhe o status pelo aplicativo ou área do cliente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 pt-2">
+            <Button onClick={() => { setShowCpfConflictModal(false); setView('login') }} className="bg-primary text-primary-foreground">
+              Ir para Área do Cliente
+            </Button>
+            <Button variant="outline" onClick={() => setShowCpfConflictModal(false)}>
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

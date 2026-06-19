@@ -1,0 +1,853 @@
+     1→'use client'
+     2→
+     3→import { useState, useMemo } from 'react'
+     4→import { useAppStore } from '@/lib/store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     7→import { Badge } from '@/components/ui/badge'
+     8→import { Check, ArrowLeft, Plus, X, Shield, Heart, Users, AlertCircle, Info, Loader2, MapPin, Phone, Mail } from 'lucide-react'
+     9→import { useQuery } from '@tanstack/react-query'
+    10→import { PessoaFisicaForm } from './pessoa-fisica-form'
+    11→import { formatCPF, formatCurrency, formatDate } from '@/lib/helpers'
+    12→import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+    13→import { toast } from 'sonner'
+    14→
+    15→// ─────────────────────────────────────────────────────────
+    16→// Types
+    17→// ─────────────────────────────────────────────────────────
+    18→interface Plan {
+    19→  id: string
+    20→  nome: string
+    21→  tipo: string
+    22→  valorBase: number
+    23→  valorTaxaAdesao: number
+    24→  valorPorAgregado: number
+    25→  maxDependentes: number
+    26→  maxAgregados: number
+    27→  descricao: string | null
+    28→}
+    29→
+    30→interface VinculoData {
+    31→  nomeCompleto: string
+    32→  tipoVinculo: string
+    33→  tipoRegistro: string
+    34→  parentesco: string
+    35→  dataNascimento: string
+    36→  genero: string
+    37→  estadoCivil: string
+    38→  profissao: string
+    39→  email: string
+    40→  telefone: string
+    41→  cep: string
+    42→  logradouro: string
+    43→  numero: string
+    44→  complemento: string
+    45→  bairro: string
+    46→  cidade: string
+    47→  estado: string
+    48→  cpf?: string
+    49→  agregadoPaiId?: string
+    50→  agregadoPaiNome?: string
+    51→  coverageTag?: boolean
+    52→  inheritAddress?: boolean
+    53→}
+    54→
+    55→const PARENTESCO_LABELS: Record<string, string> = {
+    56→  CONJUGE: 'Cônjuge',
+    57→  FILHO: 'Filho(a)',
+    58→  PAI_MAE: 'Pai/Mãe',
+    59→  SOGRO: 'Sogro(a)',
+    60→  ENTREADO: 'Enteado(a)',
+    61→  NETO: 'Neto(a)',
+    62→  AVO: 'Avô/Avó',
+    63→  IRMAO: 'Irmão(ã)',
+    64→  TIO: 'Tio(a)',
+    65→}
+    66→
+    67→const VINCULO_LABELS: Record<string, string> = {
+    68→  DEPENDENTE: 'Dependente',
+    69→  AGREGADO: 'Agregado',
+    70→  SUB_DEPENDENTE: 'Sub-dependente',
+    71→}
+    72→
+    73→// ─────────────────────────────────────────────────────────
+    74→// ComplianceBanner — LGPD + Estipulante disclaimers
+    75→// ─────────────────────────────────────────────────────────
+    76→function ComplianceBanner() {
+    77→  return (
+    78→    <div className="p-4 rounded-xl bg-muted/50 border border-border/50 space-y-2">
+    79→      <div className="flex items-start gap-2">
+    80→        <Shield className="h-4 w-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+    81→        <p className="text-xs text-muted-foreground leading-relaxed">
+    82→          Atuamos exclusivamente como <strong className="text-foreground">Estipulante</strong> de proteção coletiva.
+    83→          A garantia de risco e o pagamento de indenizações são de responsabilidade integral das Seguradoras Parceiras.
+    84→        </p>
+    85→      </div>
+    86→      <div className="flex items-start gap-2">
+    87→        <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+    88→        <p className="text-xs text-muted-foreground leading-relaxed">
+    89→          O registro deste plano na SUSEP não implica, por parte da Autarquia, incentivo ou recomendação a sua comercialização.
+    90→        </p>
+    91→      </div>
+    92→      <div className="flex items-start gap-2">
+    93→        <AlertCircle className="h-4 w-4 text-state-warning shrink-0 mt-0.5" aria-hidden="true" />
+    94→        <p className="text-xs text-muted-foreground leading-relaxed">
+    95→          Seus dados pessoais são tratados conforme a LGPD e serão utilizados exclusivamente para a contratação e gestão do benefício.
+    96→        </p>
+    97→      </div>
+    98→    </div>
+    99→  )
+   100→}
+   101→
+   102→// ─────────────────────────────────────────────────────────
+   103→// Main CheckoutFlow Component
+   104→// ─────────────────────────────────────────────────────────
+   105→export function CheckoutFlow() {
+   106→  const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView, checkoutData, setCheckoutData, resetCheckout } = useAppStore()
+   107→
+   108→  // Local state for titular and vinculos
+   109→  const [titularData, setTitularData] = useState<Record<string, unknown> | null>(
+   110→    checkoutData.titular as Record<string, unknown> | null
+   111→  )
+   112→  const [vinculos, setVinculos] = useState<VinculoData[]>(
+   113→    (checkoutData.vinculos as VinculoData[]) || []
+   114→  )
+   115→  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
+   116→
+   117→  // Sheet state for adding vinculos
+   118→  const [sheetOpen, setSheetOpen] = useState(false)
+   119→  const [addingVinculoType, setAddingVinculoType] = useState<'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE'>('DEPENDENTE')
+   120→  const [selectedAgregadoPai, setSelectedAgregadoPai] = useState<string>('')
+   121→
+   122→  // Submission state
+   123→  const [isSubmitting, setIsSubmitting] = useState(false)
+   124→  const [submissionSuccess, setSubmissionSuccess] = useState(false)
+   125→
+   126→  // Fetch plans
+   127→  const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
+   128→    queryKey: ['plans'],
+   129→    queryFn: async () => {
+   130→      const res = await fetch('/api/planos')
+   131→      if (!res.ok) throw new Error('Erro ao carregar planos')
+   132→      return res.json()
+   133→    },
+   134→  })
+   135→
+   136→  // Computed counts
+   137→  const dependenteCount = useMemo(() => vinculos.filter(v => v.tipoVinculo === 'DEPENDENTE').length, [vinculos])
+   138→  const agregadoCount = useMemo(() => vinculos.filter(v => v.tipoVinculo === 'AGREGADO').length, [vinculos])
+   139→
+   140→  // Eligible agregados for sub-dependente (CASADO or UNIAO_ESTAVEL)
+   141→  const eligibleAgregadosForSub = useMemo(() => {
+   142→    return vinculos.filter(v => v.tipoVinculo === 'AGREGADO' && ['CASADO', 'UNIAO_ESTAVEL'].includes(v.estadoCivil))
+   143→  }, [vinculos])
+   144→
+   145→  const steps = [
+   146→    { label: 'Plano', number: 0 },
+   147→    { label: 'Titular', number: 1 },
+   148→    { label: 'Vínculos', number: 2 },
+   149→    { label: 'Resumo', number: 3 },
+   150→  ]
+   151→
+   152→  // ─── Step handlers ───
+   153→  const handleSelectPlan = (plan: Plan) => {
+   154→    setSelectedPlan(plan)
+   155→    setSelectedPlanId(plan.id)
+   156→    // Clear vinculos if switching from FAMILIAR to INDIVIDUAL
+   157→    if (plan.tipo === 'INDIVIDUAL' && vinculos.length > 0) {
+   158→      setVinculos([])
+   159→    }
+   160→    setCheckoutStep(1)
+   161→  }
+   162→
+   163→  const handleTitularSubmit = (data: Record<string, unknown>) => {
+   164→    setTitularData(data)
+   165→    setCheckoutData({ titular: data })
+   166→    setCheckoutStep(2)
+   167→  }
+   168→
+   169→  const handleVinculoSubmit = (data: Record<string, unknown>) => {
+   170→    const vincData = data as unknown as VinculoData
+   171→    vincData.tipoVinculo = addingVinculoType
+   172→    vincData.tipoRegistro = addingVinculoType
+   173→
+   174→    // For SUB_DEPENDENTE, attach the agregado pai info
+   175→    if (addingVinculoType === 'SUB_DEPENDENTE' && selectedAgregadoPai) {
+   176→      vincData.agregadoPaiId = selectedAgregadoPai
+   177→      const paiAgregado = vinculos.find(v => v.nomeCompleto === selectedAgregadoPai)
+   178→      vincData.agregadoPaiNome = paiAgregado?.nomeCompleto || ''
+   179→    }
+   180→
+   181→    setVinculos(prev => [...prev, vincData])
+   182→    setCheckoutData({ vinculos: [...vinculos, vincData] })
+   183→    setSheetOpen(false)
+   184→    toast.success(`${VINCULO_LABELS[addingVinculoType]} adicionado com sucesso`)
+   185→  }
+   186→
+   187→  const handleRemoveVinculo = (index: number) => {
+   188→    setVinculos(prev => {
+   189→      const next = prev.filter((_, i) => i !== index)
+   190→      setCheckoutData({ vinculos: next })
+   191→      return next
+   192→    })
+   193→  }
+   194→
+   195→  const handleFinalSubmit = async () => {
+   196→    if (!selectedPlan || !titularData) return
+   197→
+   198→    setIsSubmitting(true)
+   199→    try {
+   200→      const res = await fetch('/api/contratos', {
+   201→        method: 'POST',
+   202→        headers: { 'Content-Type': 'application/json' },
+   203→        body: JSON.stringify({
+   204→          planoId: selectedPlan.id,
+   205→          titular: titularData,
+   206→          vinculos: vinculos.map(v => ({
+   207→            nomeCompleto: v.nomeCompleto,
+   208→            dataNascimento: v.dataNascimento,
+   209→            genero: v.genero,
+   210→            estadoCivil: v.estadoCivil,
+   211→            tipoVinculo: v.tipoVinculo,
+   212→            parentesco: v.parentesco,
+   213→            cpf: v.cpf || null,
+   214→            profissao: v.profissao || null,
+   215→            email: v.email || null,
+   216→            telefone: v.telefone || null,
+   217→            cep: v.cep || null,
+   218→            logradouro: v.logradouro || null,
+   219→            numero: v.numero || null,
+   220→            complemento: v.complemento || null,
+   221→            bairro: v.bairro || null,
+   222→            cidade: v.cidade || null,
+   223→            estado: v.estado || null,
+   224→            agregadoPaiId: v.agregadoPaiId || null,
+   225→          })),
+   226→        }),
+   227→      })
+   228→
+   229→      if (res.status === 409) {
+   230→        toast.error('Você já possui uma proposta em análise. Aguarde a aprovação.')
+   231→        return
+   232→      }
+   233→
+   234→      if (res.status === 400) {
+   235→        const data = await res.json()
+   236→        toast.error(data.error || 'Dados inválidos. Verifique as informações e tente novamente.')
+   237→        return
+   238→      }
+   239→
+   240→      if (!res.ok) {
+   241→        toast.error('Erro ao criar contratação. Tente novamente.')
+   242→        return
+   243→      }
+   244→
+   245→      setSubmissionSuccess(true)
+   246→      toast.success('Contratação realizada com sucesso!')
+   247→    } catch {
+   248→      toast.error('Erro de conexão. Verifique sua internet e tente novamente.')
+   249→    } finally {
+   250→      setIsSubmitting(false)
+   251→    }
+   252→  }
+   253→
+   254→  const handleBack = () => {
+   255→    if (checkoutStep === 0) {
+   256→      setView('landing')
+   257→    } else {
+   258→      setCheckoutStep(checkoutStep - 1)
+   259→    }
+   260→  }
+   261→
+   262→  const handleRestart = () => {
+   263→    resetCheckout()
+   264→    setTitularData(null)
+   265→    setVinculos([])
+   266→    setSelectedPlan(null)
+   267→    setSubmissionSuccess(false)
+   268→  }
+   269→
+   270→  // ─── Success screen ───
+   271→  if (submissionSuccess) {
+   272→    return (
+   273→      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+   274→        <Card className="max-w-md w-full">
+   275→          <CardContent className="pt-6 text-center space-y-4">
+   276→            <div className="mx-auto w-16 h-16 rounded-full bg-state-success/10 flex items-center justify-center">
+   277→              <Check className="h-8 w-8 text-state-success" />
+   278→            </div>
+   279→            <h2 className="font-serif text-2xl font-bold text-foreground">Contratação Realizada!</h2>
+   280→            <p className="text-muted-foreground text-sm">
+   281→              Sua proposta foi enviada com sucesso. Você receberá um e-mail de confirmação e acompanhamento do status de aprovação.
+   282→            </p>
+   283→            <ComplianceBanner />
+   284→            <div className="flex gap-3 pt-2">
+   285→              <Button variant="outline" onClick={() => setView('landing')} className="flex-1">
+   286→                Voltar ao Início
+   287→              </Button>
+   288→              <Button onClick={handleRestart} className="flex-1 bg-primary text-primary-foreground">
+   289→                Nova Contratação
+   290→              </Button>
+   291→            </div>
+   292→          </CardContent>
+   293→        </Card>
+   294→      </div>
+   295→    )
+   296→  }
+   297→
+   298→  return (
+   299→    <div className="min-h-screen bg-background">
+   300→      {/* Header */}
+   301→      <header className="border-b border-border/50 bg-background/80 backdrop-blur-md sticky top-0 z-40">
+   302→        <div className="mx-auto max-w-5xl flex items-center justify-between px-4 sm:px-6 h-16">
+   303→          <button
+   304→            onClick={handleBack}
+   305→            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1"
+   306→            aria-label="Voltar"
+   307→          >
+   308→            <ArrowLeft className="h-4 w-4" />
+   309→            <span className="text-sm hidden sm:inline">Voltar</span>
+   310→          </button>
+   311→          <h1 className="font-serif text-lg font-bold text-foreground">Contratação</h1>
+   312→          <div className="w-16" /> {/* Spacer for centering */}
+   313→        </div>
+   314→      </header>
+   315→
+   316→      {/* Step indicator */}
+   317→      <div className="border-b border-border/50 bg-muted/20">
+   318→        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+   319→          <div className="flex items-center gap-2 py-4 overflow-x-auto">
+   320→            {steps.map((step, i) => (
+   321→              <div key={step.number} className="flex items-center gap-2">
+   322→                {i > 0 && <div className="w-6 h-px bg-border" />}
+   323→                <div
+   324→                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+   325→                    checkoutStep === step.number
+   326→                      ? 'bg-primary text-primary-foreground'
+   327→                      : checkoutStep > step.number
+   328→                        ? 'bg-state-success/10 text-state-success'
+   329→                        : 'bg-muted text-muted-foreground'
+   330→                  }`}
+   331→                >
+   332→                  {checkoutStep > step.number ? (
+   333→                    <Check className="h-3 w-3" />
+   334→                  ) : (
+   335→                    <span className="w-4 h-4 rounded-full border border-current flex items-center justify-center text-[10px]">
+   336→                      {step.number + 1}
+   337→                    </span>
+   338→                  )}
+   339→                  <span>{step.label}</span>
+   340→                </div>
+   341→              </div>
+   342→            ))}
+   343→          </div>
+   344→        </div>
+   345→      </div>
+   346→
+   347→      {/* Main content */}
+   348→      <main className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
+   349→        {/* ─── STEP 0: Plano ─── */}
+   350→        {checkoutStep === 0 && (
+   351→          <div className="space-y-6">
+   352→            <div className="text-center space-y-2">
+   353→              <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Escolha seu Plano</h2>
+   354→              <p className="text-muted-foreground text-sm">Selecione o plano ideal para você e sua família</p>
+   355→            </div>
+   356→
+   357→            {plansLoading ? (
+   358→              <div className="flex items-center justify-center py-12">
+   359→                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+   360→              </div>
+   361→            ) : (
+   362→              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+   363→                {plans.map(plan => (
+   364→                  <Card
+   365→                    key={plan.id}
+   366→                    className={`cursor-pointer transition-all hover:shadow-lg hover:border-primary/50 ${
+   367→                      selectedPlanId === plan.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'
+   368→                    }`}
+   369→                    onClick={() => {
+   370→                      setSelectedPlan(plan)
+   371→                      setSelectedPlanId(plan.id)
+   372→                    }}
+   373→                    role="button"
+   374→                    tabIndex={0}
+   375→                    aria-label={`Plano ${plan.nome}`}
+   376→                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelectedPlan(plan); setSelectedPlanId(plan.id) } }}
+   377→                  >
+   378→                    <CardHeader className="pb-3">
+   379→                      <div className="flex items-center justify-between">
+   380→                        <CardTitle className="font-serif text-lg">{plan.nome}</CardTitle>
+   381→                        {plan.tipo === 'FAMILIAR' ? (
+   382→                          <Heart className="h-5 w-5 text-primary" />
+   383→                        ) : (
+   384→                          <Users className="h-5 w-5 text-primary" />
+   385→                        )}
+   386→                      </div>
+   387→                      <CardDescription className="text-xs">{plan.tipo === 'FAMILIAR' ? 'Proteção para toda a família' : 'Proteção individual'}</CardDescription>
+   388→                    </CardHeader>
+   389→                    <CardContent className="space-y-4">
+   390→                      <div className="space-y-1">
+   391→                        <p className="text-2xl font-bold text-foreground">
+   392→                          {formatCurrency(plan.valorBase)}
+   393→                          <span className="text-sm font-normal text-muted-foreground">/mês</span>
+   394→                        </p>
+   395→                        <p className="text-xs text-muted-foreground">
+   396→                          Taxa de adesão: {formatCurrency(plan.valorTaxaAdesao)}
+   397→                        </p>
+   398→                        {plan.valorPorAgregado > 0 && (
+   399→                          <p className="text-xs text-muted-foreground">
+   400→                            Por agregado: +{formatCurrency(plan.valorPorAgregado)}/mês
+   401→                          </p>
+   402→                        )}
+   403→                      </div>
+   404→
+   405→                      {plan.descricao && (
+   406→                        <p className="text-sm text-muted-foreground">{plan.descricao}</p>
+   407→                      )}
+   408→
+   409→                      {/* Plan type info */}
+   410→                      {plan.tipo === 'FAMILIAR' ? (
+   411→                        <div className="p-3 rounded-lg bg-primary/5 border border-primary/10 space-y-1">
+   412→                          <p className="text-xs font-medium text-foreground">Plano Familiar inclui:</p>
+   413→                          <ul className="text-xs text-muted-foreground space-y-0.5">
+   414→                            <li>• Até {plan.maxDependentes} dependentes (cônjuge e filhos)</li>
+   415→                            <li>• Até {plan.maxAgregados} agregados (outros parentes)</li>
+   416→                            <li>• Sub-dependentes de agregados casados</li>
+   417→                          </ul>
+   418→                        </div>
+   419→                      ) : (
+   420→                        <div className="p-3 rounded-lg bg-muted/50 border border-border/50 space-y-1">
+   421→                          <p className="text-xs font-medium text-foreground">Plano Individual:</p>
+   422→                          <ul className="text-xs text-muted-foreground space-y-0.5">
+   423→                            <li>• Proteção apenas para o titular</li>
+   424→                            <li>• Não inclui dependentes ou agregados</li>
+   425→                          </ul>
+   426→                        </div>
+   427→                      )}
+   428→
+   429→                      {selectedPlanId === plan.id && (
+   430→                        <Button
+   431→                          onClick={(e) => { e.stopPropagation(); handleSelectPlan(plan); }}
+   432→                          className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+   433→                        >
+   434→                          Continuar
+   435→                          <Check className="h-4 w-4 ml-2" />
+   436→                        </Button>
+   437→                      )}
+   438→                    </CardContent>
+   439→                  </Card>
+   440→                ))}
+   441→              </div>
+   442→            )}
+   443→          </div>
+   444→        )}
+   445→
+   446→        {/* ─── STEP 1: Titular ─── */}
+   447→        {checkoutStep === 1 && (
+   448→          <div className="max-w-lg mx-auto space-y-6">
+   449→            <div className="text-center space-y-2">
+   450→              <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Dados do Titular</h2>
+   451→              <p className="text-muted-foreground text-sm">Preencha seus dados pessoais</p>
+   452→            </div>
+   453→
+   454→            <Card>
+   455→              <CardContent className="pt-6">
+   456→                <PessoaFisicaForm
+   457→                  sessionType="TITULAR"
+   458→                  onSubmit={handleTitularSubmit}
+   459→                  onCancel={() => setCheckoutStep(0)}
+   460→                  initialData={titularData || undefined}
+   461→                />
+   462→              </CardContent>
+   463→            </Card>
+   464→          </div>
+   465→        )}
+   466→
+   467→        {/* ─── STEP 2: Vínculos ─── */}
+   468→        {checkoutStep === 2 && (
+   469→          <div className="space-y-6">
+   470→            <div className="text-center space-y-2">
+   471→              <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Vínculos</h2>
+   472→              <p className="text-muted-foreground text-sm">
+   473→                Adicione dependentes e agregados ao seu plano
+   474→                {selectedPlan?.tipo && (
+   475→                  <Badge variant="secondary" className="ml-2">
+   476→                    {selectedPlan.tipo === 'FAMILIAR' ? 'Familiar' : 'Individual'}
+   477→                  </Badge>
+   478→                )}
+   479→              </p>
+   480→            </div>
+   481→
+   482→            {/* RN-05: Block dependentes in INDIVIDUAL plan */}
+   483→            {selectedPlan?.tipo === 'INDIVIDUAL' && (
+   484→              <div className="p-4 rounded-xl bg-muted/50 border border-border/50 text-center">
+   485→                <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+   486→                <p className="text-sm font-medium text-foreground">Plano Individual</p>
+   487→                <p className="text-xs text-muted-foreground mt-1">
+   488→                  Este plano não permite adicionar dependentes ou agregados.
+   489→                  Apenas o titular terá cobertura.
+   490→                </p>
+   491→              </div>
+   492→            )}
+   493→
+   494→            {/* Vinculos list */}
+   495→            {vinculos.length > 0 && (
+   496→              <div className="space-y-3">
+   497→                {vinculos.map((vinc, index) => (
+   498→                  <Card key={index} className="overflow-hidden">
+   499→                    <CardContent className="p-4">
+   500→                      <div className="flex items-start justify-between gap-3">
+   501→                        <div className="flex-1 min-w-0">
+   502→                          <div className="flex items-center gap-2 flex-wrap">
+   503→                            <span className="font-medium text-foreground text-sm truncate">
+   504→                              {vinc.nomeCompleto}
+   505→                            </span>
+   506→                            <Badge variant="secondary" className="text-xs">
+   507→                              {VINCULO_LABELS[vinc.tipoVinculo] || vinc.tipoVinculo}
+   508→                            </Badge>
+   509→                            <Badge variant="outline" className="text-xs">
+   510→                              {PARENTESCO_LABELS[vinc.parentesco] || vinc.parentesco}
+   511→                            </Badge>
+   512→                            {vinc.coverageTag && (
+   513→                              <Badge className="bg-state-warning/10 text-state-warning border-state-warning/30 text-xs">
+   514→                                SEM DIREITO À PROTEÇÃO
+   515→                              </Badge>
+   516→                            )}
+   517→                          </div>
+   518→                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+   519→                            <span>{formatDate(vinc.dataNascimento)}</span>
+   520→                            {vinc.cpf && <span className="font-mono">{formatCPF(vinc.cpf)}</span>}
+   521→                          </div>
+   522→                          {/* Show sub-dependente info */}
+   523→                          {vinc.tipoVinculo === 'SUB_DEPENDENTE' && vinc.agregadoPaiNome && (
+   524→                            <p className="text-xs text-muted-foreground mt-1">
+   525→                              Sub-dependente de: {vinc.agregadoPaiNome}
+   526→                            </p>
+   527→                          )}
+   528→                        </div>
+   529→                        <Button
+   530→                          variant="ghost"
+   531→                          size="sm"
+   532→                          onClick={() => handleRemoveVinculo(index)}
+   533→                          className="text-muted-foreground hover:text-state-error shrink-0"
+   534→                          aria-label={`Remover ${vinc.nomeCompleto}`}
+   535→                        >
+   536→                          <X className="h-4 w-4" />
+   537→                        </Button>
+   538→                      </div>
+   539→                    </CardContent>
+   540→                  </Card>
+   541→                ))}
+   542→              </div>
+   543→            )}
+   544→
+   545→            {/* Add vinculo button — only for FAMILIAR plan */}
+   546→            {selectedPlan?.tipo === 'FAMILIAR' && (
+   547→              <div className="space-y-4">
+   548→                {/* Counts */}
+   549→                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+   550→                  <span>Dependentes: {dependenteCount}/{selectedPlan.maxDependentes}</span>
+   551→                  <span>Agregados: {agregadoCount}/{selectedPlan.maxAgregados}</span>
+   552→                </div>
+   553→
+   554→                <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+   555→                  <div className="flex flex-wrap gap-3">
+   556→                    {/* Add Dependente */}
+   557→                    <Button
+   558→                      variant="outline"
+   559→                      onClick={() => { setAddingVinculoType('DEPENDENTE'); setSheetOpen(true); }}
+   560→                      disabled={dependenteCount >= (selectedPlan.maxDependentes || 8)}
+   561→                      className="gap-2"
+   562→                    >
+   563→                      <Plus className="h-4 w-4" />
+   564→                      Dependente
+   565→                      {dependenteCount >= (selectedPlan.maxDependentes || 8) && (
+   566→                        <Badge variant="secondary" className="text-xs ml-1">Limite</Badge>
+   567→                      )}
+   568→                    </Button>
+   569→
+   570→                    {/* Add Agregado */}
+   571→                    <Button
+   572→                      variant="outline"
+   573→                      onClick={() => { setAddingVinculoType('AGREGADO'); setSheetOpen(true); }}
+   574→                      disabled={agregadoCount >= (selectedPlan.maxAgregados || 4)}
+   575→                      className="gap-2"
+   576→                    >
+   577→                      <Plus className="h-4 w-4" />
+   578→                      Agregado
+   579→                      {agregadoCount >= (selectedPlan.maxAgregados || 4) && (
+   580→                        <Badge variant="secondary" className="text-xs ml-1">Limite</Badge>
+   581→                      )}
+   582→                    </Button>
+   583→
+   584→                    {/* Add Sub-dependente — only if eligible agregados exist */}
+   585→                    {eligibleAgregadosForSub.length > 0 && (
+   586→                      <Button
+   587→                        variant="outline"
+   588→                        onClick={() => {
+   589→                          setAddingVinculoType('SUB_DEPENDENTE')
+   590→                          setSelectedAgregadoPai(eligibleAgregadosForSub[0].nomeCompleto)
+   591→                          setSheetOpen(true)
+   592→                        }}
+   593→                        className="gap-2"
+   594→                      >
+   595→                        <Plus className="h-4 w-4" />
+   596→                        Sub-dependente
+   597→                      </Button>
+   598→                    )}
+   599→                  </div>
+   600→
+   601→                  <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+   602→                    <SheetHeader>
+   603→                      <SheetTitle className="font-serif">
+   604→                        Adicionar {VINCULO_LABELS[addingVinculoType]}
+   605→                      </SheetTitle>
+   606→                    </SheetHeader>
+   607→
+   608→                    <div className="px-4 pb-6 space-y-4">
+   609→                      {/* Sub-dependente: select parent agregado */}
+   610→                      {addingVinculoType === 'SUB_DEPENDENTE' && (
+   611→                        <div>
+   612→                          <label className="block text-sm font-medium text-foreground mb-1">
+   613→                            Agregado responsável *
+   614→                          </label>
+   615→                          <select
+   616→                            value={selectedAgregadoPai}
+   617→                            onChange={(e) => setSelectedAgregadoPai(e.target.value)}
+   618→                            className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   619→                          >
+   620→                            {eligibleAgregadosForSub.map(agg => (
+   621→                              <option key={agg.nomeCompleto} value={agg.nomeCompleto}>
+   622→                                {agg.nomeCompleto} — {PARENTESCO_LABELS[agg.parentesco] || agg.parentesco}
+   623→                              </option>
+   624→                            ))}
+   625→                          </select>
+   626→                          <p className="text-xs text-muted-foreground mt-1">
+   627→                            Apenas agregados com estado civil &quot;Casado&quot; ou &quot;União Estável&quot; podem ter sub-dependentes.
+   628→                          </p>
+   629→                        </div>
+   630→                      )}
+   631→
+   632→                      <PessoaFisicaForm
+   633→                        sessionType={addingVinculoType}
+   634→                        onSubmit={handleVinculoSubmit}
+   635→                        onCancel={() => setSheetOpen(false)}
+   636→                        agregadoPaiId={addingVinculoType === 'SUB_DEPENDENTE' ? selectedAgregadoPai : undefined}
+   637→                        titularData={titularData || undefined}
+   638→                        planTipo={selectedPlan?.tipo}
+   639→                      />
+   640→                    </div>
+   641→                  </SheetContent>
+   642→                </Sheet>
+   643→              </div>
+   644→            )}
+   645→
+   646→            {/* Navigation buttons */}
+   647→            <div className="flex gap-3 pt-4">
+   648→              <Button variant="outline" onClick={() => setCheckoutStep(1)} className="gap-2">
+   649→                <ArrowLeft className="h-4 w-4" />
+   650→                Voltar
+   651→              </Button>
+   652→              <Button
+   653→                onClick={() => setCheckoutStep(3)}
+   654→                className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
+   655→              >
+   656→                Continuar para Resumo
+   657→                <Check className="h-4 w-4" />
+   658→              </Button>
+   659→            </div>
+   660→          </div>
+   661→        )}
+   662→
+   663→        {/* ─── STEP 3: Resumo ─── */}
+   664→        {checkoutStep === 3 && (
+   665→          <div className="space-y-6">
+   666→            <div className="text-center space-y-2">
+   667→              <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Resumo da Contratação</h2>
+   668→              <p className="text-muted-foreground text-sm">Confira os dados antes de finalizar</p>
+   669→            </div>
+   670→
+   671→            {/* Plano */}
+   672→            {selectedPlan && (
+   673→              <Card>
+   674→                <CardHeader className="pb-3">
+   675→                  <CardTitle className="font-serif text-base flex items-center gap-2">
+   676→                    <Shield className="h-4 w-4 text-primary" />
+   677→                    Plano Selecionado
+   678→                  </CardTitle>
+   679→                </CardHeader>
+   680→                <CardContent className="space-y-2">
+   681→                  <div className="flex items-center justify-between">
+   682→                    <span className="text-sm font-medium text-foreground">{selectedPlan.nome}</span>
+   683→                    <Badge variant="secondary">{selectedPlan.tipo === 'FAMILIAR' ? 'Familiar' : 'Individual'}</Badge>
+   684→                  </div>
+   685→                  <div className="text-sm text-muted-foreground space-y-1">
+   686→                    <p>Valor base: <strong className="text-foreground">{formatCurrency(selectedPlan.valorBase)}/mês</strong></p>
+   687→                    <p>Taxa de adesão: <strong className="text-foreground">{formatCurrency(selectedPlan.valorTaxaAdesao)}</strong></p>
+   688→                    {selectedPlan.valorPorAgregado > 0 && agregadoCount > 0 && (
+   689→                      <p>Agregados ({agregadoCount}x): <strong className="text-foreground">{formatCurrency(selectedPlan.valorPorAgregado * agregadoCount)}/mês</strong></p>
+   690→                    )}
+   691→                    <div className="border-t border-border/50 pt-2 mt-2">
+   692→                      <p className="font-medium text-foreground">
+   693→                        Total estimado: {formatCurrency(
+   694→                          selectedPlan.valorBase + (selectedPlan.valorPorAgregado * agregadoCount)
+   695→                        )}/mês
+   696→                      </p>
+   697→                    </div>
+   698→                  </div>
+   699→                </CardContent>
+   700→              </Card>
+   701→            )}
+   702→
+   703→            {/* Titular */}
+   704→            {titularData && (
+   705→              <Card>
+   706→                <CardHeader className="pb-3">
+   707→                  <CardTitle className="font-serif text-base flex items-center gap-2">
+   708→                    <Users className="h-4 w-4 text-primary" />
+   709→                    Titular
+   710→                  </CardTitle>
+   711→                </CardHeader>
+   712→                <CardContent>
+   713→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+   714→                    <div>
+   715→                      <span className="text-muted-foreground">Nome:</span>
+   716→                      <p className="font-medium text-foreground">{titularData.nomeCompleto as string}</p>
+   717→                    </div>
+   718→                    {titularData.cpf && (
+   719→                      <div>
+   720→                        <span className="text-muted-foreground">CPF:</span>
+   721→                        <p className="font-medium text-foreground font-mono">{formatCPF(titularData.cpf as string)}</p>
+   722→                      </div>
+   723→                    )}
+   724→                    <div>
+   725→                      <span className="text-muted-foreground">Nascimento:</span>
+   726→                      <p className="font-medium text-foreground">{formatDate(titularData.dataNascimento as string)}</p>
+   727→                    </div>
+   728→                    {titularData.genero && (
+   729→                      <div>
+   730→                        <span className="text-muted-foreground">Gênero:</span>
+   731→                        <p className="font-medium text-foreground">{titularData.genero === 'M' ? 'Masculino' : 'Feminino'}</p>
+   732→                      </div>
+   733→                    )}
+   734→                    {titularData.estadoCivil && (
+   735→                      <div>
+   736→                        <span className="text-muted-foreground">Estado Civil:</span>
+   737→                        <p className="font-medium text-foreground">{titularData.estadoCivil as string}</p>
+   738→                      </div>
+   739→                    )}
+   740→                    {titularData.profissao && (
+   741→                      <div>
+   742→                        <span className="text-muted-foreground">Profissão:</span>
+   743→                        <p className="font-medium text-foreground">{titularData.profissao as string}</p>
+   744→                      </div>
+   745→                    )}
+   746→                  </div>
+   747→                  {/* Contact & Address */}
+   748→                  {(titularData.email || titularData.telefone) && (
+   749→                    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+   750→                      {titularData.email && (
+   751→                        <span className="flex items-center gap-1">
+   752→                          <Mail className="h-3 w-3" />
+   753→                          {titularData.email as string}
+   754→                        </span>
+   755→                      )}
+   756→                      {titularData.telefone && (
+   757→                        <span className="flex items-center gap-1">
+   758→                          <Phone className="h-3 w-3" />
+   759→                          {titularData.telefone as string}
+   760→                        </span>
+   761→                      )}
+   762→                    </div>
+   763→                  )}
+   764→                  {titularData.logradouro && (
+   765→                    <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+   766→                      <MapPin className="h-3 w-3 shrink-0" />
+   767→                      <span>
+   768→                        {titularData.logradouro as string}, {titularData.numero as string}
+   769→                        {titularData.complemento ? ` - ${titularData.complemento as string}` : ''}
+   770→                        {' — '}{titularData.bairro as string}, {titularData.cidade as string}/{titularData.estado as string}
+   771→                      </span>
+   772→                    </div>
+   773→                  )}
+   774→                </CardContent>
+   775→              </Card>
+   776→            )}
+   777→
+   778→            {/* Vínculos */}
+   779→            {vinculos.length > 0 && (
+   780→              <Card>
+   781→                <CardHeader className="pb-3">
+   782→                  <CardTitle className="font-serif text-base flex items-center gap-2">
+   783→                    <Heart className="h-4 w-4 text-primary" />
+   784→                    Vínculos ({vinculos.length})
+   785→                  </CardTitle>
+   786→                </CardHeader>
+   787→                <CardContent className="space-y-3">
+   788→                  {vinculos.map((vinc, index) => (
+   789→                    <div key={index} className="p-3 rounded-lg bg-muted/30 border border-border/30 space-y-1">
+   790→                      <div className="flex items-center gap-2 flex-wrap">
+   791→                        <span className="font-medium text-foreground text-sm">{vinc.nomeCompleto}</span>
+   792→                        <Badge variant="secondary" className="text-xs">
+   793→                          {VINCULO_LABELS[vinc.tipoVinculo]}
+   794→                        </Badge>
+   795→                        <Badge variant="outline" className="text-xs">
+   796→                          {PARENTESCO_LABELS[vinc.parentesco] || vinc.parentesco}
+   797→                        </Badge>
+   798→                        {vinc.coverageTag && (
+   799→                          <Badge className="bg-state-warning/10 text-state-warning border-state-warning/30 text-xs">
+   800→                            SEM DIREITO À PROTEÇÃO
+   801→                          </Badge>
+   802→                        )}
+   803→                      </div>
+   804→                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+   805→                        <span>{formatDate(vinc.dataNascimento)}</span>
+   806→                        {vinc.genero && <span>{vinc.genero === 'M' ? 'Masculino' : 'Feminino'}</span>}
+   807→                        {vinc.estadoCivil && <span>{vinc.estadoCivil}</span>}
+   808→                      </div>
+   809→                      {vinc.tipoVinculo === 'SUB_DEPENDENTE' && vinc.agregadoPaiNome && (
+   810→                        <p className="text-xs text-muted-foreground">
+   811→                          Sub-dependente de: {vinc.agregadoPaiNome}
+   812→                        </p>
+   813→                      )}
+   814→                    </div>
+   815→                  ))}
+   816→                </CardContent>
+   817→              </Card>
+   818→            )}
+   819→
+   820→            {/* Compliance Banner */}
+   821→            <ComplianceBanner />
+   822→
+   823→            {/* Navigation buttons */}
+   824→            <div className="flex gap-3 pt-2">
+   825→              <Button variant="outline" onClick={() => setCheckoutStep(2)} className="gap-2">
+   826→                <ArrowLeft className="h-4 w-4" />
+   827→                Voltar
+   828→              </Button>
+   829→              <Button
+   830→                onClick={handleFinalSubmit}
+   831→                disabled={isSubmitting}
+   832→                className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2 flex-1 sm:flex-none"
+   833→              >
+   834→                {isSubmitting ? (
+   835→                  <>
+   836→                    <Loader2 className="h-4 w-4 animate-spin" />
+   837→                    Processando...
+   838→                  </>
+   839→                ) : (
+   840→                  <>
+   841→                    Finalizar Contratação
+   842→                    <Check className="h-4 w-4" />
+   843→                  </>
+   844→                )}
+   845→              </Button>
+   846→            </div>
+   847→          </div>
+   848→        )}
+   849→      </main>
+   850→    </div>
+   851→  )
+   852→}
+   853→

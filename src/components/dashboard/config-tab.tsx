@@ -659,7 +659,7 @@ export function ConfigTab() {
   const categorizeConfigs = () => {
     const categorized: Record<string, ConfigItem[]> = {}
     const uncategorized: ConfigItem[] = []
-    const assignedKeys = new Set<string()
+    const assignedKeys: Set<string> = new Set()
 
     for (const [category, keys] of Object.entries(CONFIG_CATEGORIES)) {
       categorized[category] = []

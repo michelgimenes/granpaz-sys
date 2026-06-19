@@ -293,6 +293,14 @@ export async function calculateRemissionMonths(seguradoraId: string | null): Pro
 }
 
 /**
+ * Validação de formato de e-mail conforme RFC 5322 (SPEC-07 §4.5)
+ */
+export function validateEmail(email: string): boolean {
+  const rfc5322Regex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+  return rfc5322Regex.test(email)
+}
+
+/**
  * Validate field formats per SPEC-01 Section 4.5
  */
 export function validateFieldFormats(data: Record<string, any>): string[] {

@@ -1,0 +1,109 @@
+{
+  "hero": {
+    "preHeadline": "PARA PAIS E MÃES QUE PENSAM NO FUTURO DA FAMÍLIA",
+    "headline": "A dor de uma perda não avisa quando vai chegar.",
+    "headlineHighlight": "Mas a proteção da sua família pode começar hoje.",
+    "subHeadline": "Com o **Plano Granpaz**, você garante assistência funeral completa em todo o Brasil e amparo financeiro em caso de fatalidades. Tudo sem burocracia e por um valor que cabe perfeitamente no seu bolso.",
+    "ctaPrimary": "Quero Proteger Minha Família Agora",
+    "ctaSecondary": "Conhecer o Plano",
+    "trustIndicators": [
+      "Cobertura nacional",
+      "Sem burocracia",
+      "A partir de R$ 29,90/mês"
+    ]
+  },
+  "storytelling": {
+    "title": "O que acontece quando o inesperado bate à porta?",
+    "subtitle": "Imagine duas famílias que passaram pela dor irreparável de perder alguém que amavam muito:",
+    "unprepared": {
+      "title": "Família Despreparada",
+      "story": "Além da dor emocional do luto, a viúva e os filhos se depararam com altos custos de translado, taxas de cemitério e serviços funerários. Sem reservas financeiras, precisaram pedir dinheiro emprestado, vender bens e iniciar uma nova fase da vida com Dívidas e incertezas.",
+      "items": [
+        "Despesas de R$ 5.000 a R$ 15.000 com funeral, do nada",
+        "Família endividada para cobrir custos imediatos",
+        "Burocracia e demora para acessar direitos",
+        "Filhos sem amparo financeiro garantido",
+        "Estresse e incerteza no pior momento"
+      ]
+    },
+    "protected": {
+      "title": "Família Protegida",
+      "story": "Eles também sentiram a mesma dor emocional. Porém, eram prevenidos. Quando o imprevisto aconteceu, a mãe precisou fazer apenas uma ligação. Um serviço especializado assumiu toda a burocracia, custos e organização do funeral. Ela não gastou um centavo a mais e pôde focar no que realmente importava: consolar seus filhos e viver o luto com dignidade.",
+      "items": [
+        "Assistência funeral coberta, sem custo adicional na hora",
+        "Indenização por morte para amparar a família",
+        "Atendimento nacional, rápido e sem burocracia",
+        "Proteção em vida para toda a família",
+        "Tranquilidade e dignidade no momento mais difícil"
+      ]
+    },
+    "quote": "Qual dessas histórias você quer deixar para quem você mais ama?",
+    "closingLine": "Você não pode prever o amanhã, mas pode evitar que a dor da sua família seja agravada por um desespero financeiro."
+  },
+  "solution": {
+    "title": "Conheça o Granpaz: A solução inteligente da Saúde & Proteção",
+    "subtitle": "Acreditamos que a proteção financeira não é um luxo, mas um ato de amor. O Granpaz é um plano de benefícios pensado para quem não tem tempo a perder com burocracia e quer a certeza de que a família estará amparada no pior momento.",
+    "benefits": [
+      {
+        "title": "Custo Zero na Despedida",
+        "description": "Nossa seguradora parceira cuida de todos os detalhes e assume os custos, taxas e despesas de funeral, sepultamento ou cremação. A família fica livre para se dedicar apenas à despedida.",
+        "footnote": "Não inclui cobertura para aquisição de jazigo."
+      },
+      {
+        "title": "Cobertura em Todo o Brasil",
+        "description": "Não importa onde aconteça. O plano inclui translado nacional para que a família possa se despedir perto de casa."
+      },
+      {
+        "title": "Apoio Financeiro (Indenização)",
+        "description": "Em caso de morte acidental do titular, a família recebe uma indenização financeira. Um fôlego vital para ajudar a reorganizar o orçamento familiar e manter a qualidade de vida dos seus filhos."
+      },
+      {
+        "title": "Proteção em Vida",
+        "description": "No caso de um acidente grave que resulte em invalidez total ou parcial, o próprio titular recebe a indenização para se adaptar à nova realidade."
+      }
+    ],
+    "cta": "Fazer Minha Simulação Gratuita"
+  },
+  "faq": [
+    {
+      "question": "Isso não é para mim, deve ser muito caro...",
+      "answer": "Pelo contrário. O Granpaz foi criado justamente para quem trabalha duro e precisa de soluções acessíveis. Por um valor mensal que custa menos do que um lanche no fim de semana, você garante a proteção de quem mais ama, sem pesar no orçamento."
+    },
+    {
+      "question": "Como minha família vai acionar isso na hora da dor?",
+      "answer": "Sem burocracia. Basta a sua família ligar para a central de atendimento 24 horas da seguradora parceira antes de contratar qualquer serviço. Especialistas vão cuidar de absolutamente toda a organização, liberando a sua família de papeladas e negociações com funerárias."
+    },
+    {
+      "question": "O plano só vale na minha cidade?",
+      "answer": "Não. O Plano Granpaz tem abrangência nacional. Se um imprevisto acontecer durante uma viagem pelo Brasil, o custo do translado (transporte) está 100% coberto pelas condições do plano."
+    },
+    {
+      "question": "Posso confiar na Saúde & Proteção?",
+      "answer": "Com certeza. Somos uma empresa brasileira inovadora e com DNA 100% digital. Além disso, as coberturas financeiras e de assistência do Plano Granpaz são garantidas por gigantes do mercado segurador nacional e internacional, rigorosamente fiscalizadas pelas autoridades brasileiras."
+    }
+  ],
+  "urgency": {
+    "title": "A tranquilidade da sua família a um clique de distância.",
+    "body": "Muitas pessoas deixam para amanhã, imaginando que \"isso nunca vai acontecer comigo\". Infelizmente, imprevistos não mandam aviso.",
+    "benefits": [
+      "Acesso imediato ao nosso Aplicativo Exclusivo",
+      "Consulte todos os dados do seu plano",
+      "Futuramente, rede credenciada de saúde para economizar em tratamentos e consultas"
+    ],
+    "guarantee": "Risco Zero: Você tem 7 dias para avaliar nosso plano. Se achar que a tranquilidade da sua família não vale o investimento, nós devolvemos o valor da sua primeira mensalidade. Sem letras miúdas.",
+    "cta": "Quero Garantir a Proteção da Minha Família Hoje"
+  },
+  "footer": {
+    "complianceTitle": "Transparência e Segurança",
+    "compliance": [
+      "O Plano Granpaz é um produto da Saúde & Proteção Administração de Benefícios (CNPJ: 35.898.940/0001-24).",
+      "Atuamos com orgulho e transparência exclusivamente como Estipulante de seguros coletivos.",
+      "A garantia de risco, o pagamento de indenizações e a prestação da assistência funeral são de responsabilidade integral das Seguradoras Parceiras (consultar lista atualizada e registro na SUSEP).",
+      "A aceitação do seguro estará sujeita à análise do risco.",
+      "O registro deste plano na SUSEP não implica, por parte da Autarquia, incentivo ou recomendação a sua comercialização."
+    ],
+    "brand": "Granpaz",
+    "brandSubtitle": "by Saúde & Proteção",
+    "copyright": "© {year} Saúde & Proteção Administração de Benefícios. Todos os direitos reservados."
+  }
+}

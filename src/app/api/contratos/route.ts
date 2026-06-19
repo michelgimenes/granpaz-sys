@@ -8,8 +8,10 @@ import {
   validatePlanoPermiteDependentes,
   validateParentescoPorTipo,
   validateFieldFormats,
+  validateEmail,
   getConfigValue,
 } from '@/lib/validations'
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
 
 /**
  * GET /api/contratos - List contracts with pagination and filters
@@ -98,6 +100,16 @@ export async function GET(request: Request) {
 // POST /api/contratos - Create contract with full validation
 export async function POST(request: Request) {
   try {
+    // Rate limiting: 10 req/min por IP para envio de contratos (SPEC-07 EC-02)
+    const clientIp = getClientIp(request)
+    const rateCheck = checkRateLimit(`contratos:${clientIp}`, { maxRequests: 10, windowMs: 60_000 })
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
+        { status: 429, headers: { 'Retry-After': '60' } }
+      )
+    }
+
     const body = await request.json()
     const { planoId, titular, vinculos: vinculosInput, patrocinadorId } = body
 
@@ -105,6 +117,13 @@ export async function POST(request: Request) {
     if (!planoId) {
       return NextResponse.json({ error: 'planoId é obrigatório' }, { status: 400 })
     }
+
+    // Validação de formato UUID para planoId (SPEC-07 §4.5)
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!UUID_REGEX.test(planoId)) {
+      return NextResponse.json({ error: 'Plano selecionado indisponível.' }, { status: 400 })
+    }
+
     if (!titular || !titular.nomeCompleto) {
       return NextResponse.json({ error: 'Dados do titular são obrigatórios' }, { status: 400 })
     }
@@ -116,6 +135,11 @@ export async function POST(request: Request) {
     const titularErrors = validateFieldFormats(titularSanitized)
     if (titularErrors.length > 0) {
       return NextResponse.json({ error: titularErrors.join(' ') }, { status: 400 })
+    }
+
+    // ─── Validação RFC 5322 de e-mail do titular (SPEC-07 §4.5) ───
+    if (titularSanitized.email && !validateEmail(titularSanitized.email as string)) {
+      return NextResponse.json({ error: 'E-mail inválido.' }, { status: 400 })
     }
 
     // ─── Profissão required for TITULAR ───
