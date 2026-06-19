@@ -1,0 +1,637 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback } from 'react'
+     4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+     8→import { useQuery, useQueryClient } from '@tanstack/react-query'
+     9→import { Search, ChevronDown, ChevronUp, Loader2, AlertTriangle, ShieldCheck, Pencil, Trash2 } from 'lucide-react'
+    10→import { formatCurrency, formatDate, formatCPF } from '@/lib/helpers'
+    11→import { useAppStore } from '@/lib/store'
+    12→
+    13→interface Vinculo {
+    14→  id: string
+    15→  tipoVinculo: string
+    16→  parentesco: string
+    17→  dataFimVinculo?: string | null
+    18→  pessoaVinculada: {
+    19→    id: string
+    20→    nomeCompleto: string
+    21→    cpf: string | null
+    22→  }
+    23→}
+    24→
+    25→interface DadosAprovacao {
+    26→  capitalSeguradoInformado: number | null
+    27→  codigoSeguradoraInformado: string | null
+    28→  dataAprovacao: string | null
+    29→  observacoesGestor: string | null
+    30→  adminAprovadorId?: string | null
+    31→  adminAprovadorNome?: string | null
+    32→}
+    33→
+    34→interface Contrato {
+    35→  id: string
+    36→  status: string
+    37→  valorParcelaBase: number
+    38→  valorTaxaAdesao: number
+    39→  createdAt: string
+    40→  titular: {
+    41→    id: string
+    42→    nomeCompleto: string
+    43→    cpf: string | null
+    44→  }
+    45→  plano: {
+    46→    nome: string
+    47→    tipo: string
+    48→  }
+    49→  vinculos?: Vinculo[]
+    50→  dadosAprovacao?: DadosAprovacao | null
+    51→}
+    52→
+    53→interface PaginatedResponse {
+    54→  data: Contrato[]
+    55→  pagination: {
+    56→    page: number
+    57→    limit: number
+    58→    total: number
+    59→    totalPages: number
+    60→  }
+    61→}
+    62→
+    63→const statusLabels: Record<string, string> = {
+    64→  AGUARDANDO_APROVACAO: 'Aguardando Aprovação',
+    65→  APROVADO: 'Aprovado',
+    66→  REJEITADO: 'Rejeitado',
+    67→  CANCELADO: 'Cancelado',
+    68→  SUSPENSO: 'Suspenso',
+    69→  CANCELADO_CDC: 'Cancelado CDC',
+    70→}
+    71→
+    72→const statusColors: Record<string, string> = {
+    73→  AGUARDANDO_APROVACAO: 'bg-state-warning/10 text-state-warning',
+    74→  APROVADO: 'bg-state-success/10 text-state-success',
+    75→  REJEITADO: 'bg-state-error/10 text-state-error',
+    76→  CANCELADO: 'bg-muted text-muted-foreground',
+    77→  SUSPENSO: 'bg-state-warning/10 text-state-warning',
+    78→  CANCELADO_CDC: 'bg-state-error/10 text-state-error',
+    79→}
+    80→
+    81→const tipoVinculoLabels: Record<string, string> = {
+    82→  DEPENDENTE: 'Dependente',
+    83→  AGREGADO: 'Agregado',
+    84→  SUB_DEPENDENTE: 'Sub-dependente',
+    85→}
+    86→
+    87→export function ContractsTab() {
+    88→  const queryClient = useQueryClient()
+    89→  const [statusFilter, setStatusFilter] = useState('')
+    90→  const [search, setSearch] = useState('')
+    91→  const [expandedId, setExpandedId] = useState<string | null>(null)
+    92→  const [page, setPage] = useState(1)
+    93→  const limit = 10
+    94→
+    95→  // L28: Endosso states
+    96→  const [alterarCapitalOpen, setAlterarCapitalOpen] = useState(false)
+    97→  const [novoCapital, setNovoCapital] = useState('')
+    98→  const [capitalError, setCapitalError] = useState('')
+    99→  const [excluirVinculoOpen, setExcluirVinculoOpen] = useState(false)
+   100→  const [vinculoParaExcluir, setVinculoParaExcluir] = useState<Vinculo | null>(null)
+   101→  const [isSubmitting, setIsSubmitting] = useState(false)
+   102→  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+   103→
+   104→  // Auto-dismiss toast
+   105→  useEffect(() => {
+   106→    if (toast) {
+   107→      const timer = setTimeout(() => setToast(null), 3500)
+   108→      return () => clearTimeout(timer)
+   109→    }
+   110→  }, [toast])
+   111→
+   112→  // L28: Paginated query
+   113→  const { data: paginatedData, isLoading } = useQuery<PaginatedResponse>({
+   114→    queryKey: ['contratos', statusFilter, page],
+   115→    queryFn: async () => {
+   116→      const params = new URLSearchParams()
+   117→      if (statusFilter) params.set('status', statusFilter)
+   118→      params.set('page', String(page))
+   119→      params.set('limit', String(limit))
+   120→      const res = await fetch(`/api/contratos?${params.toString()}`)
+   121→      if (!res.ok) throw new Error('Erro')
+   122→      // Handle both paginated and non-paginated responses
+   123→      const json = await res.json()
+   124→      if (json.data && json.pagination) {
+   125→        return json as PaginatedResponse
+   126→      }
+   127→      // Fallback: treat as array
+   128→      return {
+   129→        data: Array.isArray(json) ? json : [],
+   130→        pagination: { page: 1, limit, total: Array.isArray(json) ? json.length : 0, totalPages: 1 },
+   131→      }
+   132→    },
+   133→  })
+   134→
+   135→  const contratos = paginatedData?.data || []
+   136→  const pagination = paginatedData?.pagination || { page: 1, limit, total: 0, totalPages: 0 }
+   137→
+   138→  // L27+L28: Fetch full contract details when expanded
+   139→  const { data: expandedContratoDetail } = useQuery<Contrato>({
+   140→    queryKey: ['contrato-detail-contracts', expandedId],
+   141→    queryFn: async () => {
+   142→      if (!expandedId) return null
+   143→      const res = await fetch(`/api/contratos/${expandedId}`)
+   144→      if (!res.ok) throw new Error('Erro')
+   145→      return res.json()
+   146→    },
+   147→    enabled: !!expandedId,
+   148→  })
+   149→
+   150→  const filtered = contratos.filter(c =>
+   151→    !search ||
+   152→    c.titular.nomeCompleto.toLowerCase().includes(search.toLowerCase()) ||
+   153→    (c.titular.cpf && c.titular.cpf.includes(search))
+   154→  )
+   155→
+   156→  // L28: Alterar Capital handler
+   157→  const handleAlterarCapital = useCallback(async () => {
+   158→    if (!expandedId) return
+   159→    const value = parseFloat(novoCapital)
+   160→    if (!value || value <= 0 || value > 10000000) {
+   161→      setCapitalError('Capital deve ser maior que 0 e menor ou igual a R$ 10.000.000,00')
+   162→      return
+   163→    }
+   164→    setCapitalError('')
+   165→    setIsSubmitting(true)
+   166→    try {
+   167→      const user = useAppStore.getState().user
+   168→      const res = await fetch(`/api/contratos/${expandedId}/endosso`, {
+   169→        method: 'POST',
+   170→        headers: { 'Content-Type': 'application/json' },
+   171→        body: JSON.stringify({
+   172→          tipo: 'ALTERACAO_CAPITAL',
+   173→          dados: { capitalSegurado: value },
+   174→          solicitadoPorId: user?.id || null,
+   175→        }),
+   176→      })
+   177→      if (res.ok) {
+   178→        queryClient.invalidateQueries({ queryKey: ['contratos'] })
+   179→        queryClient.invalidateQueries({ queryKey: ['contrato-detail-contracts', expandedId] })
+   180→        setAlterarCapitalOpen(false)
+   181→        setNovoCapital('')
+   182→        setToast({ message: 'Capital alterado com sucesso!', type: 'success' })
+   183→      } else {
+   184→        const errData = await res.json().catch(() => ({ error: 'Erro ao alterar capital' }))
+   185→        setToast({ message: errData.error || 'Erro ao alterar capital', type: 'error' })
+   186→      }
+   187→    } catch {
+   188→      setToast({ message: 'Erro de conexão', type: 'error' })
+   189→    } finally {
+   190→      setIsSubmitting(false)
+   191→    }
+   192→  }, [expandedId, novoCapital, queryClient])
+   193→
+   194→  // L28: Excluir Vínculo handler
+   195→  const handleExcluirVinculo = useCallback(async () => {
+   196→    if (!expandedId || !vinculoParaExcluir) return
+   197→    setIsSubmitting(true)
+   198→    try {
+   199→      const user = useAppStore.getState().user
+   200→      const res = await fetch(`/api/contratos/${expandedId}/endosso`, {
+   201→        method: 'POST',
+   202→        headers: { 'Content-Type': 'application/json' },
+   203→        body: JSON.stringify({
+   204→          tipo: 'EXCLUSAO_VINCULO',
+   205→          dados: { vinculoId: vinculoParaExcluir.id },
+   206→          solicitadoPorId: user?.id || null,
+   207→        }),
+   208→      })
+   209→      if (res.ok) {
+   210→        queryClient.invalidateQueries({ queryKey: ['contratos'] })
+   211→        queryClient.invalidateQueries({ queryKey: ['contrato-detail-contracts', expandedId] })
+   212→        setExcluirVinculoOpen(false)
+   213→        setVinculoParaExcluir(null)
+   214→        setToast({ message: 'Vínculo excluído com sucesso!', type: 'success' })
+   215→      } else {
+   216→        const errData = await res.json().catch(() => ({ error: 'Erro ao excluir vínculo' }))
+   217→        setToast({ message: errData.error || 'Erro ao excluir vínculo', type: 'error' })
+   218→      }
+   219→    } catch {
+   220→      setToast({ message: 'Erro de conexão', type: 'error' })
+   221→    } finally {
+   222→      setIsSubmitting(false)
+   223→    }
+   224→  }, [expandedId, vinculoParaExcluir, queryClient])
+   225→
+   226→  return (
+   227→    <div className="animate-fade-up">
+   228→      <div className="mb-6">
+   229→        <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Contratos</h1>
+   230→        <p className="text-muted-foreground mt-1">Gerenciamento de contratos</p>
+   231→      </div>
+   232→
+   233→      {/* Filters */}
+   234→      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+   235→        <div className="relative flex-1">
+   236→          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   237→          <input
+   238→            type="text"
+   239→            value={search}
+   240→            onChange={(e) => setSearch(e.target.value)}
+   241→            className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   242→            placeholder="Buscar por nome ou CPF..."
+   243→          />
+   244→        </div>
+   245→        <select
+   246→          value={statusFilter}
+   247→          onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+   248→          className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   249→        >
+   250→          <option value="">Todos os Status</option>
+   251→          <option value="AGUARDANDO_APROVACAO">Aguardando Aprovação</option>
+   252→          <option value="APROVADO">Aprovado</option>
+   253→          <option value="REJEITADO">Rejeitado</option>
+   254→          <option value="CANCELADO">Cancelado</option>
+   255→          <option value="SUSPENSO">Suspenso</option>
+   256→        </select>
+   257→      </div>
+   258→
+   259→      {/* Table */}
+   260→      {isLoading ? (
+   261→        <div className="flex items-center justify-center py-20">
+   262→          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+   263→        </div>
+   264→      ) : filtered.length === 0 ? (
+   265→        <Card className="border-border/50">
+   266→          <CardContent className="py-12 text-center">
+   267→            <p className="text-muted-foreground">Nenhum contrato encontrado</p>
+   268→          </CardContent>
+   269→        </Card>
+   270→      ) : (
+   271→        <>
+   272→          <div className="space-y-2">
+   273→            {filtered.map((contrato) => {
+   274→              const detail = expandedId === contrato.id ? expandedContratoDetail : null
+   275→              const displayVinculos = detail?.vinculos || contrato.vinculos || []
+   276→              const displayDadosAprovacao = detail?.dadosAprovacao || contrato.dadosAprovacao
+   277→
+   278→              return (
+   279→                <Card key={contrato.id} className="border-border/50">
+   280→                  <CardContent className="py-3">
+   281→                    <button
+   282→                      className="w-full flex items-center justify-between"
+   283→                      onClick={() => setExpandedId(expandedId === contrato.id ? null : contrato.id)}
+   284→                      aria-expanded={expandedId === contrato.id}
+   285→                    >
+   286→                      <div className="flex items-center gap-4">
+   287→                        <div>
+   288→                          <p className="font-medium text-foreground text-sm">{contrato.titular.nomeCompleto}</p>
+   289→                          <p className="text-xs text-muted-foreground">
+   290→                            {contrato.plano.nome} • {formatCurrency(contrato.valorParcelaBase)}/mês
+   291→                          </p>
+   292→                        </div>
+   293→                      </div>
+   294→                      <div className="flex items-center gap-3">
+   295→                        <Badge className={statusColors[contrato.status] || 'bg-muted text-muted-foreground'}>
+   296→                          {statusLabels[contrato.status] || contrato.status}
+   297→                        </Badge>
+   298→                        {expandedId === contrato.id ? (
+   299→                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+   300→                        ) : (
+   301→                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+   302→                        )}
+   303→                      </div>
+   304→                    </button>
+   305→
+   306→                    {expandedId === contrato.id && (
+   307→                      <div className="mt-4 pt-4 border-t border-border/50 space-y-4">
+   308→                        {/* Basic info */}
+   309→                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+   310→                          <div>
+   311→                            <span className="text-xs text-muted-foreground">CPF</span>
+   312→                            <p className="font-mono text-foreground">
+   313→                              {contrato.titular.cpf ? formatCPF(contrato.titular.cpf) : '—'}
+   314→                            </p>
+   315→                          </div>
+   316→                          <div>
+   317→                            <span className="text-xs text-muted-foreground">Data Criação</span>
+   318→                            <p className="text-foreground">{formatDate(contrato.createdAt)}</p>
+   319→                          </div>
+   320→                          <div>
+   321→                            <span className="text-xs text-muted-foreground">Taxa Adesão</span>
+   322→                            {/* L26: Fix — use contrato.valorTaxaAdesao */}
+   323→                            <p className="text-foreground">{formatCurrency(contrato.valorTaxaAdesao)}</p>
+   324→                          </div>
+   325→                          <div>
+   326→                            <span className="text-xs text-muted-foreground">Status</span>
+   327→                            <p className="text-foreground">{statusLabels[contrato.status]}</p>
+   328→                          </div>
+   329→                        </div>
+   330→
+   331→                        {/* Vinculos tree */}
+   332→                        {displayVinculos.length > 0 && (
+   333→                          <div>
+   334→                            <p className="text-xs text-muted-foreground mb-2">Vínculos ({displayVinculos.length})</p>
+   335→                            <div className="space-y-1 ml-4 border-l-2 border-primary/20 pl-3">
+   336→                              {displayVinculos.map((v) => (
+   337→                                <div key={v.id} className="text-xs py-1 flex items-center justify-between">
+   338→                                  <div>
+   339→                                    <span className="text-foreground font-medium">{v.pessoaVinculada.nomeCompleto}</span>
+   340→                                    <span className="text-muted-foreground ml-2">
+   341→                                      {tipoVinculoLabels[v.tipoVinculo] || v.tipoVinculo} • {v.parentesco}
+   342→                                    </span>
+   343→                                    {v.pessoaVinculada.cpf && (
+   344→                                      <span className="text-muted-foreground ml-2 font-mono">
+   345→                                        ({formatCPF(v.pessoaVinculada.cpf)})
+   346→                                      </span>
+   347→                                    )}
+   348→                                    {v.dataFimVinculo && (
+   349→                                      <span className="text-state-error ml-2">
+   350→                                        (Excluído em {formatDate(v.dataFimVinculo)})
+   351→                                      </span>
+   352→                                    )}
+   353→                                  </div>
+   354→                                </div>
+   355→                              ))}
+   356→                            </div>
+   357→                          </div>
+   358→                        )}
+   359→
+   360→                        {/* L27: dados_aprovacao for approved contracts */}
+   361→                        {contrato.status === 'APROVADO' && displayDadosAprovacao && (
+   362→                          <div className="bg-state-success/5 border border-state-success/20 rounded-lg p-4 space-y-2">
+   363→                            <div className="flex items-center gap-2 mb-2">
+   364→                              <ShieldCheck className="h-4 w-4 text-state-success" aria-hidden="true" />
+   365→                              <h4 className="text-sm font-semibold text-state-success">Dados de Aprovação</h4>
+   366→                            </div>
+   367→                            <div className="grid grid-cols-2 gap-2 text-xs">
+   368→                              {displayDadosAprovacao.capitalSeguradoInformado != null && (
+   369→                                <div>
+   370→                                  <span className="text-muted-foreground">Capital Segurado:</span>
+   371→                                  <p className="font-mono font-medium text-foreground">
+   372→                                    {formatCurrency(displayDadosAprovacao.capitalSeguradoInformado)}
+   373→                                  </p>
+   374→                                </div>
+   375→                              )}
+   376→                              {displayDadosAprovacao.codigoSeguradoraInformado && (
+   377→                                <div>
+   378→                                  <span className="text-muted-foreground">Código Seguradora:</span>
+   379→                                  <p className="font-mono text-foreground">
+   380→                                    {displayDadosAprovacao.codigoSeguradoraInformado}
+   381→                                  </p>
+   382→                                </div>
+   383→                              )}
+   384→                              {displayDadosAprovacao.dataAprovacao && (
+   385→                                <div>
+   386→                                  <span className="text-muted-foreground">Data Aprovação:</span>
+   387→                                  <p className="text-foreground">
+   388→                                    {formatDate(displayDadosAprovacao.dataAprovacao)}
+   389→                                  </p>
+   390→                                </div>
+   391→                              )}
+   392→                              {displayDadosAprovacao.adminAprovadorNome && (
+   393→                                <div>
+   394→                                  <span className="text-muted-foreground">Admin Aprovador:</span>
+   395→                                  <p className="text-foreground">
+   396→                                    {displayDadosAprovacao.adminAprovadorNome}
+   397→                                  </p>
+   398→                                </div>
+   399→                              )}
+   400→                              {displayDadosAprovacao.observacoesGestor && (
+   401→                                <div className="col-span-2">
+   402→                                  <span className="text-muted-foreground">Observações:</span>
+   403→                                  <p className="text-foreground">{displayDadosAprovacao.observacoesGestor}</p>
+   404→                                </div>
+   405→                              )}
+   406→                            </div>
+   407→                          </div>
+   408→                        )}
+   409→
+   410→                        {/* L28: Endosso actions for approved contracts */}
+   411→                        {contrato.status === 'APROVADO' && (
+   412→                          <div className="border-t border-border/50 pt-3">
+   413→                            <h4 className="text-xs text-muted-foreground mb-2">Ações de Endosso</h4>
+   414→                            <div className="flex flex-wrap gap-2">
+   415→                              <Button
+   416→                                size="sm"
+   417→                                variant="outline"
+   418→                                onClick={() => {
+   419→                                  setNovoCapital(
+   420→                                    displayDadosAprovacao?.capitalSeguradoInformado?.toString() || ''
+   421→                                  )
+   422→                                  setCapitalError('')
+   423→                                  setAlterarCapitalOpen(true)
+   424→                                }}
+   425→                              >
+   426→                                <Pencil className="h-3 w-3 mr-1" aria-hidden="true" />
+   427→                                Alterar Capital
+   428→                              </Button>
+   429→                              <Button
+   430→                                size="sm"
+   431→                                variant="outline"
+   432→                                className="text-state-error hover:text-state-error"
+   433→                                onClick={() => {
+   434→                                  setVinculoParaExcluir(null)
+   435→                                  setExcluirVinculoOpen(true)
+   436→                                }}
+   437→                              >
+   438→                                <Trash2 className="h-3 w-3 mr-1" aria-hidden="true" />
+   439→                                Excluir Vínculo
+   440→                              </Button>
+   441→                            </div>
+   442→                          </div>
+   443→                        )}
+   444→                      </div>
+   445→                    )}
+   446→                  </CardContent>
+   447→                </Card>
+   448→              )
+   449→            })}
+   450→          </div>
+   451→
+   452→          {/* Pagination controls */}
+   453→          {pagination.totalPages > 1 && (
+   454→            <div className="flex items-center justify-between mt-4 px-1">
+   455→              <p className="text-xs text-muted-foreground">
+   456→                {pagination.total} contrato(s) • Página {pagination.page} de {pagination.totalPages}
+   457→              </p>
+   458→              <div className="flex gap-2">
+   459→                <Button
+   460→                  size="sm"
+   461→                  variant="outline"
+   462→                  disabled={pagination.page <= 1}
+   463→                  onClick={() => setPage(p => Math.max(1, p - 1))}
+   464→                >
+   465→                  Anterior
+   466→                </Button>
+   467→                <Button
+   468→                  size="sm"
+   469→                  variant="outline"
+   470→                  disabled={pagination.page >= pagination.totalPages}
+   471→                  onClick={() => setPage(p => p + 1)}
+   472→                >
+   473→                  Próximo
+   474→                </Button>
+   475→              </div>
+   476→            </div>
+   477→          )}
+   478→        </>
+   479→      )}
+   480→
+   481→      {/* L28: Alterar Capital Dialog */}
+   482→      <Dialog open={alterarCapitalOpen} onOpenChange={setAlterarCapitalOpen}>
+   483→        <DialogContent>
+   484→          <DialogHeader>
+   485→            <DialogTitle>Alterar Capital Segurado</DialogTitle>
+   486→            <DialogDescription>
+   487→              Altere o capital segurado do contrato. O valor deve ser maior que 0 e menor ou igual a R$ 10.000.000,00.
+   488→            </DialogDescription>
+   489→          </DialogHeader>
+   490→          <div className="space-y-3 py-2">
+   491→            <div>
+   492→              <label className="block text-xs text-muted-foreground mb-1">Capital Atual</label>
+   493→              <p className="text-sm font-mono font-medium text-foreground">
+   494→                {expandedContratoDetail?.dadosAprovacao?.capitalSeguradoInformado != null
+   495→                  ? formatCurrency(expandedContratoDetail.dadosAprovacao.capitalSeguradoInformado)
+   496→                  : '—'}
+   497→              </p>
+   498→            </div>
+   499→            <div>
+   500→              <label className="block text-xs text-muted-foreground mb-1">Novo Capital Segurado</label>
+   501→              <input
+   502→                type="number"
+   503→                value={novoCapital}
+   504→                onChange={(e) => {
+   505→                  setNovoCapital(e.target.value)
+   506→                  setCapitalError('')
+   507→                }}
+   508→                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   509→                placeholder="0,00"
+   510→                min="0"
+   511→                max="10000000"
+   512→                step="0.01"
+   513→              />
+   514→            </div>
+   515→            {capitalError && (
+   516→              <p className="text-sm text-state-error flex items-center gap-1">
+   517→                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+   518→                {capitalError}
+   519→              </p>
+   520→            )}
+   521→          </div>
+   522→          <DialogFooter>
+   523→            <Button variant="outline" onClick={() => setAlterarCapitalOpen(false)} disabled={isSubmitting}>
+   524→              Cancelar
+   525→            </Button>
+   526→            <Button
+   527→              onClick={handleAlterarCapital}
+   528→              disabled={isSubmitting || !novoCapital}
+   529→            >
+   530→              {isSubmitting ? (
+   531→                <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" />
+   532→              ) : (
+   533→                <Pencil className="h-4 w-4 mr-1" aria-hidden="true" />
+   534→              )}
+   535→              Alterar Capital
+   536→            </Button>
+   537→          </DialogFooter>
+   538→        </DialogContent>
+   539→      </Dialog>
+   540→
+   541→      {/* L28: Excluir Vínculo Dialog */}
+   542→      <Dialog open={excluirVinculoOpen} onOpenChange={setExcluirVinculoOpen}>
+   543→        <DialogContent>
+   544→          <DialogHeader>
+   545→            <DialogTitle>Excluir Vínculo</DialogTitle>
+   546→            <DialogDescription>
+   547→              Selecione o vínculo que deseja excluir do contrato.
+   548→            </DialogDescription>
+   549→          </DialogHeader>
+   550→          <div className="space-y-2 py-2">
+   551→            {(!expandedContratoDetail?.vinculos || expandedContratoDetail.vinculos.length === 0) && (
+   552→              <p className="text-sm text-muted-foreground">Nenhum vínculo encontrado.</p>
+   553→            )}
+   554→            <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-1">
+   555→              {(expandedContratoDetail?.vinculos || []).map((v) => {
+   556→                const isExcluido = !!v.dataFimVinculo
+   557→                return (
+   558→                  <div
+   559→                    key={v.id}
+   560→                    className="flex items-center justify-between p-2 rounded-lg bg-muted/30 text-sm"
+   561→                  >
+   562→                    <div>
+   563→                      <span className="font-medium text-foreground">{v.pessoaVinculada.nomeCompleto}</span>
+   564→                      <span className="text-muted-foreground ml-2 text-xs">
+   565→                        {tipoVinculoLabels[v.tipoVinculo] || v.tipoVinculo} • {v.parentesco}
+   566→                      </span>
+   567→                      {isExcluido && (
+   568→                        <span className="text-state-error ml-2 text-xs">(Já excluído)</span>
+   569→                      )}
+   570→                    </div>
+   571→                    <Button
+   572→                      size="sm"
+   573→                      variant="destructive"
+   574→                      className="h-7 text-xs"
+   575→                      disabled={isExcluido}
+   576→                      onClick={() => {
+   577→                        setVinculoParaExcluir(v)
+   578→                      }}
+   579→                    >
+   580→                      <Trash2 className="h-3 w-3 mr-1" aria-hidden="true" />
+   581→                      Excluir
+   582→                    </Button>
+   583→                  </div>
+   584→                )
+   585→              })}
+   586→            </div>
+   587→
+   588→            {/* Confirmation for selected vinculo */}
+   589→            {vinculoParaExcluir && (
+   590→              <div className="mt-3 p-3 bg-state-error/5 border border-state-error/20 rounded-lg">
+   591→                <p className="text-sm text-foreground">
+   592→                  Confirmar exclusão de <span className="font-semibold">{vinculoParaExcluir.pessoaVinculada.nomeCompleto}</span>?
+   593→                </p>
+   594→                <div className="flex gap-2 mt-2">
+   595→                  <Button
+   596→                    size="sm"
+   597→                    variant="destructive"
+   598→                    onClick={handleExcluirVinculo}
+   599→                    disabled={isSubmitting}
+   600→                  >
+   601→                    {isSubmitting ? (
+   602→                      <Loader2 className="h-3 w-3 mr-1 animate-spin" aria-hidden="true" />
+   603→                    ) : (
+   604→                      <Trash2 className="h-3 w-3 mr-1" aria-hidden="true" />
+   605→                    )}
+   606→                    Confirmar Exclusão
+   607→                  </Button>
+   608→                  <Button
+   609→                    size="sm"
+   610→                    variant="outline"
+   611→                    onClick={() => setVinculoParaExcluir(null)}
+   612→                    disabled={isSubmitting}
+   613→                  >
+   614→                    Cancelar
+   615→                  </Button>
+   616→                </div>
+   617→              </div>
+   618→            )}
+   619→          </div>
+   620→        </DialogContent>
+   621→      </Dialog>
+   622→
+   623→      {/* Toast notification */}
+   624→      {toast && (
+   625→        <div
+   626→          className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+   627→            toast.type === 'success' ? 'bg-state-success text-white' : 'bg-state-error text-white'
+   628→          }`}
+   629→          role="alert"
+   630→        >
+   631→          {toast.message}
+   632→        </div>
+   633→      )}
+   634→    </div>
+   635→  )
+   636→}
+   637→

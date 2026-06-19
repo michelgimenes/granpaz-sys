@@ -1,0 +1,437 @@
+   200→   200→- Rewrote /src/app/api/contratos/[id]/aprovar/route.ts — Major rewrite with:
+   201→   201→  - L31: SuperAdmin role check via x-user-id header
+   202→   202→  - L1/RN-01: Validate capitalSegurado > 0 (422)
+   203→   203→  - L7: Validate capitalSegurado <= 10_000_000 (422)
+   204→   204→  - L1: Validate codigoSeguradora not null/empty (422)
+   205→   205→  - L8: Validate codigoSeguradora regex ^[A-Z0-9]{1,50}$ (422)
+   206→   206→  - L9: Validate dataInicio >= today if provided (422)
+   207→   207→  - L12: Optimistic locking with updatedAt concurrency check (409)
+   208→   208→  - L2: Bonificação liberation — find PENDENTE_APROVACAO transactions, update to LIBERADO, update carteiraDigital saldoBloqueado/saldoDisponivel
+   209→   209→  - L30: Audit log with atorId (from x-user-id) and ipAddress (from x-forwarded-for/x-real-ip)
+   210→   210→  - L32: Audit acao = 'APROVACAO'
+   211→   211→  - Create/update dadosAprovacaoSeguradora with all fields
+   212→   212→  - Uses sequential DB operations within try-catch for atomicity
+   213→   213→- Rewrote /src/app/api/contratos/[id]/rejeitar/route.ts — Major rewrite with:
+   214→   214→  - L31: SuperAdmin role check
+   215→   215→  - L10/L3: Validate motivo (string, min 10 chars, max 1000 chars) with 422
+   216→   216→  - L4: Cascade estorno — find PENDENTE_APROVACAO transactions, update to ESTORNADO, update carteiraDigital saldoBloqueado -= sum
+   217→   217→  - L12: Optimistic locking with updatedAt (409)
+   218→   218→  - L30: Audit log with atorId and ipAddress
+   219→   219→  - L32: Audit acao = 'REJEICAO'
+   220→   220→- Fixed /src/app/api/contratos/[id]/route.ts — PATCH handler:
+   221→   221→  - L5/RN-03: Financial fields immutability check (capital_segurado_informado, codigo_seguradora_informado, valorParcelaBase, valorTaxaAdesao, seguradoraId, dataInicio) — returns 403 if APROVADO contract
+   222→   222→  - Added updatedAt for optimistic concurrency
+   223→   223→  - GET handler now includes vinculos and dadosAprovacao in response
+   224→   224→  - Audit log on PATCH updates
+   225→   225→- Fixed /src/app/api/contratos/route.ts — GET handler:
+   226→   226→  - L16: Pagination support (page default 1, limit default 20, max 100)
+   227→   227→  - Filter by seguradoraId
+   228→   228→  - Date range filters: dataInicio_start, dataInicio_end
+   229→   229→  - Includes vinculos with pessoaVinculada data and dadosAprovacao
+   230→   230→  - Returns paginated response: { data: [...], pagination: { page, limit, total, totalPages } }
+   231→   231→  - POST handler unchanged
+   232→   232→- Created /src/app/api/seguradoras/route.ts — GET + POST:
+   233→   233→  - GET: List all active seguradoras (L17)
+   234→   234→  - POST: Create seguradora with full validation:
+   235→   235→    - Validate nome (required, min 2 chars)
+   236→   236→    - Validate cnpj (required, digits only, 14 digits)
+   237→   237→    - Validate codigoSeguradora (required, regex ^[A-Z0-9]{1,50}$)
+   238→   238→    - Validate telefoneSinistro (required, digits only, 10-11 digits)
+   239→   239→    - L6/RN-04: Sanitize clausulasMarkdown (strip dangerous HTML)
+   240→   240→    - L11: Warning if >20% content was sanitized
+   241→   241→    - L20: SuperAdmin role check
+   242→   242→    - Audit log
+   243→   243→- Created /src/app/api/seguradoras/[id]/route.ts — GET + PUT + DELETE:
+   244→   244→  - GET: Get single seguradora
+   245→   245→  - PUT: Update seguradora with same validations as POST (all optional)
+   246→   246→    - L6/RN-04: Sanitize clausulasMarkdown on update
+   247→   247→    - L11: Warning if >20% content was sanitized
+   248→   248→    - SuperAdmin role check + audit log
+   249→   249→  - DELETE: Soft delete (set ativa = false)
+   250→   250→    - Checks for active contracts before deactivating
+   251→   251→    - SuperAdmin role check + audit log
+   252→   252→- Created /src/app/api/seguradoras/[id]/testar-pdf/route.ts — L18:
+   253→   253→  - POST: Mock PDF generation endpoint
+   254→   254→  - Returns JSON with mock data (actual PDF generation is async/worker-based, out of scope)
+   255→   255→  - SuperAdmin role check
+   256→   256→- Created /src/app/api/contratos/[id]/endosso/route.ts — POST:
+   257→   257→  - L15: EXCLUSAO_VINCULO — validates vinculoId, checks vinculo does NOT already have dataFimVinculo (returns 400 "Vínculo já inativo")
+   258→   258→  - L19: Endosso creation for approved contracts only
+   259→   259→  - ALTERACAO_CAPITAL: Validate new capitalSegurado > 0 and <= 10_000_000, update dadosAprovacaoSeguradora, RN-05 audit note
+   260→   260→  - EXCLUSAO_VINCULO: Set vinculo.dataFimVinculo = now(), RN-06 recalculation audit note
+   261→   261→  - UPGRADE_PLANO / DOWNGRADE_PLANO: Change plano, update valorParcelaBase/valorTaxaAdesao
+   262→   262→  - SuperAdmin role check on all endosso types
+   263→   263→  - Full audit logging with old and new values
+   264→   264→- Ran bun run lint — No errors, no warnings
+   265→   265→- Dev server running normally
+   266→   266→
+   267→   267→Stage Summary:
+   268→   268→- All 20 backend lacunas fixed (L1-L20 as specified in SPEC-02)
+   269→   269→- Key files modified:
+   270→   270→  - /src/lib/sanitization.ts (added sanitizeMarkdown)
+   271→   271→  - /src/app/api/contratos/[id]/aprovar/route.ts (complete rewrite)
+   272→   272→  - /src/app/api/contratos/[id]/rejeitar/route.ts (complete rewrite)
+   273→   273→  - /src/app/api/contratos/[id]/route.ts (PATCH immutability, GET includes vinculos/dadosAprovacao)
+   274→   274→  - /src/app/api/contratos/route.ts (GET pagination + filters)
+   275→   275→- Key files created:
+   276→   276→  - /src/lib/auth-helpers.ts (checkSuperAdmin, extractRequestMeta)
+   277→   277→  - /src/app/api/seguradoras/route.ts (GET + POST)
+   278→   278→  - /src/app/api/seguradoras/[id]/route.ts (GET + PUT + DELETE)
+   279→   279→  - /src/app/api/seguradoras/[id]/testar-pdf/route.ts (POST mock PDF)
+   280→   280→  - /src/app/api/contratos/[id]/endosso/route.ts (POST endosso)
+   281→   281→- ESLint: No errors, dev server running normally
+   282→   282→
+   283→   283→---
+   284→   284→Task ID: 9-11
+   285→   285→Agent: Frontend Architect
+   286→   286→Task: Fix all SPEC-02 frontend lacunas
+   287→   287→
+   288→   288→Work Log:
+   289→   289→- Updated /src/lib/store.ts — Added 'seguradoras' to DashboardTab type union
+   290→   290→- Rewrote /src/components/dashboard/approval-tab.tsx with all L21-L25 fixes:
+   291→   291→  - L21: Added data_inicio date field (defaults to today), sent as dataInicio in approve request
+   292→   292→  - L22: CPF Confirmation Dialog before approval — admin must type titular's CPF to confirm (SPEC-02 §7.3)
+   293→   293→  - L23: Rejection Modal with motivo textarea (min 10 chars, max 1000 chars, character count, validation)
+   294→   294→  - L24: Loading/error/success states — isSubmitting state, spinner on buttons, API error parsing, toast notifications
+   295→   295→  - L25: Vínculos tree display — fetches full contract details with vínculos when selected, shows parentesco and tipoVinculo
+   296→   296→  - Updated Contrato interface with titular.id, valorTaxaAdesao, vinculos, dadosAprovacao
+   297→   297→  - Approve request now includes dataInicio and adminAprovadorId (from useAppStore.getState().user)
+   298→   298→- Rewrote /src/components/dashboard/contracts-tab.tsx with all L26-L28 fixes:
+   299→   299→  - L26: Fixed Taxa Adesão from hardcoded formatCurrency(0) to formatCurrency(contrato.valorTaxaAdesao)
+   300→   300→  - L27: Display dados_aprovacao for approved contracts (capital segurado, código seguradora, data aprovação, admin aprovador, observações)
+   301→   301→  - L28: Endosso actions — "Alterar Capital" dialog with validation (>0, <=10M), "Excluir Vínculo" dialog with active vínculos list and confirmation
+   302→   302→  - Added pagination support (handles both paginated {data, pagination} and array API responses)
+   303→   303→  - Added pagination controls (Previous/Next buttons, page info)
+   304→   304→  - Added expandedContratoDetail query to fetch full contract details including vínculos and dadosAprovacao
+   305→   305→  - Updated Contrato interface with valorTaxaAdesao, dataFimVinculo on Vinculo, DadosAprovacao type
+   306→   306→- Created /src/components/dashboard/seguradoras-tab.tsx (L29):
+   307→   307→  - Full CRUD for seguradoras management (SuperAdmin only)
+   308→   308→  - Card layout showing nome, cnpj (formatted), código, telefone sinistro, ativa status
+   309→   309→  - "Add Seguradora" button, Edit and Delete buttons on each card
+   310→   310→  - Add/Edit Dialog with fields: nome, cnpj (auto-formatted), codigoSeguradora (uppercase alphanumeric), telefoneSinistro (auto-formatted), processoSusep (optional), clausulasMarkdown (textarea with markdown preview toggle)
+   311→   311→  - Basic markdown renderer for cláusulas (headers, bold, lists)
+   312→   312→  - Delete confirmation dialog
+   313→   313→  - SuperAdmin role check (restricted access if not SUPERADMIN)
+   314→   314→  - Form validation (required fields, CNPJ 14 digits, phone 10-11 digits, código alphanumeric)
+   315→   315→  - API calls: GET/POST /api/seguradoras, PUT/DELETE /api/seguradoras/${id}
+   316→   316→- Updated /src/components/dashboard/dashboard-layout.tsx — Added Building2 icon import and seguradoras nav item (SUPERADMIN role)
+   317→   317→- Updated /src/app/page.tsx — Imported SeguradorasTab and added to tabs map
+   318→   318→
+   319→   319→Stage Summary:
+   320→   320→- All 9 frontend lacunas fixed (L21-L25, L26-L28, L29)
+   321→   321→- Key files modified: src/lib/store.ts, src/components/dashboard/approval-tab.tsx, src/components/dashboard/contracts-tab.tsx, src/components/dashboard/dashboard-layout.tsx, src/app/page.tsx
+   322→   322→- Key files created: src/components/dashboard/seguradoras-tab.tsx
+   323→   323→- ESLint: 0 errors, 8 warnings (all pre-existing in backend API files)
+   324→   324→- Dev server: running normally, no compilation errors
+   325→   325→---
+   326→   326→Task ID: SPEC-02
+   327→   327→Agent: Orchestrator + Backend Engineer + Frontend Architect
+   328→   328→Task: SPEC-02 Audit + Fix — Módulo de Gestão de Contratos e Aprovação
+   329→   329→
+   330→   330→Work Log:
+   331→   331→- Read SPEC-02 document thoroughly and identified 32 lacunas across 6 categories
+   332→   332→- Launched parallel backend and frontend agents to fix all lacunas
+   333→   333→- Backend agent fixed: aprovar route (RN-01, validations, bonificação liberation, concurrency), rejeitar route (RN-02, motivo validation, cascade estorno), imutabilidade (RN-03), seguradoras CRUD (RN-04, markdown sanitization), endosso routes (RN-05, RN-06), contratos pagination + filters
+   334→   334→- Frontend agent fixed: approval-tab (data_inicio, CPF confirm, rejection modal, toasts, vinculos), contracts-tab (taxa adesão, dados_aprovacao, endosso actions, pagination), created seguradoras-tab
+   335→   335→- Fixed post-agent integration bugs: vinculosComoTitular relation doesn't exist on Contrato model (changed to manual vinculo fetch), paginated response format compatibility in approval-tab
+   336→   336→- Browser tested all tabs: Approval Queue (2 contracts, detail panel with vinculos), Contracts (expandable with filters), Seguradoras (CRUD with Alpha/Beta)
+   337→   337→- ESLint: 0 errors
+   338→   338→
+   339→   339→Stage Summary:
+   340→   340→- All 32 SPEC-02 lacunas fixed
+   341→   341→- Key files modified: aprovar/route.ts, rejeitar/route.ts, contratos/[id]/route.ts, contratos/route.ts, sanitization.ts, store.ts, approval-tab.tsx, contracts-tab.tsx, dashboard-layout.tsx, page.tsx
+   342→   342→- Key files created: auth-helpers.ts, seguradoras/route.ts, seguradoras/[id]/route.ts, seguradoras/[id]/testar-pdf/route.ts, endosso/route.ts, seguradoras-tab.tsx
+   343→   343→
+   344→   344→---
+   345→   345→Task ID: SPEC-03-BACKEND
+   346→   346→Agent: Backend Engineer
+   347→   347→Task: Fix ALL backend lacunas for SPEC-03 Módulo Financeiro e de Bonificação
+   348→   348→
+   349→   349→Work Log:
+   350→   350→- Read worklog.md and all existing API routes, lib files, and Prisma schema
+   351→   351→- Updated /src/lib/auth-helpers.ts — Added checkFinanceiroOrAdmin helper (SuperAdmin OR FINANCEIRO role)
+   352→   352→- Created /src/app/api/carteiras/[carteiraId]/abatimentos/route.ts — POST endpoint for abatimento (paying parcela with wallet balance):
+   353→   353→  - RN-003: If saldo_disponivel <= 0, block with SALDO_INSUFICIENTE
+   354→   354→  - RN-003: If saldo_disponivel < valor_parcela, allow partial abatimento, update conta_a_pagar to PARCIALMENTE_PAGO
+   355→   355→  - RN-007: If saldo_devedor > 0, block with SALDO_DEVEDOR_EXISTENTE
+   356→   356→  - EC-008: Validate valor_abatido > 0
+   357→   357→  - EC-009: Validate conta_a_pagar status is not CANCELADO
+   358→   358→  - Validates carteira exists (404), conta_a_pagar exists and belongs to same titular (404)
+   359→   359→  - Creates TransacaoPagamento with tipoTransacao='ABATIMENTO', status='CONCLUIDO'
+   360→   360→  - Updates carteira saldoDisponivel -= valorAbatido
+   361→   361→  - Updates conta_a_pagar valorRestante and status (PAGO or PARCIALMENTE_PAGO)
+   362→   362→  - Audit log with isPartial detail
+   363→   363→- Created /src/app/api/carteiras/[carteiraId]/saques/route.ts — POST endpoint for saque (withdrawal):
+   364→   364→  - RN-005: Check SAQUE_PF_ATIVO config; if false, return 400 SAQUE_PF_DESATIVADO
+   365→   365→  - RN-007: If saldo_devedor > 0, block with SALDO_DEVEDOR_EXISTENTE
+   366→   366→  - RN-006: If valor > LIMITE_SAQUE_DIARIO config, create with status PENDENTE_APROVACAO, move valor to saldoBloqueado
+   367→   367→  - If valor <= LIMITE_SAQUE_DIARIO, create with status CONCLUIDO, debit from saldoDisponivel
+   368→   368→  - RN-005: IRRF calculation (simplified 2026 progressive table: exempt up to R$2251.05, 7.5%/15%/22.5%/27.5% brackets with deductions)
+   369→   369→  - RN-005: INSS calculation (11% capped at R$908.85)
+   370→   370→  - Validate valor >= 10 (minimum), valor <= saldoDisponivel
+   371→   371→  - Creates TransacaoPagamento with tipoTransacao='SAQUE', valorIrrfRetido, valorInssRetido, valorLiquido
+   372→   372→  - Audit log
+   373→   373→- Created /src/app/api/carteiras/[carteiraId]/extrato/route.ts — GET endpoint for extrato (statement):
+   374→   374→  - Filter by tipo (bonificacao, pagamento, todos)
+   375→   375→  - Filter by date range (data_inicio, data_fim)
+   376→   376→  - Pagination (page, limit)
+   377→   377→  - Returns combined list from transacoes_bonificacao and transacoes_pagamento
+   378→   378→  - Each item has: id, tipo, valor, status, data, descricao
+   379→   379→  - Paginated response format: { data: [...], pagination: { page, limit, total, totalPages } }
+   380→   380→- Created /src/app/api/admin/saques/[transacaoId]/aprovar/route.ts — POST for Maker/Checker approval:
+   381→   381→  - SuperAdmin/FINANCEIRO role check via checkFinanceiroOrAdmin
+   382→   382→  - Validate transacao exists, status is PENDENTE_APROVACAO, tipoTransacao is SAQUE
+   383→   383→  - If aprovado=true: move saldoBloqueado to deducted (saldoBloqueado -= valor), set status=CONCLUIDO, set adminAprovadorId
+   384→   384→  - If aprovado=false: move saldoBloqueado back to saldoDisponivel, set status=ESTORNADO, require motivoRejeicao (min 10 chars)
+   385→   385→  - Audit log
+   386→   386→- Created /src/app/api/webhooks/pagamento/route.ts — POST for payment gateway webhook:
+   387→   387→  - EC-003: Idempotency check — look up webhooks_recebidos by transactionId+source, return 200 if already processed
+   388→   388→  - Save webhook to webhooks_recebidos
+   389→   389→  - Find conta_a_pagar by gatewayTransactionId
+   390→   390→  - Update conta_a_pagar status to PAGO, valorRestante to 0
+   391→   391→  - Audit log
+   392→   392→- Created /src/app/api/admin/saques/route.ts — GET for pending saques (Maker/Checker dashboard):
+   393→   393→  - SuperAdmin/FINANCEIRO role check
+   394→   394→  - List TransacaoPagamento where tipoTransacao='SAQUE' and status='PENDENTE_APROVACAO'
+   395→   395→  - Include carteira with titular info
+   396→   396→  - Pagination
+   397→   397→  - Optional status filter (default: PENDENTE_APROVACAO)
+   398→   398→- Updated /src/app/api/contratos/[id]/aprovar/route.ts:
+   399→   399→  - Set dataLiberacao when changing bonificação status to LIBERADO
+   400→   400→  - EC-004: Moved wallet creation BEFORE bonificação liberation (garantirCarteira pattern)
+   401→   401→- Updated /src/app/api/contratos/[id]/rejeitar/route.ts:
+   402→   402→  - Set dataEstorno when changing bonificação status to ESTORNADO
+   403→   403→- Updated /src/app/api/contratos/route.ts (POST handler):
+   404→   404→  - After creating contrato + patrocinio, calculate bonificação for the sponsorship tree
+   405→   405→  - RN-001: Base de cálculo is ONLY on taxa de adesão + parcela mensal (NEVER on prêmio de seguro or capital segurado)
+   406→   406→  - Traverse sponsorship tree UP from patrocinador using niveis_bonificacao table
+   407→   407→  - Create TransacaoBonificacao entries with status PENDENTE_APROVACAO for each level
+   408→   408→  - Add valor to saldoBloqueado of each carteira in the tree
+   409→   409→  - Ensure carteiras exist for all nodes in the tree (create if not exists)
+   410→   410→  - P2002 error handling for @@unique([origemContratoId, carteiraId, nivelOrigem])
+   411→   411→  - EC-005: If bonificação creation fails, log and proceed (don't block contract creation)
+   412→   412→- Updated /src/app/api/patrocinios/route.ts:
+   413→   413→  - Added POST handler for creating patrocínios
+   414→   414→  - RN-009: Validate revendedorId doesn't already have active patrocínio — return CONFLITO_DE_REDE (409)
+   415→   415→  - RN-010: Validate revendedorId !== patrocinadorId — return AUTO_PATROCINIO_PROIBIDO (400)
+   416→   416→  - Validate both revendedor and patrocinador exist
+   417→   417→  - Calculate nivelProfundidade based on patrocinador's current level
+   418→   418→  - Ensure both have carteiras digitais (create if not exists)
+   419→   419→  - Audit log
+   420→   420→- Updated /src/app/api/carteiras/route.ts:
+   421→   421→  - Added pagination support (page, limit)
+   422→   422→  - Added filter by titularId
+   423→   423→  - Paginated response format: { data: [...], pagination: { page, limit, total, totalPages } }
+   424→   424→- Updated /src/app/api/carteiras/transacoes/route.ts:
+   425→   425→  - Added pagination support (page, limit)
+   426→   426→  - Added filter by tipo (ABATIMENTO/SAQUE), status, date range
+   427→   427→  - Paginated response format
+   428→   428→- Updated /src/app/api/contas-a-pagar/route.ts:
+   429→   429→  - Added pagination support (page, limit)
+   430→   430→  - Added filter by contratoId, status, date range
+   431→   431→  - Paginated response format
+   432→   432→- Ran bun run lint — No errors
+   433→   433→- Ran bun run db:push — Database in sync
+   434→   434→- Dev server running normally
+   435→   435→
+   436→   436→Stage Summary:
+   437→   437→- 13 files created/updated for SPEC-03 backend lacuna fixes
+   438→   438→- Key files created:
+   439→   439→  - /src/app/api/carteiras/[carteiraId]/abatimentos/route.ts (abatimento with RN-003, RN-007, EC-008, EC-009)
+   440→   440→  - /src/app/api/carteiras/[carteiraId]/saques/route.ts (saque with RN-005, RN-006, RN-007, IRRF/INSS)
+   441→   441→  - /src/app/api/carteiras/[carteiraId]/extrato/route.ts (extrato with filters + pagination)
+   442→   442→  - /src/app/api/admin/saques/[transacaoId]/aprovar/route.ts (Maker/Checker approval)
+   443→   443→  - /src/app/api/webhooks/pagamento/route.ts (EC-003 idempotency + conta_a_pagar update)
+   444→   444→  - /src/app/api/admin/saques/route.ts (pending saques list for dashboard)
+   445→   445→- Key files modified:
+   446→   446→  - /src/lib/auth-helpers.ts (added checkFinanceiroOrAdmin)
+   447→   447→  - /src/app/api/contratos/[id]/aprovar/route.ts (dataLiberacao, EC-004 wallet order)
+   448→   448→  - /src/app/api/contratos/[id]/rejeitar/route.ts (dataEstorno)
+   449→   449→  - /src/app/api/contratos/route.ts (bonificação tree creation with RN-001)
+   450→   450→  - /src/app/api/patrocinios/route.ts (POST with RN-009, RN-010)
+   451→   451→  - /src/app/api/carteiras/route.ts (pagination + titularId filter)
+   452→   452→  - /src/app/api/carteiras/transacoes/route.ts (pagination + tipo/status/date filters)
+   453→   453→  - /src/app/api/contas-a-pagar/route.ts (pagination + contratoId/status/date filters)
+   454→   454→- ESLint: 0 errors, dev server running normally
+   455→   455→
+   456→   456→---
+   457→   457→Task ID: SPEC-03-FRONTEND
+   458→   458→Agent: Frontend Architect
+   459→   459→Task: Complete rewrite of financial-tab.tsx with all SPEC-03 features
+   460→   460→
+   461→   461→Work Log:
+   462→   462→- Read worklog.md to understand previous agents' work (Schema Agent, Full-Stack Dev, Backend Agent)
+   463→   463→- Read existing financial-tab.tsx skeleton (only had wallet cards, broken "Solicitar Saque" button, basic transaction list)
+   464→   464→- Read all backend API routes to understand request/response structure
+   465→   465→- Read Prisma schema, store, helpers, dashboard-layout, page.tsx
+   466→   466→- Read shadcn/ui component implementations (Dialog, Tabs, Badge, Select, Sonner)
+   467→   467→- Complete rewrite of /src/components/dashboard/financial-tab.tsx with ALL SPEC-03 features:
+   468→   468→
+   469→   469→Features Implemented:
+   470→   470→1. **Wallet Dashboard (improved)**:
+   471→   471→   - 3 balance cards: Saldo Disponível, Saldo Bloqueado, Saldo Devedor
+   472→   472→   - SALDO DEVEDOR warning banner when saldoDevedor > 0 with RN-007 message
+   473→   473→   - Wallet owner info card showing nome and CPF
+   474→   474→
+   475→   475→2. **Contas a Pagar Section**:
+   476→   476→   - List of contas_a_pagar with colored status badges (PENDENTE/PARCIALMENTE_PAGO/PAGO/VENCIDO/CANCELADO)
+   477→   477→   - Shows: descrição, valor, valorRestante, dataVencimento, status
+   478→   478→   - "Abater" button on PENDENTE or PARCIALMENTE_PAGO contas
+   479→   479→   - Status filter dropdown
+   480→   480→
+   481→   481→3. **Abatimento Modal (RN-003)**:
+   482→   482→   - Dialog showing conta details (descrição, valor total, valor restante)
+   483→   483→   - Auto-calculated valor_abatido = min(saldoDisponivel, valorRestante)
+   484→   484→   - Warning for partial abatimento when saldoDisponivel < valorRestante
+   485→   485→   - Error block when saldoDevedor > 0 (RN-007)
+   486→   486→   - Calls POST /api/carteiras/{carteiraId}/abatimentos
+   487→   487→   - Success toast + auto-refresh on completion
+   488→   488→   - Error toast with API error message
+   489→   489→
+   490→   490→4. **Saque Modal (RN-005, RN-006, RN-007)**:
+   491→   491→   - Input for valor with min R$ 10.00
+   492→   492→   - Live IRRF and INSS preview calculation (mirrors backend progressive table)
+   493→   493→   - Shows valor líquido = valor - IRRF - INSS
+   494→   494→   - Error block when saldoDevedor > 0 (RN-007)
+   495→   495→   - Calls POST /api/carteiras/{carteiraId}/saques
+   496→   496→   - Success toast with CONCLUIDO/PENDENTE_APROVACAO status
+   497→   497→   - Info toast when PENDENTE_APROVACAO about Financeiro approval
+   498→   498→   - Validation messages for min value and exceeding balance
+   499→   499→
+   500→   500→5. **Extrato/Statement Tab**:
+   501→   501→   - Combined list of bonificações (+) and pagamentos (-)
+   502→   502→   - Filter by tipo: Todos / Bonificações / Pagamentos
+   503→   503→   - Filter by date range (data início / data fim)
+   504→   504→   - Pagination controls
+   505→   505→   - Each item: data, tipo, valor, status badge, descrição
+   506→   506→   - Color-coded: green for bonificações (income), blue for pagamentos (expense)
+   507→   507→
+   508→   508→6. **Admin: Pending Saques Section** (SUPERADMIN/FINANCEIRO only):
+   509→   509→   - Separate "Aprovações" tab (visible only for admin roles)
+   510→   510→   - List of pending saques from GET /api/admin/saques
+   511→   511→   - Shows: revendedor nome, CPF, valor bruto, IRRF, INSS, líquido, data
+   512→   512→   - "Aprovar" button → calls POST /api/admin/saques/{transacaoId}/aprovar with aprovado: true
+   513→   513→   - "Rejeitar" button → opens dialog with motivoRejeicao textarea (min 10 chars)
+   514→   514→   - Rejeitar calls POST with aprovado: false and motivoRejeicao
+   515→   515→   - Auto-refresh after approve/reject
+   516→   516→
+   517→   517→Implementation Details:
+   518→   518→- Uses shadcn/ui: Card, Button, Dialog, Input, Label, Badge, Select, Tabs, Textarea
+   519→   519→- TanStack React Query for all API calls (useQuery + useMutation)
+   520→   520→- useAppStore for user info and role check
+   521→   521→- formatCurrency, formatDate, formatCPF from helpers
+   522→   522→- StatusBadge component with color coding per spec
+   523→   523→- PaginationControls reusable component
+   524→   524→- IRRF/INSS calculation mirrors backend exactly
+   525→   525→- 'use client' directive
+   526→   526→- Responsive mobile-first design
+   527→   527→- Loading states with Loader2 spinner
+   528→   528→- Toast notifications via sonner for all actions
+   529→   529→- Error handling with clear messages
+   530→   530→
+   531→   531→Lint: 0 errors after fixing useCallback dependency issue
+   532→   532→Dev server: Compiled successfully
+   533→   533→
+   534→   534→---
+   535→   535→Task ID: SPEC-03
+   536→   536→Agent: Orchestrator + Backend Engineer + Frontend Architect
+   537→   537→Task: SPEC-03 Audit + Fix — Módulo Financeiro e de Bonificação
+   538→   538→
+   539→   539→Work Log:
+   540→   540→- Read SPEC-03 document thoroughly (1688 lines) covering financial module and multi-level bonuses
+   541→   541→- Identified 42 lacunas across 6 categories: Schema (4), Missing APIs (6), Business Rules (10), Edge Cases (5), Frontend (5), Existing Routes (9)
+   542→   542→- Updated Prisma schema:
+   543→   543→  - TransacaoBonificacao: added dataLiberacao, dataEstorno, @@unique([origemContratoId, carteiraId, nivelOrigem]) for RN-002 idempotência
+   544→   544→  - TransacaoPagamento: added observacoes, motivoRejeicao, adminAprovadorId, valorLiquido, defaults for valorIrrfRetido/valorInssRetido
+   545→   545→  - ContaAPagar: added PARCIALMENTE_PAGO status, updatedAt
+   546→   546→- Backend agent created 6 new API endpoints:
+   547→   547→  - POST /api/carteiras/{carteiraId}/abatimentos — RN-003 partial/total abatimento, RN-007 devedor block, EC-008/EC-009
+   548→   548→  - POST /api/carteiras/{carteiraId}/saques — RN-005 IRRF/INSS, RN-006 Maker/Checker, RN-007 devedor block
+   549→   549→  - GET /api/carteiras/{carteiraId}/extrato — Combined bonificação+pagamento with filters and pagination
+   550→   550→  - POST /api/admin/saques/{transacaoId}/aprovar — Maker/Checker approval/rejection
+   551→   551→  - POST /api/webhooks/pagamento — EC-003 idempotency, update conta_a_pagar
+   552→   552→  - GET /api/admin/saques — List pending saques for admin dashboard
+   553→   553→- Backend agent updated 7 existing files:
+   554→   554→  - auth-helpers.ts — Added checkFinanceiroOrAdmin() for FINANCEIRO role
+   555→   555→  - aprovar route — Set dataLiberacao on bonificação LIBERADO, EC-004 wallet creation order fix
+   556→   556→  - rejeitar route — Set dataEstorno on bonificação ESTORNADO
+   557→   557→  - contratos POST — Full bonificação tree creation (RN-001 base cálculo, niveis_bonificacao, P2002 idempotency, EC-005 non-blocking)
+   558→   558→  - patrocinios — Added POST with RN-009 (CONFLITO_DE_REDE) and RN-010 (AUTO_PATROCINIO_PROIBIDO)
+   559→   559→  - carteiras — Added pagination + titularId filter
+   560→   560→  - carteiras/transacoes — Added pagination + tipo/status/date filters
+   561→   561→  - contas-a-pagar — Added pagination + contratoId/status/date filters
+   562→   562→- Frontend agent completely rewrote financial-tab.tsx with 3-tab layout:
+   563→   563→  - Carteira: wallet cards + devedor warning + contas a pagar with Abater button + abatimento modal + saque modal
+   564→   564→  - Extrato: combined bonificações/pagamentos with tipo/date filters + pagination
+   565→   565→  - Aprovações: admin-only pending saques with approve/reject (Maker/Checker)
+   566→   566→- Browser verified all 3 tabs: Carteira (wallet, contas, abatimento modal), Extrato (filters, empty state), Aprovações (pending saques)
+   567→   567→- ESLint: 0 errors, 0 warnings
+   568→   568→- Dev server: running normally, no compilation errors
+   569→   569→
+   570→   570→Stage Summary:
+   571→   571→- All 42 SPEC-03 lacunas fixed
+   572→   572→- Key schema changes: @@unique idempotência on TransacaoBonificacao, dataLiberacao/dataEstorno timestamps, PARCIALMENTE_PAGO status, observacoes/motivoRejeicao/adminAprovadorId fields
+   573→   573→- Key files created: carteiras/[carteiraId]/abatimentos/route.ts, carteiras/[carteiraId]/saques/route.ts, carteiras/[carteiraId]/extrato/route.ts, admin/saques/route.ts, admin/saques/[transacaoId]/aprovar/route.ts, webhooks/pagamento/route.ts
+   574→   574→- Key files modified: schema.prisma, auth-helpers.ts, aprovar/route.ts, rejeitar/route.ts, contratos/route.ts, patrocinios/route.ts, carteiras/route.ts, carteiras/transacoes/route.ts, contas-a-pagar/route.ts, financial-tab.tsx
+   575→   575→- Business rules implemented: RN-001 through RN-010, EC-003 through EC-009
+   576→   576→- IRRF progressive table (2026) and INSS (11% capped) implemented for PF saques
+   577→   577→- Maker/Checker flow for saques above LIMITE_SAQUE_DIARIO
+   578→   578→
+   579→   579→---
+   580→   580→Task ID: SPEC-04-BACKEND
+   581→   581→Agent: Backend Engineer
+   582→   582→Task: Fix ALL backend lacunas for SPEC-04 (Módulo de Sinistro, Carência e Compliance Legal)
+   583→   583→
+   584→   584→Work Log:
+   585→   585→- Added observacoes field to PessoaFisica model in prisma/schema.prisma (for RN-05 special tags)
+   586→   586→- Ran db:push successfully to sync schema
+   587→   587→- Added SPEC-04 validation helpers to src/lib/validations.ts:
+   588→   588→  - validateTipoSinistro(): validates tipo_sinistro enum values
+   589→   589→  - validateS3Hash(): RN-01 SHA-256 hash validation (64 hex chars, Air-Gap compliance)
+   590→   590→  - validateCarencia(): RN-02 carência validation per tipo (SUICIDIO→MESES_CARENCIA_SUICIDIO, OBITO_ACIDENTAL→DIAS_CARENCIA_ACIDENTAL, OBITO_NATURAL→MESES_CARENCIA_NATURAL, INVALIDEZ_TOTAL→same as natural)
+   591→   591→  - calculateRemissionMonths(): RN-07 reads seguradora clausulasMarkdown for remission clause, falls back to MESES_REMISSAO_OBITO_PADRAO config
+   592→   592→- Complete rewrite of /api/sinistros/route.ts:
+   593→   593→  - POST: RN-01 Air-Gap validation, RN-02 carência check, EC-04 active vínculo validation, data_ocorrencia validation (not future, >= data_aprovacao), contrato status check, auto-NEGADO_CARENCIA when applicable, audit log
+   594→   594→  - GET: pagination (page/limit), filters by status/contratoId/tipoSinistro, full includes
+   595→   595→- Created /api/sinistros/[id]/route.ts:
+   596→   596→  - GET: single sinistro with full related data
+   597→   597→  - PATCH: status changes (APROVADO, NEGADO_FRAUDE, NEGADO_EXCLUSAO) with SuperAdmin check
+   598→   598→  - RN-07: When APROVADO for titular OBITO, creates RemissaoContrato (apólice first, then config fallback), cancels PENDENTE contas_a_pagar, cascades estorno of LIBERADO bonificações with saldo devedor logic
+   599→   599→  - Full audit logging for all transitions
+   600→   600→- Created /api/contratos/[id]/cancelar-cdc/route.ts (RN-04):
+   601→   601→  - 7-day cooling-off period validation (Art. 49 CDC)
+   602→   602→  - Sets status CANCELADO_CDC with motivoCancelamento
+   603→   603→  - Cascades estorno of ALL bonificações (LIBERADO + PENDENTE_APROVACAO → ESTORNADO)
+   604→   604→  - Updates carteiras: saldoDisponivel -= LIBERADO, saldoBloqueado -= PENDENTE, saldoDevedor for deficits
+   605→   605→  - Cancels all PENDENTE contas_a_pagar
+   606→   606→  - Transaction-wrapped for atomicity
+   607→   607→  - Full audit log with CDC reference
+   608→   608→- Created /api/contratos/[id]/suspensao/route.ts (RN-03):
+   609→   609→  - SUSPENDER: validates APROVADO status, sets SUSPENSO + dataSuspensao, calculates dias_atraso from contas vencidas
+   610→   610→  - REATIVAR (Récita): validates SUSPENSO status, resets to APROVADO, clears dataSuspensao, notes EC-08 carência recalculation
+   611→   611→  - Both require motivo field, SuperAdmin check
+   612→   612→- Created /api/compliance/maioridade/route.ts (RN-05):
+   613→   613→  - Finds DEPENDENTE/FILHO vinculos where pessoa turned 21 and still active
+   614→   614→  - Checks observacoes field for inválido/incapaz special tags (skips those)
+   615→   615→  - Sets dataFimVinculo, creates per-vinculo audit + titular notification note
+   616→   616→  - Returns count of expirados and skipped
+   617→   617→- Created /api/compliance/lgpd/route.ts (RN-06):
+   618→   618→  - Finds pessoas with CANCELADO/CANCELADO_CDC contracts 5+ years ago, or APROVADO OBITO sinistros 5+ years ago
+   619→   619→  - EC-03: Checks no financial pendências (saldo_devedor = 0, no PENDENTE contas_a_pagar)
+   620→   620→  - Anonymizes PII fields (nomeCompleto→hash prefix, cpf→null, email→null, telefone→null, etc.)
+   621→   621→  - Creates LogAnonimizacaoLGPD record with camposAnonimizados JSON and hashOriginalSalt
+   622→   622→  - Skips with PENDENCIA_FINANCEIRA motivo when financial issues found
+   623→   623→- Created /api/compliance/suspensao-auto/route.ts (RN-03 auto):
+   624→   624→  - Finds APROVADO contracts with PENDENTE contas_a_pagar past DIAS_SUSPENSAO_INADIMPLENCIA
+   625→   625→  - Suspends each contract, creates audit log with dias_atraso and motivo
+   626→   626→  - Returns count of suspended contracts with details
+   627→   627→
+   628→   628→Stage Summary:
+   629→   629→- All 7 backend files created/rewritten for SPEC-04
+   630→   630→- Business rules implemented: RN-01 (Air-Gap), RN-02 (Carência), RN-03 (Suspensão/Auto), RN-04 (CDC Arrependimento), RN-05 (Maioridade), RN-06 (LGPD Anonimização), RN-07 (Remissão)
+   631→   631→- EC-03 (LGPD financial check), EC-04 (active vínculo check), EC-08 (carência recalculation note) implemented
+   632→   632→- Schema change: added observacoes to PessoaFisica
+   633→   633→- ESLint: 0 errors, 0 warnings
+   634→   634→- Dev server: running normally
+
+[showing lines 200-634 of 635; use offset=635 with limit to continue reading]

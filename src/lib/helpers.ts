@@ -45,8 +45,15 @@ export function formatCurrency(value: number): string {
 /**
  * Format date to Brazilian format
  */
-export function formatDate(date: string | Date): string {
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(date))
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return '—'
+  try {
+    const d = new Date(date)
+    if (isNaN(d.getTime())) return '—'
+    return new Intl.DateTimeFormat('pt-BR').format(d)
+  } catch {
+    return '—'
+  }
 }
 
 /**

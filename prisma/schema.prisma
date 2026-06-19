@@ -33,6 +33,7 @@ model PessoaFisica {
   bairro          String?
   cidade          String?
   estado          String?
+  observacoes     String?   // Free-text notes; used for special tags (inválido/incapaz) per RN-05
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now())
 
@@ -146,6 +147,7 @@ model Contrato {
   valorTaxaAdesao     Float
   dataInicio          DateTime?
   dataCancelamento    DateTime?
+  dataSuspensao       DateTime?   // When contract was suspended (RN-03)
   motivoCancelamento  String?
   patrocinadorId      String?
   createdAt           DateTime  @default(now())
@@ -332,7 +334,10 @@ model Sinistro {
   tipoSinistro      String    // OBITO_NATURAL / OBITO_ACIDENTAL / SUICIDIO / INVALIDEZ_TOTAL
   dataOcorrencia    DateTime
   status            String    // EM_ANALISE / APROVADO / NEGADO_CARENCIA / NEGADO_FRAUDE / NEGADO_EXCLUSAO
-  documentoS3Hash   String?   // AIR-GAP: never store clinical data
+  documentoS3Hash   String?   // AIR-GAP: SHA-256 hash only — never store clinical data
+  motivoNegacao     String?   // Reason for denial (carência, fraude, exclusão)
+  carenciaDias      Int?      // Days of waiting period applied (for audit)
+  carenciaMeses     Int?      // Months of waiting period applied (for suicide, Art. 798 CC)
   observacoes       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now())

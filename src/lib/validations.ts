@@ -162,6 +162,136 @@ export function validateParentescoPorTipo(tipoVinculo: string, parentesco: strin
   return { valid: true, message: '' }
 }
 
+// ─────────────────────────────────────────────────────────
+// SPEC-04: Carência validation helpers (RN-02)
+// ─────────────────────────────────────────────────────────
+
+const TIPO_SINISTRO_ENUM = ['OBITO_NATURAL', 'OBITO_ACIDENTAL', 'SUICIDIO', 'INVALIDEZ_TOTAL'] as const
+export type TipoSinistro = typeof TIPO_SINISTRO_ENUM[number]
+
+/**
+ * Validate tipo_sinistro is a known enum value
+ */
+export function validateTipoSinistro(tipo: string): { valid: boolean; message: string } {
+  if (!TIPO_SINISTRO_ENUM.includes(tipo as TipoSinistro)) {
+    return { valid: false, message: `Tipo de sinistro inválido: '${tipo}'. Permitidos: ${TIPO_SINISTRO_ENUM.join(', ')}` }
+  }
+  return { valid: true, message: '' }
+}
+
+/**
+ * RN-01: Validate SHA-256 hash format (Air-Gap compliance)
+ * documento_s3_hash must be exactly 64 hex chars — never BLOB/Base64
+ */
+export function validateS3Hash(hash: string): { valid: boolean; message: string } {
+  if (!/^[a-f0-9]{64}$/i.test(hash)) {
+    return { valid: false, message: 'Documento S3 hash inválido. Deve ser SHA-256 (64 caracteres hexadecimais). Dados clínicos ou Base64 nunca são aceitos.' }
+  }
+  return { valid: true, message: '' }
+}
+
+/**
+ * RN-02: Carência validation for sinistro creation
+ * Returns { negado: boolean, motivoNegacao, carenciaDias, carenciaMeses }
+ */
+export async function validateCarencia(
+  tipoSinistro: string,
+  dataOcorrencia: Date,
+  dataAprovacao: Date
+): Promise<{ negado: boolean; motivoNegacao: string | null; carenciaDias: number | null; carenciaMeses: number | null }> {
+  const dataOcorrenciaTime = dataOcorrencia.getTime()
+
+  switch (tipoSinistro) {
+    case 'SUICIDIO': {
+      const mesesCarencia = await getConfigInt('MESES_CARENCIA_SUICIDIO')
+      const dataFimCarencia = new Date(dataAprovacao)
+      dataFimCarencia.setMonth(dataFimCarencia.getMonth() + mesesCarencia)
+      if (dataOcorrenciaTime < dataFimCarencia.getTime()) {
+        return {
+          negado: true,
+          motivoNegacao: `Sinistro negado por carência: suicídio possui carência de ${mesesCarencia} meses (Art. 798 CC).`,
+          carenciaDias: null,
+          carenciaMeses: mesesCarencia,
+        }
+      }
+      return { negado: false, motivoNegacao: null, carenciaDias: null, carenciaMeses: mesesCarencia }
+    }
+
+    case 'OBITO_ACIDENTAL': {
+      const diasCarencia = await getConfigInt('DIAS_CARENCIA_ACIDENTAL')
+      const dataFimCarencia = new Date(dataAprovacao)
+      dataFimCarencia.setDate(dataFimCarencia.getDate() + diasCarencia)
+      if (dataOcorrenciaTime < dataFimCarencia.getTime()) {
+        return {
+          negado: true,
+          motivoNegacao: `Sinistro negado por carência: óbito acidental possui carência de ${diasCarencia} dias.`,
+          carenciaDias: diasCarencia,
+          carenciaMeses: null,
+        }
+      }
+      return { negado: false, motivoNegacao: null, carenciaDias: diasCarencia, carenciaMeses: null }
+    }
+
+    case 'OBITO_NATURAL': {
+      const mesesCarencia = await getConfigInt('MESES_CARENCIA_NATURAL')
+      const dataFimCarencia = new Date(dataAprovacao)
+      dataFimCarencia.setMonth(dataFimCarencia.getMonth() + mesesCarencia)
+      if (dataOcorrenciaTime < dataFimCarencia.getTime()) {
+        return {
+          negado: true,
+          motivoNegacao: `Sinistro negado por carência: óbito natural possui carência de ${mesesCarencia} meses.`,
+          carenciaDias: null,
+          carenciaMeses: mesesCarencia,
+        }
+      }
+      return { negado: false, motivoNegacao: null, carenciaDias: null, carenciaMeses: mesesCarencia }
+    }
+
+    case 'INVALIDEZ_TOTAL': {
+      // Uses same carência as OBITO_NATURAL per business rule
+      const mesesCarencia = await getConfigInt('MESES_CARENCIA_NATURAL')
+      const dataFimCarencia = new Date(dataAprovacao)
+      dataFimCarencia.setMonth(dataFimCarencia.getMonth() + mesesCarencia)
+      if (dataOcorrenciaTime < dataFimCarencia.getTime()) {
+        return {
+          negado: true,
+          motivoNegacao: `Sinistro negado por carência: invalidez total possui carência de ${mesesCarencia} meses.`,
+          carenciaDias: null,
+          carenciaMeses: mesesCarencia,
+        }
+      }
+      return { negado: false, motivoNegacao: null, carenciaDias: null, carenciaMeses: mesesCarencia }
+    }
+
+    default:
+      return { negado: false, motivoNegacao: null, carenciaDias: null, carenciaMeses: null }
+  }
+}
+
+/**
+ * RN-07: Calculate remission months from apólice or config fallback
+ * Returns { meses, origemPrazo }
+ */
+export async function calculateRemissionMonths(seguradoraId: string | null): Promise<{ meses: number; origemPrazo: string }> {
+  // Try to read apólice clausulas for remission clause
+  if (seguradoraId) {
+    const seguradora = await db.seguradora.findUnique({ where: { id: seguradoraId } })
+    if (seguradora?.clausulasMarkdown) {
+      // Search for remission clause pattern — e.g. "remissão de X meses" or "remissao X meses"
+      const match = seguradora.clausulasMarkdown.match(/remiss[ãa]o\s+(?:de\s+)?(\d+)\s+meses/i)
+      if (match) {
+        const meses = parseInt(match[1], 10)
+        if (meses > 0) {
+          return { meses, origemPrazo: 'APOLICE_SEGURADORA' }
+        }
+      }
+    }
+  }
+  // Fallback to config
+  const meses = await getConfigInt('MESES_REMISSAO_OBITO_PADRAO')
+  return { meses, origemPrazo: 'CONFIGURACAO_PADRAO' }
+}
+
 /**
  * Validate field formats per SPEC-01 Section 4.5
  */
