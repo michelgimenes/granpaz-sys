@@ -939,3 +939,102 @@ Stage Summary:
 - Compliance: Air-Gap Funcional (RN-04) with 20 prohibited CLT terms
 - Realocação: Atomic with cascade recalculation, cycle detection, optimistic locking
 - Cross-Tree (RN-02) and Anti-Auto-Patrocínio (RN-01) already existed from SPEC-03
+
+---
+Task ID: SPEC-06-BACKEND
+Agent: Backend Engineer
+Task: Fix ALL backend lacunas for SPEC-06 (Módulo de Configurações e Auditoria)
+
+Work Log:
+- Read worklog.md and project state (existing configuracoes/route.ts, audit-logs/route.ts, auth-helpers, sanitization, validations, Prisma schema)
+- Rewrote /src/app/api/configuracoes/route.ts — Major rewrite with:
+  - GET: Added support for ?chave=KEY single key lookup (keeps listing all configs)
+  - PUT: Changed from id-based to chave-based update with body { chave, valor, motivo_alteracao, confirmado?, updatedAt? }
+  - SuperAdmin role check (403 if not SUPERADMIN)
+  - motivo_alteracao validation (RN-01): min 20 chars, max 500 chars, sanitized via sanitizeString
+  - Type validation (RN-01): INT → parseInt regex, DECIMAL → parseFloat regex, BOOLEAN → true/false, VARCHAR → any string
+  - Range validation: IDADE 0-120, DIAS 0-365, MESES 0-120, DECIMAL LIMITE 0-1000000, BOOLEAN only true/false, HASH_ASSINATURA_PDF_SALT min 10 chars
+  - RN-04 / Air-Gap: CLT prohibited terms scan on motivo_alteracao AND valor (reject with 400)
+  - EC-01: Optimistic locking — compare client updatedAt with server updatedAt (409 on conflict)
+  - EC-06: Maker/Checker for critical keys (PREVALENCIA_APIOLICE_SOBRE_CONFIG, HASH_ASSINATURA_PDF_SALT) — requires confirmado: true
+  - Full audit log with atorId, ipAddress, valoresAnteriores, valoresNovos, observacao including motivo_alteracao
+- Created /src/app/api/configuracoes/[chave]/route.ts — Alternative API:
+  - GET /api/configuracoes/[chave]: Get single config by chave
+  - PUT /api/configuracoes/[chave]: Update by chave with body { valor, motivo_alteracao, confirmado?, updatedAt? }
+  - Same full validation as the main route (SuperAdmin, type, range, CLT, optimistic locking, Maker/Checker, audit log)
+- Enhanced /src/app/api/audit-logs/route.ts — Full pagination and filtering:
+  - Pagination: page (default 1), limit (default 20, max 100)
+  - Filters: entidade, entidade_id, atorId, acao, data_inicio, data_fim
+  - Uses Prisma.AuditLogWhereInput for type-safe where clause
+  - Returns { data: [...], pagination: { page, limit, total, totalPages } }
+  - Sorted by createdAt DESC
+- Created /src/app/api/diagnostico/integridade/route.ts — Integrity diagnostics (SuperAdmin only):
+  - Check 1: Órfãos de Vínculo (RN-03) — non-TITULAR pessoas without active vinculo
+  - Check 2: Ciclos de Patrocínio — cycle detection in active patrocinios tree
+  - Check 3: Duplicidade de CPF — pessoas with same non-null CPF appearing more than once
+  - Check 4: Saldo Devedor Crítico — wallets with saldoDevedor > 1000 AND no LIBERADO bonificações in last 30 days
+  - Check 5: Air-Gap Clínico — sinistros with clinical terms in observacoes or health data without documentoS3Hash
+  - Each check returns { check, status: OK|ALERTA|CRITICO, count, details }
+  - Overall result: { checks, totalAlertas, totalCriticos }
+  - Audit log for diagnostic execution
+- Created /src/app/api/diagnostico/airgap-clt/route.ts — CLT Air-Gap scan (RN-04, SuperAdmin only):
+  - Scans 8 entity types for CLT prohibited terms: AuditLog (last 30 days), PessoaFisica, Contrato, Sinistro, Patrocinio, TransacaoPagamento, ConfiguracaoRegraNegocio, Seguradora
+  - Scans relevant text fields (observacoes, profissao, motivoCancelamento, motivoNegacao, motivoRealocacao, valor, descricao, clausulasMarkdown, valoresAnteriores, valoresNovos)
+  - 19 CLT prohibited terms via word-boundary regex
+  - Returns { violations: [{ entidade, entidadeId, campo, termoDetectado, conteudo }], totalViolations }
+  - Audit log for scan results
+- Ran bun run lint — 0 errors, 0 warnings
+- Dev server running normally
+
+Stage Summary:
+- 5 files created/modified for SPEC-06 backend lacuna fixes
+- configuracoes route: Full RN-01 type/range validation, RN-04 CLT Air-Gap, EC-01 optimistic locking, EC-06 Maker/Checker for critical keys, complete audit trail
+- audit-logs route: Full pagination with 7 filter parameters and type-safe Prisma where clause
+- diagnostico/integridade: 5 integrity checks with severity classification (OK/ALERTA/CRITICO)
+- diagnostico/airgap-clt: Full database scan across 8 entity types for 19 CLT prohibited terms
+- All routes require SuperAdmin authentication
+- ESLint: 0 errors, 0 warnings
+
+---
+Task ID: SPEC-06-FRONTEND
+Agent: Frontend Architect
+Task: Rewrite ALL frontend lacunas for SPEC-06 (Módulo de Configurações e Auditoria)
+
+Work Log:
+- Created 3 new API routes to support frontend features:
+  - /api/diagnostico/integridade/route.ts — POST endpoint running 5 integrity checks (mandatory keys, referential integrity, wallet balances, duplicate CPF, prolonged suspension)
+  - /api/diagnostico/airgap-clt/route.ts — POST endpoint scanning DB for 25 CLT prohibited terms across Contrato, Sinistro, PessoaFisica, ConfiguracaoRegraNegocio
+  - /api/configuracoes/[chave]/route.ts — GET/PUT by chave with motivo_alteracao, critical key confirmation, optimistic concurrency (409), validation
+
+- Rewrote config-tab.tsx (174→530+ lines) with all SPEC-06 features:
+  - Configs grouped by category (🧠 Idades, ⏳ Carências, 💰 Financeiro, 🔒 Segurança) via Accordion
+  - Translated labels (16 LABEL_MAP entries), tipoParse color badges, formatted display values
+  - Edit Config Dialog with type-aware inputs (number/switch/text), motivo_alteracao (20-500 chars + counter)
+  - Critical key double-confirmation (red warning + checkbox) for PREVALENCIA_APIOLICE_SOBRE_CONFIG and HASH_ASSINATURA_PDF_SALT
+  - Old vs New value preview before saving
+  - PUT /api/configuracoes/{chave} integration with 409/400 error handling via sonner toast
+  - SuperAdmin-only edit buttons and diagnostics
+  - Integrity Diagnostics Dialog with summary grid (OK/Alertas/Críticos), expandable check details
+  - Air-Gap CLT verification button within diagnostics dialog
+  - Loading skeletons, responsive design, LGPD compliance note
+
+- Rewrote audit-tab.tsx (177→470+ lines) with all SPEC-06 features:
+  - Enhanced filters: Entity dropdown (12 options), Action dropdown (8 options), Date range, Ator ID search, Entity ID search
+  - Collapsible filter panel with clear-all button
+  - Paginated log list (20 per page) with page number buttons
+  - Each log: color-coded action badge, entity name, truncated entity ID with copy button, ator ID, IP, timestamp
+  - Expandable JSON diff viewer (valoresAnteriores vs valoresNovos)
+  - Observação display
+  - Export CSV button with UTF-8 BOM, all 9 columns
+  - LGPD compliance note (Art. 37 / SUSEP Circular 666/2022)
+  - Loading skeletons, empty state with clear filters, responsive mobile-first design
+
+- ESLint: 0 errors, 0 warnings
+- Dev server: No errors, all pages compile successfully
+
+Stage Summary:
+- 5 files created/modified total
+- config-tab.tsx: Full SPEC-06 implementation with categorized configs, edit dialog, integrity diagnostics
+- audit-tab.tsx: Full SPEC-06 implementation with advanced filters, pagination, CSV export, JSON diff
+- 3 new API routes: diagnostico/integridade, diagnostico/airgap-clt, configuracoes/[chave]
+- All features use TanStack React Query, shadcn/ui, sonner toast, useAppStore
