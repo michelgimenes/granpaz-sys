@@ -1,0 +1,668 @@
+     1→'use client'
+     2→
+     3→import { useState } from 'react'
+     4→import { useAppStore } from '@/lib/store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     7→import { Badge } from '@/components/ui/badge'
+     8→import { Check, ArrowLeft } from 'lucide-react'
+     9→import { useQuery } from '@tanstack/react-query'
+    10→
+    11→interface Plan {
+    12→  id: string
+    13→  nome: string
+    14→  tipo: string
+    15→  valorBase: number
+    16→  valorTaxaAdesao: number
+    17→  valorPorAgregado: number
+    18→  maxDependentes: number
+    19→  maxAgregados: number
+    20→  descricao: string | null
+    21→}
+    22→
+    23→export function CheckoutFlow() {
+    24→  const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView } = useAppStore()
+    25→
+    26→  const { data: plans = [], isLoading } = useQuery<Plan[]>({
+    27→    queryKey: ['plans'],
+    28→    queryFn: async () => {
+    29→      const res = await fetch('/api/planos')
+    30→      if (!res.ok) throw new Error('Erro ao carregar planos')
+    31→      return res.json()
+    32→    },
+    33→  })
+    34→
+    35→  const steps = [
+    36→    { label: 'Plano', number: 0 },
+    37→    { label: 'Titular', number: 1 },
+    38→    { label: 'Vínculos', number: 2 },
+    39→    { label: 'Resumo', number: 3 },
+    40→  ]
+    41→
+    42→  return (
+    43→    <div className="min-h-screen bg-background">
+    44→      {/* Header */}
+    45→      <header className="border-b border-border/50 bg-background/80 backdrop-blur-md sticky top-0 z-40">
+    46→        <div className="mx-auto max-w-5xl flex items-center justify-between px-4 sm:px-6 h-16">
+    47→          <button
+    48→            onClick={() => setView('landing')}
+    49→            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors focus-ring rounded-md px-2 py-1"
+    50→            aria-label="Voltar para página inicial"
+    51→          >
+    52→            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+    53→            <span className="text-sm font-medium">Voltar</span>
+    54→          </button>
+    55→          <h1 className="font-serif text-lg font-bold text-foreground">Contratar Granpaz</h1>
+    56→          <div className="w-20" />
+    57→        </div>
+    58→      </header>
+    59→
+    60→      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8">
+    61→        {/* Stepper */}
+    62→        <nav className="mb-10" aria-label="Progresso do checkout">
+    63→          <div className="flex items-center justify-center gap-2 sm:gap-4">
+    64→            {steps.map((step, i) => (
+    65→              <div key={step.number} className="flex items-center gap-2 sm:gap-4">
+    66→                <div className="flex items-center gap-2">
+    67→                  <div
+    68→                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
+    69→                      checkoutStep > step.number
+    70→                        ? 'bg-primary text-primary-foreground'
+    71→                        : checkoutStep === step.number
+    72→                        ? 'bg-primary text-primary-foreground'
+    73→                        : 'bg-muted text-muted-foreground'
+    74→                    }`}
+    75→                    aria-current={checkoutStep === step.number ? 'step' : undefined}
+    76→                  >
+    77→                    {checkoutStep > step.number ? (
+    78→                      <Check className="h-4 w-4" aria-hidden="true" />
+    79→                    ) : (
+    80→                      step.number + 1
+    81→                    )}
+    82→                  </div>
+    83→                  <span className={`text-xs sm:text-sm font-medium hidden sm:block ${
+    84→                    checkoutStep >= step.number ? 'text-foreground' : 'text-muted-foreground'
+    85→                  }`}>
+    86→                    {step.label}
+    87→                  </span>
+    88→                </div>
+    89→                {i < steps.length - 1 && (
+    90→                  <div className={`h-0.5 w-8 sm:w-16 rounded ${
+    91→                    checkoutStep > step.number ? 'bg-primary' : 'bg-muted'
+    92→                  }`} aria-hidden="true" />
+    93→                )}
+    94→              </div>
+    95→            ))}
+    96→          </div>
+    97→        </nav>
+    98→
+    99→        {/* Step Content */}
+   100→        {checkoutStep === 0 && (
+   101→          <StepPlan
+   102→            plans={plans}
+   103→            isLoading={isLoading}
+   104→            selectedPlanId={selectedPlanId}
+   105→            setSelectedPlanId={setSelectedPlanId}
+   106→            onNext={() => setCheckoutStep(1)}
+   107→          />
+   108→        )}
+   109→        {checkoutStep === 1 && <StepTitular />}
+   110→        {checkoutStep === 2 && <StepVinculos />}
+   111→        {checkoutStep === 3 && <StepResumo />}
+   112→      </div>
+   113→    </div>
+   114→  )
+   115→}
+   116→
+   117→/* ─── Step 0: Plan Selection ─── */
+   118→function StepPlan({
+   119→  plans,
+   120→  isLoading,
+   121→  selectedPlanId,
+   122→  setSelectedPlanId,
+   123→  onNext,
+   124→}: {
+   125→  plans: Plan[]
+   126→  isLoading: boolean
+   127→  selectedPlanId: string | null
+   128→  setSelectedPlanId: (id: string | null) => void
+   129→  onNext: () => void
+   130→}) {
+   131→  if (isLoading) {
+   132→    return (
+   133→      <div className="flex items-center justify-center py-20">
+   134→        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" role="status">
+   135→          <span className="sr-only">Carregando planos...</span>
+   136→        </div>
+   137→      </div>
+   138→    )
+   139→  }
+   140→
+   141→  return (
+   142→    <div className="animate-fade-up">
+   143→      <div className="text-center mb-8">
+   144→        <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">
+   145→          Escolha seu plano
+   146→        </h2>
+   147→        <p className="mt-2 text-muted-foreground">
+   148→          Selecione o plano ideal para proteger sua família
+   149→        </p>
+   150→      </div>
+   151→
+   152→      <div className="grid sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+   153→        {plans.map((plan) => (
+   154→          <Card
+   155→            key={plan.id}
+   156→            className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
+   157→              selectedPlanId === plan.id
+   158→                ? 'border-primary border-2 shadow-md'
+   159→                : 'border-border/50 hover:border-primary/50'
+   160→            }`}
+   161→            onClick={() => setSelectedPlanId(plan.id)}
+   162→            role="radio"
+   163→            aria-checked={selectedPlanId === plan.id}
+   164→            tabIndex={0}
+   165→            onKeyDown={(e) => {
+   166→              if (e.key === 'Enter' || e.key === ' ') {
+   167→                e.preventDefault()
+   168→                setSelectedPlanId(plan.id)
+   169→              }
+   170→            }}
+   171→          >
+   172→            <CardHeader>
+   173→              <div className="flex items-center justify-between">
+   174→                <CardTitle className="font-serif text-lg">{plan.nome}</CardTitle>
+   175→                {selectedPlanId === plan.id && (
+   176→                  <Badge className="bg-primary text-primary-foreground text-xs">Selecionado</Badge>
+   177→                )}
+   178→              </div>
+   179→              <CardDescription>{plan.descricao}</CardDescription>
+   180→            </CardHeader>
+   181→            <CardContent>
+   182→              <div className="space-y-2">
+   183→                <div className="text-2xl font-bold text-primary">
+   184→                  R$ {plan.valorBase.toFixed(2).replace('.', ',')}
+   185→                  <span className="text-sm font-normal text-muted-foreground">/mês</span>
+   186→                </div>
+   187→                <div className="text-xs text-muted-foreground">
+   188→                  Taxa de adesão: R$ {plan.valorTaxaAdesao.toFixed(2).replace('.', ',')}
+   189→                </div>
+   190→                {plan.tipo === 'FAMILIAR' && (
+   191→                  <>
+   192→                    <div className="text-xs text-muted-foreground">
+   193→                      Até {plan.maxDependentes} dependentes
+   194→                    </div>
+   195→                    <div className="text-xs text-muted-foreground">
+   196→                      Até {plan.maxAgregados} agregados (R$ {plan.valorPorAgregado.toFixed(2).replace('.', ',')}/cada)
+   197→                    </div>
+   198→                  </>
+   199→                )}
+   200→              </div>
+   201→            </CardContent>
+   202→          </Card>
+   203→        ))}
+   204→      </div>
+   205→
+   206→      <div className="mt-8 flex justify-center">
+   207→        <Button
+   208→          onClick={onNext}
+   209→          disabled={!selectedPlanId}
+   210→          size="lg"
+   211→          className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-8"
+   212→        >
+   213→          Continuar
+   214→        </Button>
+   215→      </div>
+   216→    </div>
+   217→  )
+   218→}
+   219→
+   220→/* ─── Step 1: Titular Registration ─── */
+   221→function StepTitular() {
+   222→  const { setCheckoutStep } = useAppStore()
+   223→  const [form, setForm] = useState({
+   224→    nomeCompleto: '',
+   225→    cpf: '',
+   226→    dataNascimento: '',
+   227→    genero: '',
+   228→    estadoCivil: 'SOLTEIRO',
+   229→    email: '',
+   230→    telefone: '',
+   231→    cep: '',
+   232→    logradouro: '',
+   233→    numero: '',
+   234→    complemento: '',
+   235→    bairro: '',
+   236→    cidade: '',
+   237→    estado: '',
+   238→    profissao: '',
+   239→  })
+   240→  const [cpfError, setCpfError] = useState('')
+   241→  const [isSubmitting, setIsSubmitting] = useState(false)
+   242→
+   243→  const handleCpfChange = (value: string) => {
+   244→    const digits = value.replace(/\D/g, '').slice(0, 11)
+   245→    let formatted = ''
+   246→    if (digits.length <= 3) formatted = digits
+   247→    else if (digits.length <= 6) formatted = `${digits.slice(0, 3)}.${digits.slice(3)}`
+   248→    else if (digits.length <= 9) formatted = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`
+   249→    else formatted = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
+   250→    setForm(f => ({ ...f, cpf: formatted }))
+   251→    setCpfError('')
+   252→  }
+   253→
+   254→  const handleSubmit = async (e: React.FormEvent) => {
+   255→    e.preventDefault()
+   256→    const cpfDigits = form.cpf.replace(/\D/g, '')
+   257→    if (cpfDigits.length !== 11) {
+   258→      setCpfError('CPF deve ter 11 dígitos')
+   259→      return
+   260→    }
+   261→    if (/^(\d)\1{10}$/.test(cpfDigits)) {
+   262→      setCpfError('CPF inválido')
+   263→      return
+   264→    }
+   265→    setIsSubmitting(true)
+   266→    try {
+   267→      sessionStorage.setItem('granpaz_titular', JSON.stringify(form))
+   268→      setCheckoutStep(2)
+   269→    } finally {
+   270→      setIsSubmitting(false)
+   271→    }
+   272→  }
+   273→
+   274→  return (
+   275→    <div className="animate-fade-up max-w-2xl mx-auto">
+   276→      <div className="text-center mb-8">
+   277→        <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">
+   278→          Dados do Titular
+   279→        </h2>
+   280→        <p className="mt-2 text-muted-foreground">Preencha seus dados pessoais</p>
+   281→      </div>
+   282→
+   283→      <form onSubmit={handleSubmit} className="space-y-6">
+   284→        <Card className="border-border/50">
+   285→          <CardContent className="pt-6 space-y-4">
+   286→            <div>
+   287→              <label htmlFor="nome" className="block text-sm font-medium text-foreground mb-1">Nome Completo *</label>
+   288→              <input id="nome" type="text" required value={form.nomeCompleto}
+   289→                onChange={(e) => setForm(f => ({ ...f, nomeCompleto: e.target.value }))}
+   290→                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   291→                placeholder="Seu nome completo" />
+   292→            </div>
+   293→            <div>
+   294→              <label htmlFor="cpf" className="block text-sm font-medium text-foreground mb-1">CPF *</label>
+   295→              <input id="cpf" type="text" required value={form.cpf}
+   296→                onChange={(e) => handleCpfChange(e.target.value)}
+   297→                className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono ${cpfError ? 'border-state-error' : 'border-input'}`}
+   298→                placeholder="000.000.000-00" maxLength={14} />
+   299→              {cpfError && <p className="text-xs text-state-error mt-1">{cpfError}</p>}
+   300→            </div>
+   301→            <div className="grid grid-cols-2 gap-4">
+   302→              <div>
+   303→                <label htmlFor="nascimento" className="block text-sm font-medium text-foreground mb-1">Data de Nascimento *</label>
+   304→                <input id="nascimento" type="date" required value={form.dataNascimento}
+   305→                  onChange={(e) => setForm(f => ({ ...f, dataNascimento: e.target.value }))}
+   306→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   307→              </div>
+   308→              <div>
+   309→                <label htmlFor="genero" className="block text-sm font-medium text-foreground mb-1">Gênero</label>
+   310→                <select id="genero" value={form.genero}
+   311→                  onChange={(e) => setForm(f => ({ ...f, genero: e.target.value }))}
+   312→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   313→                  <option value="">Selecione</option>
+   314→                  <option value="M">Masculino</option>
+   315→                  <option value="F">Feminino</option>
+   316→                </select>
+   317→              </div>
+   318→            </div>
+   319→            <div className="grid grid-cols-2 gap-4">
+   320→              <div>
+   321→                <label htmlFor="estadoCivil" className="block text-sm font-medium text-foreground mb-1">Estado Civil *</label>
+   322→                <select id="estadoCivil" required value={form.estadoCivil}
+   323→                  onChange={(e) => setForm(f => ({ ...f, estadoCivil: e.target.value }))}
+   324→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   325→                  <option value="SOLTEIRO">Solteiro(a)</option>
+   326→                  <option value="CASADO">Casado(a)</option>
+   327→                  <option value="DIVORCIADO">Divorciado(a)</option>
+   328→                  <option value="VIUVO">Viúvo(a)</option>
+   329→                  <option value="UNIAO_ESTAVEL">União Estável</option>
+   330→                </select>
+   331→              </div>
+   332→              <div>
+   333→                <label htmlFor="profissao" className="block text-sm font-medium text-foreground mb-1">Profissão</label>
+   334→                <input id="profissao" type="text" value={form.profissao}
+   335→                  onChange={(e) => setForm(f => ({ ...f, profissao: e.target.value }))}
+   336→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   337→                  placeholder="Sua profissão" />
+   338→              </div>
+   339→            </div>
+   340→            <div className="grid grid-cols-2 gap-4">
+   341→              <div>
+   342→                <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">E-mail *</label>
+   343→                <input id="email" type="email" required value={form.email}
+   344→                  onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+   345→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   346→                  placeholder="seu@email.com" />
+   347→              </div>
+   348→              <div>
+   349→                <label htmlFor="telefone" className="block text-sm font-medium text-foreground mb-1">Telefone *</label>
+   350→                <input id="telefone" type="tel" required value={form.telefone}
+   351→                  onChange={(e) => setForm(f => ({ ...f, telefone: e.target.value }))}
+   352→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   353→                  placeholder="(00) 00000-0000" />
+   354→              </div>
+   355→            </div>
+   356→            <div className="grid grid-cols-3 gap-4">
+   357→              <div>
+   358→                <label htmlFor="cep" className="block text-sm font-medium text-foreground mb-1">CEP *</label>
+   359→                <input id="cep" type="text" required value={form.cep}
+   360→                  onChange={(e) => setForm(f => ({ ...f, cep: e.target.value }))}
+   361→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono"
+   362→                  placeholder="00000-000" />
+   363→              </div>
+   364→              <div className="col-span-2">
+   365→                <label htmlFor="logradouro" className="block text-sm font-medium text-foreground mb-1">Logradouro *</label>
+   366→                <input id="logradouro" type="text" required value={form.logradouro}
+   367→                  onChange={(e) => setForm(f => ({ ...f, logradouro: e.target.value }))}
+   368→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   369→                  placeholder="Rua, Avenida..." />
+   370→              </div>
+   371→            </div>
+   372→            <div className="grid grid-cols-3 gap-4">
+   373→              <div>
+   374→                <label htmlFor="numero" className="block text-sm font-medium text-foreground mb-1">Número *</label>
+   375→                <input id="numero" type="text" required value={form.numero}
+   376→                  onChange={(e) => setForm(f => ({ ...f, numero: e.target.value }))}
+   377→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   378→              </div>
+   379→              <div>
+   380→                <label htmlFor="complemento" className="block text-sm font-medium text-foreground mb-1">Complemento</label>
+   381→                <input id="complemento" type="text" value={form.complemento}
+   382→                  onChange={(e) => setForm(f => ({ ...f, complemento: e.target.value }))}
+   383→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   384→                  placeholder="Apto, Sala..." />
+   385→              </div>
+   386→              <div>
+   387→                <label htmlFor="bairro" className="block text-sm font-medium text-foreground mb-1">Bairro *</label>
+   388→                <input id="bairro" type="text" required value={form.bairro}
+   389→                  onChange={(e) => setForm(f => ({ ...f, bairro: e.target.value }))}
+   390→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   391→              </div>
+   392→            </div>
+   393→            <div className="grid grid-cols-2 gap-4">
+   394→              <div>
+   395→                <label htmlFor="cidade" className="block text-sm font-medium text-foreground mb-1">Cidade *</label>
+   396→                <input id="cidade" type="text" required value={form.cidade}
+   397→                  onChange={(e) => setForm(f => ({ ...f, cidade: e.target.value }))}
+   398→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   399→              </div>
+   400→              <div>
+   401→                <label htmlFor="estado" className="block text-sm font-medium text-foreground mb-1">Estado *</label>
+   402→                <input id="estado" type="text" required maxLength={2} value={form.estado}
+   403→                  onChange={(e) => setForm(f => ({ ...f, estado: e.target.value.toUpperCase() }))}
+   404→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   405→                  placeholder="UF" />
+   406→              </div>
+   407→            </div>
+   408→          </CardContent>
+   409→        </Card>
+   410→        <div className="p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+   411→          Seus dados são protegidos conforme a LGPD. O Granpaz atua como Estipulante de seguros coletivos.
+   412→        </div>
+   413→        <div className="flex justify-between">
+   414→          <Button type="button" variant="outline" onClick={() => setCheckoutStep(0)}>Voltar</Button>
+   415→          <Button type="submit" disabled={isSubmitting}
+   416→            className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-8">
+   417→            {isSubmitting ? 'Processando...' : 'Continuar'}
+   418→          </Button>
+   419→        </div>
+   420→      </form>
+   421→    </div>
+   422→  )
+   423→}
+   424→
+   425→/* ─── Step 2: Vínculos ─── */
+   426→function StepVinculos() {
+   427→  const { setCheckoutStep } = useAppStore()
+   428→  const [vinculos, setVinculos] = useState<Array<{
+   429→    nomeCompleto: string
+   430→    tipoVinculo: string
+   431→    parentesco: string
+   432→    dataNascimento: string
+   433→    genero: string
+   434→  }>>([])
+   435→  const [showForm, setShowForm] = useState(false)
+   436→  const [newVinc, setNewVinc] = useState({
+   437→    nomeCompleto: '',
+   438→    tipoVinculo: 'DEPENDENTE',
+   439→    parentesco: 'FILHO',
+   440→    dataNascimento: '',
+   441→    genero: '',
+   442→  })
+   443→
+   444→  const addVinculo = () => {
+   445→    if (!newVinc.nomeCompleto || !newVinc.dataNascimento) return
+   446→    setVinculos([...vinculos, newVinc])
+   447→    setNewVinc({ nomeCompleto: '', tipoVinculo: 'DEPENDENTE', parentesco: 'FILHO', dataNascimento: '', genero: '' })
+   448→    setShowForm(false)
+   449→  }
+   450→
+   451→  const removeVinculo = (index: number) => {
+   452→    setVinculos(vinculos.filter((_, i) => i !== index))
+   453→  }
+   454→
+   455→  const handleNext = () => {
+   456→    sessionStorage.setItem('granpaz_vinculos', JSON.stringify(vinculos))
+   457→    setCheckoutStep(3)
+   458→  }
+   459→
+   460→  return (
+   461→    <div className="animate-fade-up max-w-2xl mx-auto">
+   462→      <div className="text-center mb-8">
+   463→        <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Vínculos Familiares</h2>
+   464→        <p className="mt-2 text-muted-foreground">Adicione dependentes e agregados ao seu plano</p>
+   465→      </div>
+   466→
+   467→      {vinculos.length > 0 && (
+   468→        <div className="space-y-3 mb-6">
+   469→          {vinculos.map((v, i) => (
+   470→            <div key={i} className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-card">
+   471→              <div>
+   472→                <p className="font-medium text-foreground text-sm">{v.nomeCompleto}</p>
+   473→                <p className="text-xs text-muted-foreground">
+   474→                  {v.tipoVinculo === 'DEPENDENTE' ? 'Dependente' : 'Agregado'} • {v.parentesco}
+   475→                </p>
+   476→              </div>
+   477→              <button onClick={() => removeVinculo(i)} className="text-xs text-state-error hover:underline" aria-label={`Remover ${v.nomeCompleto}`}>
+   478→                Remover
+   479→              </button>
+   480→            </div>
+   481→          ))}
+   482→        </div>
+   483→      )}
+   484→
+   485→      {showForm ? (
+   486→        <Card className="border-border/50 mb-6">
+   487→          <CardContent className="pt-6 space-y-4">
+   488→            <div>
+   489→              <label className="block text-sm font-medium text-foreground mb-1">Nome Completo *</label>
+   490→              <input type="text" required value={newVinc.nomeCompleto}
+   491→                onChange={(e) => setNewVinc(v => ({ ...v, nomeCompleto: e.target.value }))}
+   492→                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   493→            </div>
+   494→            <div className="grid grid-cols-2 gap-4">
+   495→              <div>
+   496→                <label className="block text-sm font-medium text-foreground mb-1">Tipo de Vínculo *</label>
+   497→                <select value={newVinc.tipoVinculo} onChange={(e) => setNewVinc(v => ({ ...v, tipoVinculo: e.target.value }))}
+   498→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   499→                  <option value="DEPENDENTE">Dependente</option>
+   500→                  <option value="AGREGADO">Agregado</option>
+   501→                </select>
+   502→              </div>
+   503→              <div>
+   504→                <label className="block text-sm font-medium text-foreground mb-1">Parentesco *</label>
+   505→                <select value={newVinc.parentesco} onChange={(e) => setNewVinc(v => ({ ...v, parentesco: e.target.value }))}
+   506→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   507→                  <option value="CONJUGE">Cônjuge</option>
+   508→                  <option value="FILHO">Filho(a)</option>
+   509→                  <option value="PAI_MAE">Pai/Mãe</option>
+   510→                  <option value="SOGRO">Sogro(a)</option>
+   511→                  <option value="ENTREADO">Enteado(a)</option>
+   512→                  <option value="NETO">Neto(a)</option>
+   513→                  <option value="AVO">Avô/Avó</option>
+   514→                  <option value="IRMAO">Irmão(ã)</option>
+   515→                </select>
+   516→              </div>
+   517→            </div>
+   518→            <div className="grid grid-cols-2 gap-4">
+   519→              <div>
+   520→                <label className="block text-sm font-medium text-foreground mb-1">Data de Nascimento *</label>
+   521→                <input type="date" required value={newVinc.dataNascimento}
+   522→                  onChange={(e) => setNewVinc(v => ({ ...v, dataNascimento: e.target.value }))}
+   523→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+   524→              </div>
+   525→              <div>
+   526→                <label className="block text-sm font-medium text-foreground mb-1">Gênero</label>
+   527→                <select value={newVinc.genero} onChange={(e) => setNewVinc(v => ({ ...v, genero: e.target.value }))}
+   528→                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+   529→                  <option value="">Selecione</option>
+   530→                  <option value="M">Masculino</option>
+   531→                  <option value="F">Feminino</option>
+   532→                </select>
+   533→              </div>
+   534→            </div>
+   535→            <div className="flex gap-3">
+   536→              <Button variant="outline" onClick={() => setShowForm(false)} type="button">Cancelar</Button>
+   537→              <Button onClick={addVinculo} className="bg-primary text-primary-foreground" type="button">Adicionar</Button>
+   538→            </div>
+   539→          </CardContent>
+   540→        </Card>
+   541→      ) : (
+   542→        <button onClick={() => setShowForm(true)}
+   543→          className="w-full p-4 rounded-lg border-2 border-dashed border-border hover:border-primary/50 text-sm text-muted-foreground hover:text-primary transition-colors mb-6">
+   544→          + Adicionar Dependente ou Agregado
+   545→        </button>
+   546→      )}
+   547→
+   548→      {vinculos.length === 0 && !showForm && (
+   549→        <p className="text-center text-sm text-muted-foreground mb-6">
+   550→          Você pode adicionar dependentes e agregados depois, se desejar.
+   551→        </p>
+   552→      )}
+   553→
+   554→      <div className="flex justify-between">
+   555→        <Button variant="outline" onClick={() => setCheckoutStep(1)}>Voltar</Button>
+   556→        <Button onClick={handleNext} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-8">Continuar</Button>
+   557→      </div>
+   558→    </div>
+   559→  )
+   560→}
+   561→
+   562→/* ─── Step 3: Resumo ─── */
+   563→function StepResumo() {
+   564→  const { setCheckoutStep, setView, selectedPlanId } = useAppStore()
+   565→  const [isSubmitting, setIsSubmitting] = useState(false)
+   566→  const [error, setError] = useState('')
+   567→
+   568→  const titular = typeof window !== 'undefined'
+   569→    ? JSON.parse(sessionStorage.getItem('granpaz_titular') || '{}')
+   570→    : {}
+   571→  const vinculos = typeof window !== 'undefined'
+   572→    ? JSON.parse(sessionStorage.getItem('granpaz_vinculos') || '[]')
+   573→    : []
+   574→
+   575→  const handleSubmit = async () => {
+   576→    setIsSubmitting(true)
+   577→    setError('')
+   578→    try {
+   579→      const res = await fetch('/api/contratos', {
+   580→        method: 'POST',
+   581→        headers: { 'Content-Type': 'application/json' },
+   582→        body: JSON.stringify({ planoId: selectedPlanId, titular, vinculos }),
+   583→      })
+   584→      if (!res.ok) {
+   585→        const data = await res.json()
+   586→        setError(data.error || 'Erro ao criar contrato')
+   587→        return
+   588→      }
+   589→      sessionStorage.removeItem('granpaz_titular')
+   590→      sessionStorage.removeItem('granpaz_vinculos')
+   591→      setView('landing')
+   592→    } catch {
+   593→      setError('Erro de conexão. Tente novamente.')
+   594→    } finally {
+   595→      setIsSubmitting(false)
+   596→    }
+   597→  }
+   598→
+   599→  return (
+   600→    <div className="animate-fade-up max-w-2xl mx-auto">
+   601→      <div className="text-center mb-8">
+   602→        <h2 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Resumo do Pedido</h2>
+   603→        <p className="mt-2 text-muted-foreground">Revise seus dados antes de finalizar</p>
+   604→      </div>
+   605→
+   606→      {/* NO seguradora_id or capital_segurado in DOM (Air-Gap compliance) */}
+   607→      <Card className="border-border/50 mb-6">
+   608→        <CardHeader>
+   609→          <CardTitle className="text-base">Dados do Titular</CardTitle>
+   610→        </CardHeader>
+   611→        <CardContent className="space-y-2 text-sm">
+   612→          <div className="flex justify-between">
+   613→            <span className="text-muted-foreground">Nome:</span>
+   614→            <span className="font-medium text-foreground">{titular.nomeCompleto || '—'}</span>
+   615→          </div>
+   616→          <div className="flex justify-between">
+   617→            <span className="text-muted-foreground">CPF:</span>
+   618→            <span className="font-mono font-medium text-foreground">{titular.cpf || '—'}</span>
+   619→          </div>
+   620→          <div className="flex justify-between">
+   621→            <span className="text-muted-foreground">E-mail:</span>
+   622→            <span className="font-medium text-foreground">{titular.email || '—'}</span>
+   623→          </div>
+   624→          <div className="flex justify-between">
+   625→            <span className="text-muted-foreground">Telefone:</span>
+   626→            <span className="font-medium text-foreground">{titular.telefone || '—'}</span>
+   627→          </div>
+   628→        </CardContent>
+   629→      </Card>
+   630→
+   631→      {vinculos.length > 0 && (
+   632→        <Card className="border-border/50 mb-6">
+   633→          <CardHeader>
+   634→            <CardTitle className="text-base">Vínculos ({vinculos.length})</CardTitle>
+   635→          </CardHeader>
+   636→          <CardContent className="space-y-3 text-sm">
+   637→            {vinculos.map((v: { nomeCompleto: string; tipoVinculo: string; parentesco: string }, i: number) => (
+   638→              <div key={i} className="flex justify-between items-center p-2 rounded bg-muted/50">
+   639→                <span className="font-medium text-foreground">{v.nomeCompleto}</span>
+   640→                <span className="text-xs text-muted-foreground">
+   641→                  {v.tipoVinculo === 'DEPENDENTE' ? 'Dependente' : 'Agregado'} • {v.parentesco}
+   642→                </span>
+   643→              </div>
+   644→            ))}
+   645→          </CardContent>
+   646→        </Card>
+   647→      )}
+   648→
+   649→      <div className="p-4 rounded-lg bg-muted/50 text-xs text-muted-foreground mb-6 space-y-1">
+   650→        <p>O Plano Granpaz é um produto da Saúde &amp; Proteção Administração de Benefícios.</p>
+   651→        <p>A garantia de risco e o pagamento de indenizações são de responsabilidade integral das Seguradoras Parceiras.</p>
+   652→      </div>
+   653→
+   654→      {error && (
+   655→        <div className="p-3 rounded-lg bg-state-error/10 text-state-error text-sm mb-4">{error}</div>
+   656→      )}
+   657→
+   658→      <div className="flex justify-between">
+   659→        <Button variant="outline" onClick={() => setCheckoutStep(2)}>Voltar</Button>
+   660→        <Button onClick={handleSubmit} disabled={isSubmitting}
+   661→          className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-8">
+   662→          {isSubmitting ? 'Enviando...' : 'Finalizar Contratação'}
+   663→        </Button>
+   664→      </div>
+   665→    </div>
+   666→  )
+   667→}
+   668→
