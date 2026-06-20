@@ -5,12 +5,20 @@ import { sanitizeMarkdown, sanitizeString } from '@/lib/sanitization'
 
 /**
  * GET /api/seguradoras/[id] - Get a single seguradora
+ * Air-Gap de Seguradora (§1.2): Apenas SUPERADMIN pode visualizar seguradora
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Air-Gap de Seguradora (§1.2): Apenas SUPERADMIN pode visualizar seguradora
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
+    if (!userId || userRole !== 'SUPERADMIN') {
+      return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 })
+    }
+
     const { id } = await params
     const seguradora = await db.seguradora.findUnique({ where: { id } })
 

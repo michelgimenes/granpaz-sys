@@ -74,6 +74,22 @@ export async function POST(
       )
     }
 
+    // ─── Idempotência de abatimento (§2.6): Prevenir duplo abatimento da mesma parcela ──
+    const abatimentoExistente = await db.transacaoPagamento.findFirst({
+      where: {
+        carteiraId: carteira.id,
+        contaAPagarId,
+        tipoTransacao: 'ABATIMENTO',
+        status: 'CONCLUIDO',
+      },
+    })
+    if (abatimentoExistente) {
+      return NextResponse.json(
+        { error: 'Esta parcela já possui abatimento concluído para esta carteira.', code: 'ABATIMENTO_DUPLICADO' },
+        { status: 409 }
+      )
+    }
+
     // ─── RN-007: Check saldo_devedor ───
     if (carteira.saldoDevedor > 0) {
       return NextResponse.json(

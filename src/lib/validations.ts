@@ -301,10 +301,24 @@ export function validateEmail(email: string): boolean {
 }
 
 /**
+ * Valida UF brasileira (§2.3)
+ */
+const UFS_VALIDAS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO']
+
+export function validateUF(uf: string): boolean {
+  return UFS_VALIDAS.includes(uf.toUpperCase())
+}
+
+/**
  * Validate field formats per SPEC-01 Section 4.5
  */
 export function validateFieldFormats(data: Record<string, any>): string[] {
   const errors: string[] = []
+
+  // Nome completo mínimo 3 caracteres (§2.1)
+  if (data.nomeCompleto && typeof data.nomeCompleto === 'string' && data.nomeCompleto.trim().length < 3) {
+    errors.push('Nome completo deve ter no mínimo 3 caracteres.')
+  }
 
   if (data.cpf) {
     const cpfDigits = data.cpf.replace(/\D/g, '')
@@ -325,6 +339,11 @@ export function validateFieldFormats(data: Record<string, any>): string[] {
   if (data.cep) {
     const cepDigits = data.cep.replace(/\D/g, '')
     if (cepDigits.length !== 8) errors.push('CEP inválido.')
+  }
+
+  // UF válida (§2.3)
+  if (data.estado && typeof data.estado === 'string' && !validateUF(data.estado)) {
+    errors.push('UF (estado) inválida.')
   }
 
   return errors

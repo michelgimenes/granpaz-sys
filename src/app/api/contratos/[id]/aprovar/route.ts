@@ -173,18 +173,33 @@ export async function POST(
       }
 
       // Update each carteira: saldoBloqueado -= sum, saldoDisponivel += sum
-      // Also ensure the wallet exists for each carteira (garantirCarteira pattern)
+      // Saldo devedor: abater prioritariamente antes de compor disponível (§2.6)
       for (const [carteiraId, sum] of Object.entries(carteiraSums)) {
         const carteira = await db.carteiraDigital.findUnique({ where: { id: carteiraId } })
         if (carteira) {
-          await db.carteiraDigital.update({
-            where: { id: carteiraId },
-            data: {
-              saldoBloqueado: Math.max(0, carteira.saldoBloqueado - sum),
-              saldoDisponivel: carteira.saldoDisponivel + sum,
-              updatedAt: new Date(),
-            },
-          })
+          let valorLiquido = sum
+          if (carteira.saldoDevedor > 0) {
+            const deducao = Math.min(carteira.saldoDevedor, valorLiquido)
+            await db.carteiraDigital.update({
+              where: { id: carteiraId },
+              data: {
+                saldoDevedor: carteira.saldoDevedor - deducao,
+                saldoDisponivel: carteira.saldoDisponivel + (valorLiquido - deducao),
+                saldoBloqueado: Math.max(0, carteira.saldoBloqueado - sum),
+                updatedAt: new Date(),
+              },
+            })
+            valorLiquido = valorLiquido - deducao
+          } else {
+            await db.carteiraDigital.update({
+              where: { id: carteiraId },
+              data: {
+                saldoDisponivel: carteira.saldoDisponivel + valorLiquido,
+                saldoBloqueado: Math.max(0, carteira.saldoBloqueado - sum),
+                updatedAt: new Date(),
+              },
+            })
+          }
         }
       }
     }

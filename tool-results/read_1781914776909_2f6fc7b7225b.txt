@@ -1,0 +1,1039 @@
+     1→# Documentação Técnica e Regras de Negócio: Clube de Benefícios e Cobertura Funeral
+     2→
+     3→Detalhes do negócio/projeto "Saúde & Proteção"
+     4→
+     5→Somos a Saúde & Proteção Administração de Benefícios, um Plano de Proteção Familiar com atendimento nacional, oferecendo segurança e proteção aos pais e mães que desejam cuidar de suas famílias de forma abrangente.
+     6→
+     7→Nossa startup nasceu com DNA 100% digital, o que nos permite agilidade, facilidade de acesso e transparência em todas as etapas do processo. Nossa equipe altamente capacitada é dedicada à gestão dos processos relacionados aos nossos clientes, proporcionando um atendimento digno, respeitoso e sem burocracia.
+     8→
+     9→---
+    10→
+    11→### Funcionalidades
+    12→
+    13→Esta organização respeita o princípio de **Componentização Contextual Estrita** e a **Verdade Absoluta** documentada, agrupando funcionalidades por domínio de negócio e proximidade de dados.
+    14→
+    15→### 1. Módulo de Contratação e Cadastro Unificado
+    16→*Responsável pelo fluxo de entrada, validação etária transiente e identificação unificada.*
+    17→
+    18→├── **Componente Core:** `PessoaFisicaForm` (Reutilizável via Props/Contexto)
+    19→│   ├── [ ] Sessão TITULAR (Dados pessoais + Profissão + Endereço + Contato)
+    20→│   ├── [ ] Sessão DEPENDENTE (Restrito a Cônjuge/Filho + Validação Idade Limite/Cobertura)
+    21→│   ├── [ ] Sessão AGREGADO (9 Parentescos + Profissão Obrigatória + Gatilho Sub-dependentes)
+    22→│   └── [ ] Sessão SUB_DEPENDENTE (Vínculo ao Agregado Pai + Preservação Seletiva de Filhos)
+    23→├── **Funcionalidade:** Identificação Unificada (CPF + Data Nascimento)
+    24→│   ├── [ ] Validação algorítmica de CPF no blur
+    25→│   ├── [ ] Busca assíncrona de cadastro existente (`GET /buscar-por-cpf`)
+    26→│   ├── [ ] Modal de reutilização de dados vs. Bloqueio de CPF divergente
+    27→│   └── [ ] Máscaras dinâmicas (CPF, Telefone, CEP com ViaCEP)
+    28→├── **Funcionalidade:** Seleção de Plano e Elegibilidade
+    29→│   ├── [ ] Checkbox Exclusivo (Individual vs. Familiar)
+    30→│   ├── [ ] Filtro dinâmico de lista de planos
+    31→│   └── [ ] Resumo financeiro pro-rata (Base + Agregados)
+    32→├── **Ambiente de Validação de Usuários (Pré-Ativação)**
+    33→│   ├── [ ] Upload de Documento/Selfie para verificação de identidade
+    34→│   ├── [ ] Status intermediário: `VALIDACAO_PENDENTE`, `VALIDACAO_FALHOU`
+    35→│   └── [ ] Integração com Fila de Aprovação (Contrato só entra na fila após validação OK)
+    36→└── **🛡️ Hardening Técnico**
+    37→    ├── [ ] Backend valida `tipo_registro` vs. Rota (Erro 400 se incompatível)
+    38→    ├── [ ] Sanitização centralizada (Trim, Alphanum, Digits)
+    39→    └── [ ] Validação de idade reaplicada APENAS se `data_nascimento` for editada
+    40→
+    41→Carregar e ler documento 'SPEC-01 (Módulo de Contratação e Cadastro).txt'.
+    42→
+    43→### 2. Módulo de Gestão de Contratos e Aprovação (Backoffice)
+    44→*Domínio exclusivo do SuperAdmin para garantia de compliance SUSEP e controle financeiro.*
+    45→
+    46→├── **Funcionalidade:** Fila de Aprovação Manual
+    47→│   ├── [ ] Listagem paginada com filtros (Status, Seguradora, Data)
+    48→│   ├── [ ] Visualização em Árvore Hierárquica (Titular → Vínculos Normalizados)
+    49→│   ├── [ ] Formulário de Aprovação (Capital Segurado + Código Seguradora + Data Início)
+    50→│   └── [ ] Ação Atômica: Aprovar (Gera PDF + Libera Bonificação) ou Rejeitar (Estorna Cascata)
+    51→├── **Funcionalidade:** Gestão de Endossos
+    52→│   ├── [ ] Upgrade/Downgrade de Plano (Recálculo imediato de parcela)
+    53→│   ├── [ ] Exclusão Voluntária de Vínculos (Lógica de `data_fim_vinculo`)
+    54→│   └── [ ] Alteração de Capital Segurado (Exige nova aprovação manual explícita)
+    55→├── **Funcionalidade:** Gestão de Seguradoras e Cláusulas
+    56→│   ├── [ ] CRUD de Seguradoras e Códigos
+    57→│   ├── [ ] Editor Markdown com Preview Lado-a-Lado
+    58→│   ├── [ ] Botão "Testar Renderização PDF" (Dados fictícios)
+    59→│   └── [ ] 🛡️ Sanitização Server-Side Obrigatória (Anti-XSS em PDF)
+    60→└── **🚨 Regra Crítica**
+    61→    └── [ ] Imutabilidade pós-aprovação: Campos financeiros tornam-se Read-Only via Trigger/Constraint
+    62→
+    63→Carregar e ler documento 'SPEC-02 (Módulo de Gestão de Contratos e Aprovação).txt'.
+    64→
+    65→### 3. Módulo Financeiro e de Bonificação (Multinível)
+    66→*Separação estrita entre receita tributável (clube) e repasse de risco (seguro).*
+    67→
+    68→├── **Funcionalidade:** Carteira Digital do Revendedor
+    69→│   ├── [ ] Dashboard de Saldos (Disponível, A Receber, Devedor)
+    70→│   ├── [ ] Extrato de Transações (Geração, Liberação, Estorno, Uso)
+    71→│   └── [ ] Indicador visual de Saldo Negativo (Bloqueia saques/abatimentos)
+    72→├── **Funcionalidade:** Abatimento de Parcelas via Bonificação
+    73→│   ├── [ ] Seleção de contas pendentes/parciais
+    74→│   ├── [ ] Débito atômico de saldo + Atualização de status da conta
+    75→│   └── [ ] Geração automática de boleto residual (se pagamento parcial)
+    76→├── **Funcionalidade:** Saques e Retenção Tributária (PF)
+    77→│   ├── [ ] Solicitação de saque com verificação de limite diário (`LIMITE_SAQUE_DIARIO`)
+    78→│   ├── [ ] Cálculo Automático IRRF/INSS (quando `SAQUE_PF_ATIVO = true`)
+    79→│   ├── [ ] Persistência de valores retidos (`valor_irrf_retido`, `valor_inss_retido`)
+    80→│   ├── [ ] Geração automática de DARF/GPS no módulo Financeiro
+    81→│   └── [ ] Maker/Checker para valores acima do teto configurado
+    82→├── **Recorrência e Renovação Automática**
+    83→│   ├── [ ] Job Diário: Verifica contratos `APROVADO` com periodicidade `MENSAL`
+    84→│   ├── [ ] Regra: Se última parcela quitada/vencida > 5 dias → Gera nova `contas_a_pagar`
+    85→│   ├── [ ] Recálculo de valor baseado em agregados ativos no momento da geração
+    86→│   └── [ ] Atualização de link de boleto em `contratos_legado_flat` (apenas financeiro/titular)
+    87→└── **💰 Compliance Financeiro**
+    88→    ├── [ ] Idempotência absoluta em `transacoes_bonificacao` (Constraint Composta)
+    89→    └── [ ] Base de cálculo restrita a Taxa de Adesão + Mensalidade (Proibido % sobre Prêmio)
+    90→
+    91→Carregar e ler documento 'SPEC-03 (Módulo Financeiro e de Bonificação).txt'.
+    92→
+    93→### 4. Módulo de Sinistro, Carência e Compliance Legal
+    94→*Air-Gap de dados sensíveis e automação de regras do Código Civil/CDC.*
+    95→
+    96→├── **Funcionalidade:** Acionamento e Análise de Sinistro
+    97→│   ├── [ ] Registro de evento (Hash S3 apenas, sem dados clínicos em DB)
+    98→│   ├── [ ] Validação automática de carência (Acidental, Natural, Suicídio Art. 798 CC)
+    99→│   └── [ ] Fluxo de Remissão Automática (Isenção pós-óbito do Titular com prevalência da Apólice)
+   100→├── **Funcionalidade:** Régua de Inadimplência e Suspensão
+   101→│   ├── [ ] Job Diário de Suspensão (02:00 AM): `APROVADO` → `SUSPENSO` (D+X atraso)
+   102→│   ├── [ ] Notificação CDC Obrigatória (Pré e Pós suspensão via Email/SMS/App)
+   103→│   ├── [ ] Bloqueio visual e funcional de acionamento de sinistro no App/Frontend
+   104→│   └── [ ] Fluxo de Récita (Reintegração + Recálculo de carência proporcional)
+   105→├── **Funcionalidade:** Ciclo de Vida e Arrependimento
+   106→│   ├── [ ] Botão de Cancelamento CDC (7 dias, estorno integral, zero multa, status `CANCELADO_CDC`)
+   107→│   ├── [ ] Job de Expulsão por Maioridade (21 anos + Notificação de conversão)
+   108→│   └── [ ] Job de Anonimização LGPD (5 anos pós-evento + Hash irreversível com Salt)
+   109→└── **🔒 Segurança Jurídica**
+   110→    └── [ ] Prevalência da Apólice sobre Configurações Globais (`PREVALENCIA_APIOLICE_SOBRE_CONFIG`)
+   111→
+   112→Carregar e ler documento 'SPEC-04 (Módulo de Sinistro, Carência e Compliance Legal).txt'.
+   113→
+   114→### 5. Módulo de Rede e Patrocínio
+   115→*Gestão da árvore comercial com prevenção de fraudes e ciclos.*
+   116→
+   117→├── **Funcionalidade:** Visualização e Gestão da Árvore
+   118→│   ├── [ ] Grafo hierárquico de patrocínios ativos
+   119→│   ├── [ ] Histórico de realocações (Vínculos inativos)
+   120→│   └── [ ] Exportação CSV da estrutura de rede
+   121→├── **Funcionalidade:** Realocação Atômica
+   122→│   ├── [ ] Movimentação de revendedor com recálculo em cascata de níveis (Mesma transação)
+   123→│   ├── [ ] Lock de banco para prevenir estados intermediários
+   124→│   └── [ ] Auditoria obrigatória de quem/quando/motivo
+   125→└── **⚠️ Anti-Fraude e AML**
+   126→    ├── [ ] Bloqueio de auto-patrocínio e ciclos familiares diretos
+   127→    ├── [ ] Validação Cross-Tree: Impedir CPF ativo em múltiplas redes simultaneamente
+   128→    └── [ ] Air-Gap Funcional: Ausência total de telas/campos de subordinação trabalhista (horário, metas, ponto)
+   129→
+   130→Carregar e ler documento 'SPEC-05 (Módulo de Rede e Patrocínio).txt'.
+   131→
+   132→### 6. Módulo de Configurações e Auditoria (Sistema)
+   133→*Centralização de parâmetros mutáveis e logs imutáveis.*
+   134→
+   135→├── **Funcionalidade:** Regras de Negócio Dinâmicas
+   136→│   ├── [ ] CRUD de chaves tipadas (Idades, Prazos, Limites, Flags, Salt PDF)
+   137→│   ├── [ ] Validação de tipo e histórico de alterações
+   138→│   └── [ ] Cache no Frontend (5 min) para validações de UX
+   139→├── **Funcionalidade:** Logs e Diagnóstico
+   140→│   ├── [ ] Auditoria de alterações cadastrais (Quem, Quando, Valor Anterior/Novo)
+   141→│   ├── [ ] Logs de anonimização LGPD (Hash irreversível + Salt)
+   142→│   ├── [ ] Ferramentas de integridade (Órfãos, Ciclos, Duplicidade, Saldo Negativo)
+   143→│   └── [ ] Logs de Integração com Seguradoras (Erros de API visíveis ao Suporte)
+   144→└── **🛡️ Isolamento Funcional**
+   145→    └── [ ] Air-Gap de termos empregatícios (Sem metas, horários ou subordinação funcional)
+   146→
+   147→Carregar e ler documento 'SPEC-06 (Módulo de Configurações e Auditoria).txt'.
+   148→
+   149→### 7. Módulo Institucional e Vendas (Frontend Público)
+   150→*Baseado no arquivo `Grapaz (Proteção).txt`. Essencial para conformidade de marketing e conversão.*
+   151→
+   152→├── **Página/Landing Page Granpaz**
+   153→│   ├── [ ] Seção Hero (Promessa + CTA Principal)
+   154→│   ├── [ ] Agitação do Problema (Storytelling comparativo)
+   155→│   ├── [ ] Solução e Benefícios (Custo Zero, Cobertura Nacional, Indenização)
+   156→│   ├── [ ] FAQ Estratégico (Quebra de objeções de preço/confiança)
+   157→│   └── [ ] Inversão de Risco (Garantia 7 dias + Link para App)
+   158→└── **Compliance de Marketing (Obrigatório)**
+   159→    ├── [ ] Rodapé com CNPJ da Administradora + Declaração de Estipulante
+   160→    ├── [ ] Menção explícita à responsabilidade da Seguradora Parceira
+   161→    └── [ ] Aviso SUSEP (Registro não implica recomendação)
+   162→
+   163→Carregar e ler documentos:
+   164→'SPEC-07 (Módulo Institucional e Vendas).txt'
+   165→'Grapaz (COPY PARA PÁGINA INSTITUCIONAL).txt'
+   166→
+   167→---
+   168→
+   169→#### 💡 Notas de Arquitetura para Implementação
+   170→
+   171→1.  **Frontend:** O componente `PessoaFisicaForm` deve ser agnóstico. Toda lógica condicional (exibir campo profissão, validar idade específica) deve ser derivada do `sessionType` injetado e das configurações retornadas pela API `/configuracoes`.
+   172→2.  **Backend:** As constraints de banco de dados (`CHECK`, `UNIQUE INDEX WHERE`) são a última linha de defesa. O frontend é apenas UX. Nunca confie em validação client-side para regras de negócio críticas.
+   173→3.  **Documentação:** Qualquer alteração nestas funcionalidades exige atualização prévia deste documento ou da documentação técnica fonte. Divergência é bug.
+   174→4.  **Terminologia:** Em todas as interfaces e códigos, substituir "Comissão" por "Bonificação" e evitar termos como "Seguro" quando se referir à administradora (usar "Plano de Proteção" ou "Plano de Benefícios").
+   175→
+   176→---
+   177→
+   178→## 1. Diretrizes Globais e Arquitetura de Sistema
+   179→
+   180→### 1.1 Princípios Fundamentais
+   181→*   **Verdade Absoluta:** Este documento é a fonte única da verdade para desenvolvimento, testes e homologação. Qualquer divergência entre código e este documento deve ser tratada como bug ou solicitada como mudança formal de escopo.
+   182→*   **Componentização Contextual Estrita:** Existe um único componente de cadastro de Pessoa Física no frontend (`PessoaFisicaForm`). Ele **nunca** possui lógica hardcoded de tipo de usuário. O tipo (`TITULAR`, `DEPENDENTE`, `AGREGADO`, `SUB_DEPENDENTE`) é injetado via props/contexto pela sessão pai. O backend valida essa injeção; se o payload contiver tipo incompatível com a rota/sessão, a requisição é rejeitada com erro 400.
+   183→*   **Sanitização Centralizada no Backend:** Frontend envia dados formatados para UX, mas backend **sempre** sanitiza antes de persistir:
+   184→    *   CPF/CNPJ: Apenas caracteres alfanuméricos (preparado para futuro).
+   185→    *   Telefone/CEP: Apenas dígitos numéricos.
+   186→    *   Strings de nome/endereço: Trim + remoção de espaços múltiplos.
+   187→*   **Validação Etária Transiente com Exceção de Edição:** Regras de idade limite são verificadas **apenas no ato do cadastro**. Em modo EDIÇÃO, a validação é desativada para permitir correções cadastrais de pessoas que já envelheceram além do limite original. **EXCEÇÃO CRÍTICA:** Se a edição alterar o campo `data_nascimento`, a validação de idade limite de cadastro é **reaplicada rigorosamente**, bloqueando a alteração se a nova data resultar em idade superior ao limite permitido para aquele tipo/parentesco.
+   188→*   **Obsolescência Declarada da Tabela Flat para Dados de Vínculos:** A tabela `contratos_legado_flat` **não deve mais receber sincronização de dados de dependentes, agregados ou sub-dependentes**. Ela mantém **apenas** campos financeiros, de status e os dados de identificação do Titular Franqueado (Nome e CPF/CNPJ, que devem continuar sincronizados para viabilizar a emissão de boletos). Toda geração de contratos, apólices e PDFs deve consumir exclusivamente as tabelas normalizadas.
+   189→*   **Capital Segurado por Aprovação Manual:** Não existe cálculo automático de capital segurado no sistema. O campo é preenchido/editado exclusivamente pelo SuperAdmin na Fila de Aprovação, após análise das condições da seguradora parceira.
+   190→*   **Preservação Seletiva de Vínculos de Filhos:** Na alteração de estado civil de Agregado Familiar (Casado/União Estável) para Individual (Solteiro/Divorciado/Viúvo), **apenas** o sub-dependente com parentesco `CONJUGE` é desvinculado. Sub-dependentes com parentesco `FILHO` permanecem ativos independentemente do novo estado civil do agregado.
+   191→*   **Unicidade de Contrato Ativo por Titular:** Um Titular só pode possuir **um único contrato** com status `AGUARDANDO_APROVACAO` ou `APROVADO` por vez. O backend deve rejeitar a criação de novo contrato se já existir um ativo para o mesmo `titular_id`. Contratos com status `REJEITADO` ou `CANCELADO` não bloqueiam novas contratações.
+   192→*   **Hierarquia de Dados de Vínculo:** A relação hierárquica de sub-dependente para agregado pai reside **exclusivamente** na tabela `vinculos` (campo `agregado_pai_id`). A tabela `pessoas_fisicas` não armazena redundâncias de vínculo.
+   193→*   **Idempotência Financeira:** Todas as operações de geração de bonificação e transações financeiras devem ser idempotentes. Constraints de unicidade composta devem impedir duplicidade em cenários de retry de rede ou falhas parciais de transação.
+   194→*   **Idempotência de Webhooks e Abatimentos:** Gateways de pagamento e operações de abatimento de parcelas devem ser estritamente idempotentes. A persistência de retries de rede é garantida pela tabela `webhooks_recebidos` (chave composta `transaction_id` + `source`), e o duplo abatimento da mesma parcela é prevenido por constraint condicional em `transacoes_pagamento`.
+   195→
+   196→### 1.2 Regra Imutável: Air-Gap de Dados de Seguradora no Frontend Público
+   197→*   **AIR-GAP DE SEGURADORA NO FRONTEND (CLIENTE/REVENDEDOR)**
+   198→    *   **PROIBIÇÃO ABSOLUTA:** Componentes de cadastro e edição (`PessoaFisicaForm`, telas de autogestão) em perfis `CLIENTE` e `REVENDEDOR` NUNCA devem carregar, exibir ou permitir seleção de `seguradoras`, `codigo_seguradora_informado` ou `capital_segurado_informado`.
+   199→    *   **EXCLUSIVIDADE DO SUPERADMIN:** A vinculação jurídica com a seguradora e a definição de capital/código ocorrem EXCLUSIVAMENTE no Módulo de Aprovação (Backoffice), após submissão do contrato.
+   200→    *   **BACKEND HARDENING:** APIs de consulta de seguradoras (`GET /seguradoras`) devem retornar `403 Forbidden` para tokens de autenticação que não possuam role `SUPERADMIN`.
+   201→    *   **UX NEUTRA:** No fluxo de contratação, o usuário seleciona apenas `plano_id` (Produto Comercial). A interface deve referir-se à proteção como "Plano de Benefícios" ou "Proteção Familiar", sem citar nomes de seguradoras específicas.
+   202→    *   **JUSTIFICATIVA JURÍDICA:** Previne caracterização de corretagem direta pelo usuário final e garante que a aceitação do risco siga o fluxo de *underwriting* manual da administradora (Estipulante), conforme diretrizes SUSEP.
+   203→
+   204→### 1.3 Segurança e Integridade
+   205→*   **Constraints Condicionais no Banco:** Regras de parentesco por tipo de vínculo são aplicadas via CHECK CONSTRAINT ou TRIGGER no banco de dados. Frontend é camada de UX, não de garantia.
+   206→*   **Auditoria de Alterações:** Todos os campos editáveis em `pessoas_fisicas` e `contratos` devem possuir logs de alteração (quem alterou, quando, valor anterior, valor novo).
+   207→*   **Sanitização de Markdown no Backend:** Cláusulas de seguradoras em markdown devem ser sanitizadas no backend antes de persistência e antes de renderização em PDF. Utilizar bibliotecas nativas do ecossistema (ex: `isomorphic-dompurify` com JSDOM para Node.js, `Bleach` para Python, `HTMLPurifier` para PHP). **Não utilizar** bibliotecas exclusivamente client-side (como DOMPurify puro) no backend. A renderização em PDF deve usar biblioteca que não execute JavaScript.
+   208→*   **Atomicidade em Recálculo de Árvore:** Operações de realocação na árvore de patrocínio devem ser atômicas. O recálculo de `nivel_profundidade` de todos os subordinados diretos e indiretos deve ocorrer dentro da mesma transação de banco da realocação, utilizando locks adequados para prevenir ciclos ou estados intermediários inconsistentes.
+   209→
+   210→---
+   211→
+   212→## 2. Modelo de Dados Completo e Regras de Persistência
+   213→
+   214→### 2.1 Tabela `pessoas_fisicas`
+   215→Armazena todos os tipos de pessoa em estrutura unificada.
+   216→
+   217→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   218→| :--- | :--- | :--- | :--- |
+   219→| `id` | UUID | Sim | PK. Gerado automaticamente. |
+   220→| `nome_completo` | VARCHAR(255) | Sim | Trim + normalização de espaços. Mínimo 3 caracteres. |
+   221→| `data_nascimento` | DATE | Sim | ISO 8601 (YYYY-MM-DD). Validação de data futura bloqueada. |
+   222→| `cpf` | VARCHAR(14) | Sim | **Apenas alfanumérico**. Unique constraint. Preparado para CPF/CNPJ com letras. |
+   223→| `genero` | ENUM('M','F') | Não | Default NULL. Seletor de sexo biológico conforme verdade absoluta. |
+   224→| `estado_civil` | ENUM | Sim | Valores: `SOLTEIRO`, `CASADO`, `UNIAO_ESTAVEL`, `DIVORCIADO`, `VIUVO`. Default: `SOLTEIRO`. |
+   225→| `tipo_registro` | ENUM | Sim | `TITULAR`, `DEPENDENTE`, `AGREGADO`, `SUB_DEPENDENTE`. **Definido exclusivamente pelo endpoint/sessão.** Nunca exposto como campo editável no form. |
+   226→| `titular_raiz_id` | FK | Condicional | Obrigatório se `tipo_registro` != `TITULAR`. Aponta para o Titular do contrato. Indexado. |
+   227→| `created_at` | TIMESTAMP | Sim | Auto-preenchido. |
+   228→| `updated_at` | TIMESTAMP | Sim | Auto-atualizado. |
+   229→
+   230→> **Nota:** O campo `agregado_pai_id` foi **removido** desta tabela para evitar redundância. A relação sub-dependente → agregado pai é gerenciada exclusivamente pela tabela `vinculos` (campo `agregado_pai_id`).
+   231→
+   232→### 2.2 Tabela `vinculos` (Unificada)
+   233→Centraliza todas as relações hierárquicas.
+   234→
+   235→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   236→| :--- | :--- | :--- | :--- |
+   237→| `id` | UUID | Sim | PK |
+   238→| `titular_raiz_id` | FK | Sim | Ref. `pessoas_fisicas.id` (Titular do Contrato) |
+   239→| `pessoa_vinculada_id` | FK | Sim | Ref. `pessoas_fisicas.id` |
+   240→| `tipo_vinculo` | ENUM | Sim | `DEPENDENTE`, `AGREGADO`, `SUB_DEPENDENTE` |
+   241→| `parentesco` | ENUM | Sim | `CONJUGE`, `FILHO`, `PAI_MAE`, `SOGRO`, `ENTREADO`, `NETO`, `AVO`, `IRMAO`, `TIO` |
+   242→| `agregado_pai_id` | FK | Condicional | Obrigatório se `tipo_vinculo` = `SUB_DEPENDENTE`. Ref. `pessoas_fisicas.id` do Agregado pai. Deve pertencer ao mesmo `titular_raiz_id`. |
+   243→| `data_inicio_vinculo` | DATE | Sim | Data de cadastro do vínculo. |
+   244→| `data_fim_vinculo` | DATE | Não | Preenchido em caso de remoção/exclusão lógica. |
+   245→
+   246→**Constraints Condicionais Obrigatórias (DB Level):**
+   247→```sql
+   248→-- Dependentes do Titular: apenas Cônjuge ou Filho
+   249→CHECK (
+   250→  tipo_vinculo != 'DEPENDENTE' 
+   251→  OR parentesco IN ('CONJUGE', 'FILHO')
+   252→)
+   253→
+   254→-- Sub-dependentes do Agregado: apenas Cônjuge ou Filho
+   255→CHECK (
+   256→  tipo_vinculo != 'SUB_DEPENDENTE' 
+   257→  OR parentesco IN ('CONJUGE', 'FILHO')
+   258→)
+   259→
+   260→-- Agregados: todos os parentescos permitidos
+   261→CHECK (
+   262→  tipo_vinculo != 'AGREGADO' 
+   263→  OR parentesco IN ('CONJUGE','FILHO','PAI_MAE','SOGRO','ENTREADO','NETO','AVO','IRMAO','TIO')
+   264→)
+   265→
+   266→-- Integridade referencial de sub-dependente
+   267→CHECK (
+   268→  tipo_vinculo != 'SUB_DEPENDENTE' 
+   269→  OR agregado_pai_id IS NOT NULL
+   270→)
+   271→```
+   272→
+   273→### 2.3 Tabelas Auxiliares Detalhadas
+   274→
+   275→#### `profissoes`
+   276→| Campo | Tipo | Obrigatório | Regra |
+   277→| :--- | :--- | :--- | :--- |
+   278→| `id` | UUID | Sim | PK |
+   279→| `descricao` | VARCHAR(100) | Sim | Texto livre. Trim. |
+   280→| `pessoa_fisica_id` | FK | Sim | Ref. `pessoas_fisicas.id`. **Unique constraint** (1:1). Obrigatório para `TITULAR` e `AGREGADO`. Backend rejeita cadastro desses tipos sem profissão. |
+   281→
+   282→#### `enderecos`
+   283→| Campo | Tipo | Obrigatório | Regra |
+   284→| :--- | :--- | :--- | :--- |
+   285→| `id` | UUID | Sim | PK |
+   286→| `logradouro` | VARCHAR(200) | Sim | - |
+   287→| `complemento` | VARCHAR(100) | Não | - |
+   288→| `bairro` | VARCHAR(100) | Sim | - |
+   289→| `cidade` | VARCHAR(100) | Sim | - |
+   290→| `uf` | CHAR(2) | Sim | UF válida brasileira. |
+   291→| `cep` | VARCHAR(8) | Sim | **Apenas dígitos**. Validação de formato. |
+   292→| `pessoa_fisica_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Obrigatório para `TITULAR` e `AGREGADO`. Backend rejeita cadastro desses tipos sem endereço. |
+   293→
+   294→#### `telefones`
+   295→| Campo | Tipo | Obrigatório | Regra |
+   296→| :--- | :--- | :--- | :--- |
+   297→| `id` | UUID | Sim | PK |
+   298→| `numero` | VARCHAR(11) | Sim | **Apenas dígitos**. 10 ou 11 dígitos. |
+   299→| `tipo` | ENUM | Sim | `PRINCIPAL_WHATSAPP`, `SECUNDARIO_RECADOS`. Máximo 1 principal por pessoa. |
+   300→| `pessoa_fisica_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Pelo menos um telefone obrigatório para `TITULAR` e `AGREGADO`. |
+   301→
+   302→#### `emails`
+   303→| Campo | Tipo | Obrigatório | Regra |
+   304→| :--- | :--- | :--- | :--- |
+   305→| `id` | UUID | Sim | PK |
+   306→| `email` | VARCHAR(255) | Sim | Validação de formato RFC 5322. Lowercase. |
+   307→| `tipo` | ENUM | Sim | **CORRIGIDO:** Valores `PRINCIPAL`, `SECUNDARIO`. (Os valores anteriores `PRINCIPAL_WHATSAPP`, `SECUNDARIO_RECADOS` eram replicação indevida do ENUM de telefones e foram removidos). |
+   308→| `pessoa_fisica_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Pelo menos um email obrigatório para `TITULAR` e `AGREGADO`. |
+   309→
+   310→### 2.4 Tabelas de Contratos e Aprovação
+   311→
+   312→#### `contratos`
+   313→
+   314→| Campo | Tipo | Obrigatório | Regra |
+   315→| :--- | :--- | :--- | :--- |
+   316→| `id` | UUID | Sim | PK |
+   317→| `titular_id` | FK | Sim | Ref. `pessoas_fisicas.id` (TITULAR). **Constraint de unicidade condicional:** apenas um contrato por titular com status IN (`AGUARDANDO_APROVACAO`, `APROVADO`, `SUSPENSO`) pode existir simultaneamente. Status `CANCELADO_CDC`, `CANCELADO` e `REJEITADO` NÃO bloqueiam nova contratação. |
+   318→| `plano_id` | FK | Sim | Ref. `planos.id` |
+   319→| `seguradora_id` | FK | Sim | Ref. `seguradoras.id` |
+   320→| `periodicidade` | ENUM | Sim | `MENSAL`, `ANUAL` |
+   321→| `dia_vencimento` | ENUM | Sim | `10`, `20` |
+   322→| `data_inicio` | DATE | Condicional | Data de início de vigência (cobertura). **NULL no cadastro.** Preenchido automaticamente pelo backend como igual à `data_aprovacao` no momento da aprovação, ou data posterior definida pelo SuperAdmin. Não pode ser anterior à `data_aprovacao`. |
+   323→| `data_fim` | DATE | Não | Preenchido em cancelamento. |
+   324→| `status` | ENUM | Sim | `AGUARDANDO_APROVACAO`, `APROVADO`, `REJEITADO`, `CANCELADO`, `SUSPENSO`, `CANCELADO_CDC`. 🚨 `CANCELADO_CDC` é exclusivo para arrependimento legal (7 dias, Art. 49 CDC); `CANCELADO` é administrativo/inadimplência; `SUSPENSO` é inadimplência temporária com bloqueio de cobertura. |
+   325→| `valor_parcela_base` | DECIMAL(10,2) | Sim | Valor base do plano. |
+   326→| `valor_total_agregados` | DECIMAL(10,2) | Sim | Soma dos acréscimos de agregados. Calculado no backend. |
+   327→| `created_at` | TIMESTAMP | Sim | Data/hora da submissão do contrato. |
+   328→| `updated_at` | TIMESTAMP | Sim | Auto-atualizado. |
+   329→
+   330→**Constraint de Unicidade Condicional (DB Level):**
+   331→
+   332→```sql
+   333→-- Apenas um contrato (ativo ou suspenso) por titular
+   334→-- CANCELADO_CDC, CANCELADO e REJEITADO ficam FORA desta constraint (não bloqueiam nova contratação)
+   335→CREATE UNIQUE INDEX idx_contrato_ativo_por_titular
+   336→ON contratos (titular_id)
+   337→WHERE status IN ('AGUARDANDO_APROVACAO', 'APROVADO', 'SUSPENSO');
+   338→```
+   339→
+   340→#### `dados_aprovacao_seguradora` (1:1 com contratos)
+   341→| Campo | Tipo | Obrigatório | Regra |
+   342→| :--- | :--- | :--- | :--- |
+   343→| `id` | UUID | Sim | PK |
+   344→| `contrato_id` | FK | Sim | Ref. `contratos.id`. Unique. |
+   345→| `capital_segurado_informado` | DECIMAL(12,2) | Condicional | **NULL no cadastro.** Editável apenas por SuperAdmin quando `contratos.status` = `AGUARDANDO_APROVACAO`. Obrigatório para aprovação. |
+   346→| `codigo_seguradora_informado` | VARCHAR(50) | Condicional | **NULL no cadastro.** Editável apenas por SuperAdmin quando `contratos.status` = `AGUARDANDO_APROVACAO`. Obrigatório para aprovação. |
+   347→| `observacoes_gestor` | TEXT | Não | Campo livre para anotações do admin. |
+   348→| `admin_aprovador_id` | FK | Condicional | Preenchido automaticamente na aprovação/rejeição. |
+   349→| `data_aprovacao` | TIMESTAMP | Condicional | Preenchido automaticamente na aprovação. Serve como base para preenchimento de `contratos.data_inicio`. |
+   350→
+   351→#### `contratos_legado_flat`
+   352→*   **Propósito Exclusivo:** Compatibilidade com sistema de boletos legado.
+   353→
+   354→### 2.5 Tabelas de Negócio e Configuração
+   355→
+   356→#### `planos`
+   357→| Campo | Tipo | Obrigatório | Regra |
+   358→| :--- | :--- | :--- | :--- |
+   359→| `id` | UUID | Sim | PK |
+   360→| `nome` | VARCHAR(100) | Sim | - |
+   361→| `tipo` | ENUM | Sim | `INDIVIDUAL`, `FAMILIAR` |
+   362→| `max_dependentes` | INT | Sim | Default 0 para INDIVIDUAL, 8 para FAMILIAR. |
+   363→| `max_agregados` | INT | Sim | Default 4. Limite global por contrato (soma de individuais + familiares). |
+   364→| `valor_base` | DECIMAL(10,2) | Sim | - |
+   365→| `valor_por_agregado` | DECIMAL(10,2) | Sim | Acréscimo por agregado cadastrado. |
+   366→| `ativo` | BOOLEAN | Sim | Default TRUE. |
+   367→
+   368→#### `seguradoras`
+   369→| Campo | Tipo | Obrigatório | Regra |
+   370→| :--- | :--- | :--- | :--- |
+   371→| `id` | UUID | Sim | PK |
+   372→| `codigo_seguradora` | VARCHAR(20) | Sim | Código interno/externo. Unique. |
+   373→| `nome` | VARCHAR(150) | Sim | - |
+   374→| `telefone_sinistro` | VARCHAR(20) | Sim | Apenas dígitos. |
+   375→| `clausulas_markdown` | LONGTEXT | Sim | Markdown sanitizado server-side (via biblioteca nativa do ecossistema). Preview obrigatório antes de salvar. |
+   376→| `ativo` | BOOLEAN | Sim | Default TRUE. |
+   377→
+   378→#### `configuracoes_regras_negocio`
+   379→| Campo | Tipo | Obrigatório | Regra |
+   380→| :--- | :--- | :--- | :--- |
+   381→| `id` | UUID | Sim | PK |
+   382→| `chave` | VARCHAR(50) | Sim | Unique. |
+   383→| `valor` | VARCHAR(100) | Sim | Valor string. Parseado conforme contexto (int para idade, decimal para valores). |
+   384→| `descricao` | VARCHAR(255) | Sim | Descrição humana da configuração. |
+   385→
+   386→**Chaves Obrigatórias e Seus Usos:**
+   387→
+   388→| Chave | Tipo Parse | Uso |
+   389→| :--- | :--- | :--- |
+   390→| `IDADE_LIMITE_TITULAR` | INT | Idade máxima para cadastro de Titular. |
+   391→| `IDADE_LIMITE_CONJUGE` | INT | Idade máxima para cadastro de Dependente ou Sub-dependente com parentesco `CONJUGE`. |
+   392→| `IDADE_LIMITE_DEPENDENTE` | INT | Idade máxima para cadastro de Dependente com parentesco `FILHO`. |
+   393→| `IDADE_COBERTURA_FILHO` | INT | Idade limite de cobertura ativa para filhos. Filhos acima desta idade são cadastrados com tag "SEM DIREITO À PROTEÇÃO". Deve ser <= `IDADE_LIMITE_DEPENDENTE`. |
+   394→| `IDADE_LIMITE_AGREGADO` | INT | Idade máxima para cadastro de Agregado. |
+   395→| `IDADE_LIMITE_SUB_DEPENDENTE` | INT | Idade máxima para cadastro de Sub-dependente com parentesco `FILHO`. |
+   396→| `IDADE_COBERTURA_SUB_FILHO` | INT | Idade limite de cobertura ativa para filhos de agregado (sub-dependentes). Análogo a `IDADE_COBERTURA_FILHO`. |
+   397→| `DIAS_CARENCIA_ACIDENTAL` | INT | Dias de carência para cobertura de morte acidental (ex: 72h). Bloqueia sinistro se óbito ocorrer antes. |
+   398→| `MESES_CARENCIA_NATURAL` | INT | Meses de carência para cobertura de morte natural (ex: 6 meses). Bloqueia sinistro se óbito ocorrer antes. |
+   399→| `MESES_CARENCIA_SUICIDIO` | INT | Meses de carência para suicídio conforme Art. 798 CC (ex: 24 meses). Bloqueia indenização, mantém assistência funeral básica se aplicável. |
+   400→| `MESES_REMISSAO_OBITO_PADRAO` | INT | 🚨 **RENOMEADO.** Meses de isenção automática de mensalidades para dependentes/sub-dependentes após óbito do Titular. ⚠️ **PREVALÊNCIA:** Valor usado APENAS como fallback quando a Apólice/Condições Gerais da Seguradora não especificar prazo distinto. Em caso de divergência, prevalece sempre o prazo da Apólice (segurança jurídica SUSEP/Código Civil). |
+   401→| `DIAS_SUSPENSAO_INADIMPLENCIA` | INT | Dias de atraso (D+X) para job alterar status do contrato de `APROVADO` para `SUSPENSO`. |
+   402→| `SAQUE_PF_ATIVO` | BOOLEAN | Habilita/Desabilita saques de bonificações quando revendedor for Pessoa Física. Se falso, bloqueia criação de transacao_pagamento tipo saque PF. |
+   403→| `LIMITE_SAQUE_DIARIO` | DECIMAL | 🚨 **RENOMEADO.** Teto diário para saque PF sem aprovação manual. Acima deste valor, exige flag `aprovacao_manual = true`. Alinhado terminologicamente com manual Grapaz (sufixo `_PF` removido; contexto já é Pessoa Física). |
+   404→| `HASH_ASSINATURA_PDF_SALT` | VARCHAR | Salt criptográfico para assinatura digital SHA-256 dos PDFs de apólice/certificado. Nunca exposto via API. |
+   405→| `PREVALENCIA_APIOLICE_SOBRE_CONFIG` | BOOLEAN | 🔒 **NOVA CHAVE OBRIGATÓRIA.** Flag global de hardening jurídico. Quando `true`, o sistema DEVE consultar primeiro os prazos/valores da Apólice vinculada ao contrato antes de aplicar qualquer regra de `configuracoes_regras_negocio`. Garante compliance automático com SUSEP e evita que configurações administrativas sobrescrevam condições legais da seguradora parceira. Default: `true`. |
+   406→
+   407→### 2.6 Tabelas de Bonificação (Comissionamento) em Níveis (Multinível) e Financeiro
+   408→
+   409→Para contexto, Bonificação é igual a Comissão (mas evitar o uso de termos como comissão ou comissionamento e similares para evitar riscos jurídicos, prefira sempre o uso de termos como bonificação e similares a este).
+   410→
+   411→#### `patrocinios` (Árvore de Rede)
+   412→
+   413→| Campo | Tipo | Obrigatório | Regra |
+   414→| :--- | :--- | :--- | :--- |
+   415→| `id` | UUID | Sim | PK |
+   416→| `revendedor_id` | FK | Sim | Ref. `pessoas_fisicas.id` (TITULAR que é revendedor). **Não possui constraint UNIQUE** (para permitir histórico de realocações). |
+   417→| `patrocinador_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Não pode ser igual a `revendedor_id`. |
+   418→| `nivel_profundidade` | INT | Sim | Calculado recursivamente. Nível 1 = patrocinador direto. **Recalculado atomicamente em cascata na realocação.** |
+   419→| `data_entrada` | TIMESTAMP | Sim | Data de vinculação. Imutável após criação. |
+   420→| `data_fim_vinculo` | TIMESTAMP | Não | Preenchido em caso de realocação ou desativação. Quando NULL, o vínculo está ativo. |
+   421→
+   422→**Constraints Obrigatórias (DB Level):**
+   423→
+   424→```sql
+   425→-- Apenas um vínculo ativo por revendedor
+   426→CREATE UNIQUE INDEX idx_patrocinio_ativo_por_revendedor
+   427→ON patrocinios (revendedor_id)
+   428→WHERE data_fim_vinculo IS NULL;
+   429→
+   430→-- Não pode ser seu próprio patrocinador
+   431→CHECK (revendedor_id != patrocinador_id);
+   432→
+   433→-- 🚨 CONFLITO DE REDE: CPF não pode estar em outra árvore ativa
+   434→-- Implementado via TRIGGER ou Camada de Serviço (consulta cross-tree)
+   435→-- CHECK (NOT EXISTS (SELECT 1 FROM patrocinios p2 
+   436→--          JOIN pessoas_fisicas pf ON p2.revendedor_id = pf.id 
+   437→--          WHERE pf.cpf = (SELECT cpf FROM pessoas_fisicas WHERE id = revendedor_id)
+   438→--          AND p2.data_fim_vinculo IS NULL AND p2.id != patrocinios.id))
+   439→
+   440→-- ⚠️ CICLOS FAMILIARES DIRETOS: Bloqueio de patrocínio entre cônjuges/pais/filhos
+   441→-- Implementado via Camada de Serviço (validação de parentesco bidirecional)
+   442→-- Esta regra previne auto-patrocínio indireto e fraude em bonificações multinível
+   443→```
+   444→
+   445→#### `niveis_bonificacao`
+   446→| Campo | Tipo | Obrigatório | Regra |
+   447→| :--- | :--- | :--- | :--- |
+   448→| `id` | UUID | Sim | PK |
+   449→| `nome_nivel` | VARCHAR(50) | Sim | Ex: "Nível 1", "Supervisor". |
+   450→| `percentual_indicacao` | DECIMAL(5,2) | Sim | % sobre indicação direta. Base de cálculo definida na Nota Técnica abaixo. |
+   451→| `percentual_fechamento` | DECIMAL(5,2) | Sim | % sobre fechamento de indicado. Base de cálculo definida na Nota Técnica abaixo. |
+   452→| `nivel_profundidade_min` | INT | Sim | Nível mínimo na árvore para aplicar esta regra. |
+   453→| `nivel_profundidade_max` | INT | Sim | Nível máximo na árvore para aplicar esta regra. |
+   454→| `ativo` | BOOLEAN | Sim | Default TRUE. |
+   455→
+   456→💰 **BASE DE CÁLCULO DA BONIFICAÇÃO (DEFINIÇÃO ABSOLUTA)**
+   457→├── Os campos `percentual_indicacao` e `percentual_fechamento` incidem EXCLUSIVAMENTE sobre receitas geradas por **novos clientes indicados**:
+   458→│   ├── Taxa de Adesão (pagamento único inicial do indicado)
+   459→│   └── Valor das Parcelas Mensais ou Anuais do Plano (receita recorrente do indicado)
+   460→├── 🚨 **PROIBIÇÃO ABSOLUTA:** A base de cálculo NUNCA inclui:
+   461→│   ├── Prêmio de Seguro / Capital Segurado
+   462→│   ├── Valores de Assistência Funeral repassados à Seguradora Parceira
+   463→│   └── Quaisquer receitas não tributáveis pela administradora (repasse puro de risco)
+   464→└── ⚖️ **COMPLIANCE:** Esta separação garante que a bonificação remunera exclusivamente a atividade comercial de intermediação/clube de benefícios, evitando caracterização de corretagem irregular ou receita sobre risco segurador (SUSEP/Código Civil).
+   465→
+   466→#### `carteiras_digitais`
+   467→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   468→| :--- | :--- | :--- | :--- |
+   469→| `id` | UUID | Sim | PK. |
+   470→| `titular_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Unique constraint (1:1). |
+   471→| `saldo_disponivel` | DECIMAL(12,2) | Sim | Default 0. 🚨 **MUTÁVEL:** Pode ser debitado abaixo de zero para gerar `saldo_devedor` em estornos pós-saque. |
+   472→| `saldo_bloqueado` | DECIMAL(12,2) | Sim | Default 0. Bonificações pendentes de aprovação. |
+   473→| `saldo_devedor` | DECIMAL(12,2) | Sim | 🚨 **NOVO CAMPO.** Default 0. Registra passivos de estornos. Futuras bonificações devem abater este saldo prioritariamente antes de compor o disponível. |
+   474→
+   475→#### `transacoes_pagamento` (Unificada: Abatimento e Saque)
+   476→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   477→| :--- | :--- | :--- | :--- |
+   478→| `id` | UUID | Sim | PK. |
+   479→| `carteira_id` | FK | Sim | Ref. `carteiras_digitais.id`. |
+   480→| `conta_a_pagar_id` | FK | Condicional | Ref. `contas_a_pagar.id`. Obrigatório se `tipo_transacao` = `ABATIMENTO`. |
+   481→| `contrato_id` | FK | Condicional | Ref. `contratos.id`. |
+   482→| `tipo_transacao` | ENUM | Sim | 🚨 **NOVO ENUM:** `ABATIMENTO`, `SAQUE`. Unifica o fluxo financeiro. |
+   483→| `valor_abatido` | DECIMAL(10,2) | Sim | Valor debitado da carteira (bruto no caso de saque). |
+   484→| `saldo_restante_parcela` | DECIMAL(10,2) | Condicional | Residual da parcela. Se 0, parcela quitada. |
+   485→| `valor_irrf_retido` | DECIMAL(10,2) | Condicional | 🚨 **NOVO CAMPO.** Persistido apenas em saques PF com `SAQUE_PF_ATIVO = true`. |
+   486→| `valor_inss_retido` | DECIMAL(10,2) | Condicional | 🚨 **NOVO CAMPO.** Retenção RPA (11% até teto). |
+   487→| `status` | ENUM | Sim | 🚨 **EXPANDIDO:** `CONCLUIDO`, `ESTORNADO`, `PENDENTE_APROVACAO` (Gatilho para Maker/Checker). |
+   488→| `data_transacao` | TIMESTAMP | Sim | Momento da operação. |
+   489→
+   490→**Constraints Críticas (Nível de Banco):**
+   491→├── 🔒 **Idempotência de Abatimento:** `UNIQUE INDEX idx_abatimento_unico (conta_a_pagar_id, carteira_id) WHERE tipo_transacao = 'ABATIMENTO' AND status = 'CONCLUIDO'`
+   492→└── ⚠️ **Validação Condicional:** `CHECK (tipo_transacao != 'ABATIMENTO' OR conta_a_pagar_id IS NOT NULL)`
+   493→
+   494→#### `contas_a_pagar`
+   495→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   496→| :--- | :--- | :--- | :--- |
+   497→| `id` | UUID | Sim | PK. |
+   498→| `descricao` | VARCHAR(255) | Sim | - |
+   499→| `valor` | DECIMAL(12,2) | Sim | Valor original. |
+   500→| `valor_restante` | DECIMAL(12,2) | Sim | Atualizado em abatimentos parciais. |
+   501→| `data_vencimento` | DATE | Sim | - |
+   502→| `status` | ENUM | Sim | `PENDENTE`, `PARCIALMENTE_PAGO`, `PAGO`, `CANCELADO`. |
+   503→| `fornecedor_id` | FK | Não | Vínculo opcional. |
+   504→| `contrato_id` | FK | Não | Vínculo para abatimento via bonificação. |
+   505→| `boleto_url` | TEXT | Não | 🚨 **NOVO CAMPO.** Link do gateway para reconciliação e UX do cliente. |
+   506→| `gateway_transaction_id` | VARCHAR(100) | Não | 🚨 **NOVO CAMPO.** ID externo para cruzamento determinístico de webhooks. |
+   507→
+   508→#### `webhooks_recebidos` (Nova Tabela de Resiliência)
+   509→| Campo | Tipo BD | Obrigatório | Regra de Persistência / Detalhamento |
+   510→| :--- | :--- | :--- | :--- |
+   511→| `id` | UUID | Sim | PK. |
+   512→| `transaction_id` | VARCHAR(100) | Sim | 🚨 **IDEMPOTÊNCIA:** ID único fornecido pelo Gateway/Seguradora. |
+   513→| `source` | VARCHAR(50) | Sim | Origem (`payment_gateway`, `seguradora`, etc). |
+   514→| `payload` | JSONB | Sim | Cópia imutável do corpo da requisição para auditoria forense. |
+   515→| `processed_at` | TIMESTAMP | Sim | Timestamp de processamento. |
+   516→
+   517→**Constraints Críticas (Nível de Banco):**
+   518→└── 🔒 **Anti-Duplicidade de Retry:** `UNIQUE (transaction_id, source)` - Garante que retries de rede (ex: instabilidade do gateway) não processem o mesmo pagamento duas vezes, prevenindo duplicidade financeira catastrófica.
+   519→
+   520→#### `transacoes_bonificacao`
+   521→| Campo | Tipo | Obrigatório | Regra |
+   522→| :--- | :--- | :--- | :--- |
+   523→| `id` | UUID | Sim | PK |
+   524→| `carteira_id` | FK | Sim | Ref. `carteiras_digitais.id` |
+   525→| `origem_contrato_id` | FK | Sim | Contrato do indicado que gerou a bonificação. |
+   526→| `valor` | DECIMAL(10,2) | Sim | Valor da bonificação. |
+   527→| `status` | ENUM | Sim | `PENDENTE_APROVACAO`, `LIBERADO`, `ESTORNADO` |
+   528→| `nivel_origem` | INT | Sim | Nível na árvore de patrocínio que gerou esta transação. |
+   529→| `data_geracao` | TIMESTAMP | Sim | Momento do fechamento do contrato indicado. |
+   530→| `data_liberacao` | TIMESTAMP | Condicional | Momento da aprovação do contrato pelo Admin. |
+   531→| `data_estorno` | TIMESTAMP | Condicional | Momento da rejeição ou cancelamento do contrato. |
+   532→
+   533→**Constraint de Idempotência (DB Level):**
+   534→```sql
+   535→-- Previne duplicidade de bonificação para o mesmo contrato, carteira e nível
+   536→CREATE UNIQUE INDEX idx_bonificacao_unica 
+   537→ON transacoes_bonificacao (origem_contrato_id, carteira_id, nivel_origem);
+   538→```
+   539→
+   540→### 2.7 Tabelas de Sinistro, Remissão e Compliance
+   541→
+   542→#### `remissoes_contrato`
+   543→Armazena o período de isenção de mensalidades para dependentes/sub-dependentes após óbito confirmado do Titular.
+   544→
+   545→| Campo | Tipo | Obrigatório | Regra |
+   546→| :--- | :--- | :--- | :--- |
+   547→| `id` | UUID | Sim | PK |
+   548→| `contrato_id` | FK | Sim | Ref. `contratos.id`. Unique constraint (apenas uma remissão ativa por contrato). |
+   549→| `data_inicio_remissao` | DATE | Sim | Data do óbito confirmado do Titular. |
+   550→| `data_fim_remissao` | DATE | Sim | Calculado: `data_inicio_remissao` + meses definidos. **PREVALÊNCIA:** Usa prazo da Apólice/Condições Gerais se disponível; caso contrário, usa `MESES_REMISSAO_OBITO_PADRAO` de `configuracoes_regras_negocio`. |
+   551→| `meses_aplicados` | INT | Sim | Quantidade de meses efetivamente concedidos. |
+   552→| `origem_prazo` | ENUM | Sim | `APOLICE_SEGURADORA`, `CONFIGURACAO_PADRAO`. Indica qual regra foi aplicada para auditoria. |
+   553→| `created_at` | TIMESTAMP | Sim | Auto-preenchido. |
+   554→
+   555→#### `sinistros`
+   556→Registra ocorrências cobertas pelo plano. Dados sensíveis seguem protocolo Air-Gap.
+   557→
+   558→| Campo | Tipo | Obrigatório | Regra |
+   559→| :--- | :--- | :--- | :--- |
+   560→| `id` | UUID | Sim | PK |
+   561→| `contrato_id` | FK | Sim | Ref. `contratos.id` |
+   562→| `pessoa_vinculada_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Pessoa falecida ou acidentada. |
+   563→| `tipo_sinistro` | ENUM | Sim | `OBITO_NATURAL`, `OBITO_ACIDENTAL`, `SUICIDIO`, `INVALIDEZ_TOTAL`, `INVALIDEZ_PARCIAL` |
+   564→| `data_ocorrencia` | DATE | Sim | Data do evento gerador. Base para cálculo de carência. |
+   565→| `status` | ENUM | Sim | `EM_ANALISE`, `APROVADO`, `NEGADO_CARÊNCIA`, `NEGADO_FRAUDE`, `NEGADO_EXCLUSAO` |
+   566→| `documento_s3_hash` | VARCHAR(64) | Condicional | Hash SHA-256 do atestado/laudo armazenado em S3. 🚨 **AIR-GAP:** Nunca armazenar causa mortis, CID ou dados clínicos neste campo ou nesta tabela. Acesso ao documento original apenas via IAM restrito. |
+   567→| `data_decisao` | TIMESTAMP | Condicional | Preenchido automaticamente na aprovação ou negação. |
+   568→| `observacoes` | TEXT | Não | Notas administrativas internas. 🚨 **PROIBIDO:** Inserir dados sensíveis ou diagnósticos médicos. |
+   569→| `created_at` | TIMESTAMP | Sim | Auto-preenchido. |
+   570→| `updated_at` | TIMESTAMP | Sim | Auto-atualizado. |
+   571→
+   572→#### `logs_anonimizacao_lgpd`
+   573→Rastreia execuções do job de anonimização/direito ao esquecimento para compliance LGPD e SUSEP.
+   574→
+   575→| Campo | Tipo | Obrigatório | Regra |
+   576→| :--- | :--- | :--- | :--- |
+   577→| `id` | UUID | Sim | PK |
+   578→| `pessoa_fisica_id` | FK | Sim | Ref. `pessoas_fisicas.id`. Registro já anonimizado no momento do log. |
+   579→| `data_anonimizacao` | TIMESTAMP | Sim | Momento exato da execução do job. |
+   580→| `motivo` | ENUM | Sim | `OBITO_5_ANOS`, `CANCELAMENTO_5_ANOS`, `SOLICITACAO_TITULAR`, `DETERMINACAO_JUDICIAL` |
+   581→| `campos_anonimizados` | JSONB | Sim | Lista de campos afetados. Ex: `["cpf", "nome_completo", "data_nascimento", "email"]`. |
+   582→| `hash_original_salt` | VARCHAR(64) | Sim | Hash irreversível (SHA-256 + salt) dos dados originais. Permite auditoria forense e verificação de duplicidade sem expor o dado pessoal. 🔒 **SEGURANÇA:** Salt deve ser o mesmo definido em `HASH_ASSINATURA_PDF_SALT` ou chave dedicada. |
+   583→| `operador_id` | FK | Não | Usuário que solicitou manualmente (se aplicável). NULL para jobs automáticos. |
+   584→| `created_at` | TIMESTAMP | Sim | Auto-preenchido. Imutável. |
+   585→---
+   586→
+   587→## 3. Regras de Componente Frontend (Reutilizável e Contextual)
+   588→
+   589→### 3.1 Fluxo de Contratação e Componente `PessoaFisicaForm`
+   590→
+   591→O fluxo de contratação é sequencial e dividido em etapas claras. O componente `PessoaFisicaForm` é reutilizado em múltiplas etapas, recebendo `sessionType` como prop obrigatória.
+   592→
+   593→#### Etapa 1: Seleção de Tipo de Contratação e Plano
+   594→*   **Checkbox Exclusivo de Tipo:** Usuário escolhe `INDIVIDUAL` ou `FAMILIAR`. Obrigatório escolher uma ou outra, nunca ambas.
+   595→*   **Filtro Dinâmico de Planos:**
+   596→    *   Se Checkbox `INDIVIDUAL` habilitado: Lista exibe somente planos `INDIVIDUAL` e oculta `FAMILIAR`.
+   597→    *   Se Checkbox `FAMILIAR` habilitado: Lista exibe somente planos `FAMILIAR` e oculta `INDIVIDUAL`.
+   598→*   **Avanço:** A sessão `TITULAR` só é exibida/aparece após esta seleção ser feita e um plano válido for escolhido.
+   599→
+   600→#### Etapa 2: Cadastro do Titular (`sessionType = TITULAR`)
+   601→*   `tipo_registro` injetado: `TITULAR`
+   602→*   Campos obrigatórios: Nome, CPF, Data Nascimento, Gênero, Estado Civil, Profissão.
+   603→
+   604→##### Sessão `CONTATO TITULAR`
+   605→*   Endereço completo.
+   606→*   Telefone (pelo menos 1), Email (pelo menos 1).
+   607→
+   608→*   **Lógica Condicional de Dependentes:**
+   609→    *   Se plano selecionado na Etapa 1 for `INDIVIDUAL`: Checkbox "Possui dependentes (filhos < limite de cobertura)?" fica **desabilitado e oculto**.
+   610→    *   Se Checkbox desabilitado, reforça exibição de planos `INDIVIDUAL`.
+   611→    *   Se Checkbox habilitado (plano FAMILIAR): Ao marcar, expande seção de Dependentes.
+   612→*   **Seção de Agregados:** Sempre disponível (respeitando limite global de 4 por contrato). Cada agregado cadastrado exibe card com botão "Adicionar Dependentes" **apenas se** `estado_civil` do agregado for `CASADO` ou `UNIAO_ESTAVEL`.
+   613→
+   614→#### Etapa 3: Cadastro de Dependente (`sessionType = DEPENDENTE`)
+   615→*   `tipo_registro` injetado: `DEPENDENTE`
+   616→*   `titular_raiz_id` injetado automaticamente.
+   617→*   Parentesco restrito a: `CONJUGE`, `FILHO`.
+   618→*   Campos obrigatórios: Nome, CPF, Data Nascimento, Gênero, Estado Civil.
+   619→*   Profissão, Endereço, Telefone, Email: **Não exibidos**.
+   620→*   **Validação de idade por parentesco:**
+   621→    *   Se `parentesco` = `CONJUGE`: `Idade <= Config.IDADE_LIMITE_CONJUGE`
+   622→    *   Se `parentesco` = `FILHO`: `Idade <= Config.IDADE_LIMITE_DEPENDENTE` (limite de cadastro). Se idade > `Config.IDADE_COBERTURA_FILHO` mas <= `Config.IDADE_LIMITE_DEPENDENTE`, permitir cadastro com tag de restrição (ver seção 3.4).
+   623→
+   624→#### Etapa 4: Cadastro de Agregado (`sessionType = AGREGADO`)
+   625→*   `tipo_registro` injetado: `AGREGADO`
+   626→*   `titular_raiz_id` injetado automaticamente.
+   627→*   Parentesco: Lista completa (9 opções).
+   628→*   Campos obrigatórios: Nome, CPF, Data Nascimento, Gênero, Estado Civil, **Profissão**.
+   629→*   Endereço, Telefone, Email: **Exibidos e obrigatórios**.
+   630→*   Validação de idade: `Idade <= Config.IDADE_LIMITE_AGREGADO`.
+   631→*   **Gatilho de Sub-dependentes:** Ao selecionar `estado_civil` = `CASADO` ou `UNIAO_ESTAVEL`, componente renderiza dinamicamente sub-seção "Dependentes deste Agregado" com botão "Adicionar Dependente".
+   632→
+   633→#### Etapa 5: Cadastro de Sub-dependente (`sessionType = SUB_DEPENDENTE`)
+   634→*   `tipo_registro` injetado: `SUB_DEPENDENTE`
+   635→*   `titular_raiz_id` injetado automaticamente (mesmo do agregado pai). O `agregado_pai_id` é resolvido via tabela `vinculos` no backend (não é campo de `pessoas_fisicas`).
+   636→*   `agregado_pai_id` injetado automaticamente no payload (ID do agregado que abriu a sessão). Backend insere na tabela `vinculos`.
+   637→*   Parentesco restrito a: `CONJUGE`, `FILHO`.
+   638→*   Campos obrigatórios: Nome, CPF, Data Nascimento, Gênero, Estado Civil.
+   639→*   Profissão, Endereço, Telefone, Email: **Não exibidos**.
+   640→*   **Validação de idade por parentesco:**
+   641→    *   Se `parentesco` = `CONJUGE`: `Idade <= Config.IDADE_LIMITE_CONJUGE`
+   642→    *   Se `parentesco` = `FILHO`: `Idade <= Config.IDADE_LIMITE_SUB_DEPENDENTE` (limite de cadastro). Se idade > `Config.IDADE_COBERTURA_SUB_FILHO` mas <= `Config.IDADE_LIMITE_SUB_DEPENDENTE`, permitir cadastro com tag de restrição.
+   643→
+   644→#### Etapa 6: Resumo Financeiro e Confirmação
+   645→*   **Cálculo de Parcela:** Exibe detalhamento explícito: `Valor Base do Plano + (Quantidade de Agregados × Valor por Agregado)`.
+   646→*   **Visualização:** Tabela resumo de todos os vinculados (Titular, Dependentes, Agregados, Sub-dependentes) com suas respectivas tags de proteção/restrição.
+   647→*   **Ação:** Botão "Submeter Proposta". Cria contrato e todos os vínculos em transação única.
+   648→
+   649→### 3.2 Fluxo de Identificação Unificada (CPF + Data Nascimento)
+   650→Detalhamento passo a passo:
+   651→
+   652→1.  Usuário digita CPF → máscara `000.000.000-00` aplicada automaticamente.
+   653→2.  No evento `blur` ou ao completar 14 caracteres:
+   654→    *   Frontend valida algoritmo do CPF. Se inválido → erro inline "CPF inválido".
+   655→    *   Se válido → chamada assíncrona ao backend `GET /api/pessoas-fisicas/buscar-por-cpf?cpf={cpf}`.
+   656→3.  Respostas possíveis:
+   657→    *   **404 (Não encontrado):** Habilita todos os campos. Fluxo normal.
+   658→    *   **200 + Data Nascimento preenchida no formulário:**
+   659→        *   Compara data retornada com data digitada.
+   660→        *   **Iguais:** Exibe modal: *"Cadastro encontrado para {nome}. Deseja utilizar os dados existentes?"*
+   661→            *   SIM: Preenche todos os campos automaticamente, desabilita edição, marca flag `usando_dados_existentes=true` no payload.
+   662→            *   NÃO: Permite sobrescrita. Payload inclui flag `atualizacao_cadastral=true`. Backend loga como atualização.
+   663→        *   **Diferentes:** Exibe erro bloqueante: *"Este CPF já está cadastrado para outra pessoa ({nome}). Verifique os dados ou utilize outro CPF."*
+   664→    *   **200 + Data Nascimento vazia no formulário:**
+   665→        *   Torna campo Data Nascimento obrigatório imediatamente.
+   666→        *   Exibe mensagem contextual: *"Este CPF já existe em nossa base. Informe a data de nascimento para validar sua identidade."*
+   667→        *   Após preencher data, reexecuta comparação (passo acima).
+   668→
+   669→### 3.3 Máscaras e Formatação Detalhadas
+   670→*   **CPF:** `###.###.###-##` → Payload: apenas dígitos/alphanum.
+   671→*   **Telefone:** Dinâmico baseado no 9º dígito:
+   672→    *   11 dígitos: `(##) #####-####`
+   673→    *   10 dígitos: `(##) ####-####`
+   674→    *   Payload: apenas dígitos.
+   675→*   **CEP:** `#####-###` → Payload: apenas dígitos. Busca automática via API ViaCEP ao completar 8 dígitos (preenche logradouro, bairro, cidade, UF).
+   676→*   **Data:** Input nativo `date` ou datepicker. Renderização visual: `DD/MM/AAAA`. Payload: `YYYY-MM-DD`.
+   677→
+   678→### 3.4 Validação de Idade Limite – Detalhamento Harmonizado
+   679→*   Cálculo: `floor((NOW() - data_nascimento) / 365.25)`
+   680→*   Limite consultado em tempo real via `GET /api/configuracoes/{chave}` (cacheado no frontend por 5 min).
+   681→*   **Chave de configuração usada depende do tipo de sessão E do parentesco selecionado:**
+   682→    *   `TITULAR` → `IDADE_LIMITE_TITULAR`
+   683→    *   `DEPENDENTE` com parentesco `CONJUGE` → `IDADE_LIMITE_CONJUGE`
+   684→    *   `DEPENDENTE` com parentesco `FILHO` → `IDADE_LIMITE_DEPENDENTE` (cadastro) + `IDADE_COBERTURA_FILHO` (cobertura)
+   685→    *   `AGREGADO` → `IDADE_LIMITE_AGREGADO`
+   686→    *   `SUB_DEPENDENTE` com parentesco `CONJUGE` → `IDADE_LIMITE_CONJUGE`
+   687→    *   `SUB_DEPENDENTE` com parentesco `FILHO` → `IDADE_LIMITE_SUB_DEPENDENTE` (cadastro) + `IDADE_COBERTURA_SUB_FILHO` (cobertura)
+   688→*   **Bloqueio (idade > limite de cadastro):** Submissão desabilitada + mensagem vermelha abaixo do campo data: *"Idade máxima para {tipo_registro} ({parentesco}) é {limite} anos. Data informada resulta em {idade_calculada} anos."*
+   689→*   **Restrição de Cobertura (idade > limite de cobertura, mas <= limite de cadastro, aplicável apenas a FILHO):** Submissão **permitida**, mas frontend exibe tag amarela: *"Este dependente será cadastrado SEM DIREITO À PROTEÇÃO (acima de {idade_cobertura} anos)."* Backend persiste e aplica a tag no contrato e em PDFs.
+   690→*   **Modo EDIÇÃO:**
+   691→    *   Regra Geral: Trava de bloqueio completamente desativada. Mensagem informativa amarela: *"Edição cadastral: validação de idade desativada."*
+   692→    *   **EXCEÇÃO OBRIGATÓRIA:** Se o campo `data_nascimento` for modificado durante a edição, a validação de idade limite de cadastro é **reaplicada integralmente**. Se a nova data violar o limite, a edição é bloqueada com mensagem vermelha padrão.
+   693→
+   694→---
+   695→
+   696→## 4. Regras de Negócio Detalhadas e Fluxos
+   697→
+   698→### 4.1 Elegibilidade e Hierarquia Completa
+   699→
+   700→#### Titular e Dependentes Diretos
+   701→*   Máximo de **8 dependentes** vinculados diretamente ao Titular.
+   702→*   Condição: Plano deve ser `FAMILIAR`. Se `INDIVIDUAL`, backend rejeita qualquer tentativa de cadastro de dependente.
+   703→*   Parentesco permitido: `CONJUGE`, `FILHO`.
+   704→*   **Filhos acima do limite de cobertura (`IDADE_COBERTURA_FILHO`):** Permitido cadastro (até o `IDADE_LIMITE_DEPENDENTE`), mas exibido com tag **"SEM DIREITO À PROTEÇÃO"** em UI e PDFs. Ignorado em relatórios de cobertura ativa. A tag é reavaliada automaticamente a cada aniversário.
+   705→*   **Cônjuges acima do limite (`IDADE_LIMITE_CONJUGE`):** Cadastro **bloqueado** (sem exceção de cobertura, pois cônjuge sempre possui cobertura se cadastrado).
+   706→
+   707→#### Agregados (Raiz)
+   708→*   Máximo de **4 agregados** vinculados diretamente ao Titular. Este limite é global por contrato, somando-se agregados individuais e familiares.
+   709→*   Classificação por `estado_civil` no ato do cadastro:
+   710→    *   **Agregado Familiar:** `CASADO` ou `UNIAO_ESTAVEL` → Habilita sub-vínculos.
+   711→    *   **Agregado Individual:** `SOLTEIRO`, `DIVORCIADO`, `VIUVO` → Sub-vínculos bloqueados para novos cadastros.
+   712→*   Parentesco permitido: Todos os 9 tipos.
+   713→*   Profissão: Obrigatória. Backend rejeita cadastro sem profissão.
+   714→*   Endereço, Telefone, Email: Obrigatórios. Backend rejeita cadastro sem estes dados.
+   715→*   Cada agregado gera acréscimo de `valor_por_agregado` na parcela.
+   716→
+   717→#### Sub-dependentes (Dependentes do Agregado)
+   718→*   Cada Agregado Familiar pode cadastrar seus próprios dependentes.
+   719→*   Aplicam-se as regras de idade, parentesco e proteção conforme seção 3.4 (usando chaves de configuração específicas por parentesco).
+   720→*   Backend valida: na tabela `vinculos`, `agregado_pai_id` deve referenciar pessoa existente com `tipo_registro = AGREGADO`, com `estado_civil` IN (`CASADO`, `UNIAO_ESTAVEL`) no momento da **inserção** e pertencer ao mesmo `titular_raiz_id`.
+   721→*   **REGRA DE PRESERVAÇÃO SELETIVA NA ALTERAÇÃO DE ESTADO CIVIL:**
+   722→    *   Quando o Titular editar o `estado_civil` de um Agregado de `CASADO`/`UNIAO_ESTAVEL` para `SOLTEIRO`, `DIVORCIADO` ou `VIUVO`:
+   723→        1.  O sistema deve identificar todos os sub-dependentes vinculados a este agregado (via tabela `vinculos` onde `agregado_pai_id` = ID do agregado e `data_fim_vinculo IS NULL`).
+   724→        2.  **APENAS** sub-dependentes com `parentesco = 'CONJUGE'` terão seu vínculo desativado logicamente (`data_fim_vinculo` preenchida com data atual).
+   725→        3.  Sub-dependentes com `parentesco = 'FILHO'` (menores de 21 anos ou dentro do limite de cobertura) **DEVEM PERMANECER ATIVOS**, mantendo seu vínculo com o agregado e sua cobertura, independentemente do novo estado civil do agregado.
+   726→        4.  Frontend deve exibir alerta informativo antes de salvar: *"Ao alterar para {novo_estado}, o cônjuge deste agregado será removido. Os filhos dentro do limite de cobertura permanecerão protegidos. Confirmar?"*
+   727→    *   Novos cadastros de sub-dependentes continuam bloqueados enquanto o agregado estiver em estado civil individual.
+   728→
+   729→### 4.2 Proteção, Cobertura e Fluxo de Aprovação Manual
+   730→
+   731→#### Cadastro e Submissão
+   732→1.  Cliente/Revendedor finaliza cadastro completo (Titular + Dependentes + Agregados + Sub-dependentes).
+   733→2.  Backend verifica constraint de unicidade: se já existir contrato ativo (`AGUARDANDO_APROVACAO` ou `APROVADO`) para o mesmo titular, rejeita com erro 409 (Conflict).
+   734→3.  Sistema cria registro em `contratos` com status `AGUARDANDO_APROVACAO`. Campo `data_inicio` permanece **NULL**.
+   735→4.  Sistema cria registro vazio em `dados_aprovacao_seguradora` (capital e código = NULL).
+   736→5.  Sistema cria `transacoes_bonificacao` com status `PENDENTE_APROVACAO` para o revendedor indicador e para toda a árvore de `patrocinios` ativos (via `patrocinios` onde `data_fim_vinculo IS NULL`, conforme níveis configurados).
+   737→6.  Contrato aparece na **Fila de Aprovação** do SuperAdmin.
+   738→
+   739→#### Aprovação pelo SuperAdmin
+   740→1.  Admin acessa Fila de Aprovação.
+   741→2.  Visualiza árvore completa de pessoas (renderizada a partir de tabelas normalizadas `pessoas_fisicas` + `vinculos`).
+   742→3.  **Campos editáveis habilitados:** `capital_segurado_informado`, `codigo_seguradora_informado`, `observacoes_gestor`, `data_inicio` (opcional, default = data atual).
+   743→4.  Admin preenche capital e código conforme condições negociadas com a seguradora.
+   744→5.  Admin clica **APROVAR**:
+   745→    *   `dados_aprovacao_seguradora.data_aprovacao` preenchido automaticamente com timestamp atual.
+   746→    *   `contratos.data_inicio` preenchido: se admin definiu uma data (>= `data_aprovacao`), usa a definida; caso contrário, usa `data_aprovacao`.
+   747→    *   `contratos.status` → `APROVADO`
+   748→    *   `dados_aprovacao_seguradora.admin_aprovador_id` preenchido.
+   749→    *   Todas as `transacoes_bonificacao` associadas mudam para `LIBERADO` e `data_liberacao` preenchida.
+   750→    *   `saldo_bloqueado` das carteiras envolvidas é transferido para `saldo_disponivel`.
+   751→    *   Sistema gera PDF da apólice usando dados normalizados + capital informado.
+   752→6.  Admin clica **REJEITAR** (motivo obrigatório):
+   753→    *   `contratos.status` → `REJEITADO`
+   754→    *   Todas as `transacoes_bonificacao` associadas mudam para `ESTORNADO` e `data_estorno` preenchida.
+   755→    *   `saldo_bloqueado` das carteiras envolvidas é zerado (valores removidos).
+   756→    *   Revendedor notificado via dashboard e email.
+   757→
+   758→#### Pós-Aprovação
+   759→*   Campos `capital_segurado_informado` e `codigo_seguradora_informado` tornam-se **somente leitura**.
+   760→*   Alterações exigem fluxo de endosso/avença (fora do escopo atual, mas campo `observacoes_gestor` permanece editável para histórico).
+   761→
+   762→#### Escopo Mínimo de Endosso Modelado
+   763→
+   764→*   **Upgrade/Downgrade de Plano:** Alteração de `plano_id` com recálculo imediato de `valor_parcela_base` e `valor_total_agregados`. Ajuste financeiro pro-rata aplicado na próxima fatura gerada.
+   765→*   **Exclusão Voluntária de Dependente/Agregado:** Remoção lógica via preenchimento de `data_fim_vinculo` na tabela `vinculos`. Recalcula `valor_total_agregados` se aplicável e ajusta valor da próxima parcela.
+   766→*   **Alteração de Capital Segurado:** Modificação de `capital_segurado_informado` em `dados_aprovacao_seguradora`. Exige nova aprovação manual explícita do SuperAdmin (fluxo similar à aprovação inicial) e geração de novo PDF de certificado.
+   767→*   **Fora do Escopo Atual:** Endosso por mudança de profissão (alteração de risco), alteração de beneficiário financeiro e transferência de titularidade. Estes cenários exigem desenvolvimento futuro com validação atuarial específica e não são suportados pela versão atual do sistema.
+   768→
+   769→#### Cancelamento Pós-Aprovação e Estorno de Comissões Liberadas
+   770→1.  Quando um contrato com status `APROVADO` for cancelado (por inadimplência, fraude, arrependimento ou solicitação):
+   771→    *   `contratos.status` → `CANCELADO`
+   772→    *   `contratos.data_fim` preenchido com data do cancelamento.
+   773→2.  **Estorno de bonificações já liberadas:** Para cada `transacoes_bonificacao` com status `LIBERADO` associada ao contrato cancelado:
+   774→    *   `transacoes_bonificacao.status` → `ESTORNADO` e `data_estorno` preenchida.
+   775→    *   O valor da bonificação é debitado do `saldo_disponivel` da carteira do revendedor.
+   776→    *   Se `saldo_disponivel` ficar negativo, o revendedor terá **saldo devedor**. Futuras bonificações liberadas serão automaticamente abatidas do saldo devedor antes de ficarem disponíveis.
+   777→    *   Se a bonificação já foi utilizada para pagamento de parcela (registrado em `transacoes_pagamento`), o débito negativo na carteira permanece e o revendedor é notificado. O pagamento da parcela **não é revertido** (o boleto já foi emitido/pago).
+   778→3.  Revendedor notificado via dashboard e email com detalhamento do estorno.
+   779→
+   780→### 4.3 Comissionamento Multinível – Regras Detalhadas
+   781→
+   782→#### Geração e Idempotência
+   783→*   No momento do fechamento do contrato indicado, sistema:
+   784→    1.  Identifica o `revendedor_id` que indicou (titular do contrato ou revendedor vinculado).
+   785→    2.  Consulta `patrocinios` recursivamente até o topo da árvore (apenas registros onde `data_fim_vinculo IS NULL`).
+   786→    3.  Para cada nível, consulta `niveis_bonificacao` onde `nivel_profundidade` está entre `min` e `max`.
+   787→    4.  Cria `transacoes_bonificacao` para cada revendedor elegível na cadeia, respeitando a constraint de unicidade `(origem_contrato_id, carteira_id, nivel_origem)` para garantir idempotência.
+   788→    5.  Atualiza `saldo_bloqueado` na carteira de cada beneficiário.
+   789→
+   790→#### Visibilidade no Dashboard
+   791→*   Revendedor vê dois saldos:
+   792→    *   **Disponível:** `saldo_disponivel` da carteira. Pode ser usado imediatamente. Se negativo, exibir como "Saldo Devedor" em vermelho.
+   793→    *   **A Receber:** Soma de `transacoes_bonificacao` com status `PENDENTE_APROVACAO`. Exibido separadamente com tooltip "Será liberado após aprovação do contrato pela administradora".
+   794→
+   795→#### Uso do Saldo Disponível (Abatimento de Parcelas)
+   796→1.  Revendedor acessa "Pagar Parcela com Comissão".
+   797→2.  Seleciona contrato próprio ou de terceiro (busca por CPF/nome). Sistema exibe `contas_a_pagar` com status `PENDENTE` ou `PARCIALMENTE_PAGO` associadas ao contrato.
+   798→3.  Informa valor a utilizar (máximo = `min(saldo_disponivel, valor_restante da parcela)`). **Não permitido se `saldo_disponivel` <= 0.**
+   799→4.  Sistema cria registro em `transacoes_pagamento` com os dados do abatimento.
+   800→5.  Sistema debita `valor_abatido` de `saldo_disponivel` da carteira.
+   801→6.  Sistema atualiza `contas_a_pagar.valor_restante` subtraindo o `valor_abatido`.
+   802→7.  Se `valor_restante` = 0: `contas_a_pagar.status` → `PAGO`. Não gera boleto.
+   803→8.  Se `valor_restante` > 0: `contas_a_pagar.status` → `PARCIALMENTE_PAGO`. Gera boleto residual no valor de `valor_restante`.
+   804→9.  Se valor_bonificacao >= valor_parcela: Parcela quitada. Boleto não gerado ou gerado com valor R$ 0,00 e status `PAGO`.
+   805→
+   806→#### Estorno Automático (Rejeição)
+   807→*   Rejeição na fila de aprovação dispara estorno em cascata (ver seção 4.2, passo 6 da Rejeição).
+   808→*   Se bonificação já foi usada para pagamento antes da aprovação: cenário **impossível** pela regra de `saldo_disponivel` (bonificação só vai para disponível após aprovação). Protegido por constraint de status: `transacoes_pagamento` só pode ser criada se a transação de bonificação correspondente tiver status `LIBERADO`.
+   809→
+   810→#### Estorno por Cancelamento (Pós-Aprovação)
+   811→*   Ver seção 4.2, "Cancelamento Pós-Aprovação e Estorno de Comissões Liberadas".
+   812→*   A regra de saldo devedor garante que o sistema recupera o valor mesmo que a bonificação já tenha sido utilizada.
+   813→
+   814→### 4.4 Recorrência e Renovação Automática
+   815→*   **Geração de Parcelas:** Job diário verifica contratos `APROVADO` com periodicidade `MENSAL`.
+   816→*   **Regra:** Se última parcela quitada ou vencida há > 5 dias, gerar nova `contas_a_pagar` para o próximo ciclo.
+   817→*   **Valor:** Recalculado com base nos agregados ativos no momento da geração.
+   818→*   **Boleto:** Gerado automaticamente e link atualizado em `contratos_legado_flat`.
+   819→
+   820→### 4.5 Sinistro, Carência, Inadimplência e Compliance Legal
+   821→
+   822→#### Validação de Carência em Acionamento de Sinistro
+   823→1.  Ao receber solicitação de sinistro (via API ou painel admin), sistema consulta `dados_aprovacao_seguradora.data_aprovacao` e compara com data do óbito.
+   824→2.  Verifica causa do óbito (`causa_mortis_hash` ou metadado não sensível) e aplica regra correspondente:
+   825→    -   **Acidental:** Óbito < `DIAS_CARENCIA_ACIDENTAL` → Bloqueio automático + notificação à seguradora.
+   826→    -   **Natural:** Óbito < `MESES_CARENCIA_NATURAL` → Bloqueio automático.
+   827→    -   **Suicídio:** Óbito < `MESES_CARENCIA_SUICIDIO` → Bloqueio de indenização financeira; assistência funeral segue condições gerais da seguradora.
+   828→3.  ⚠️ **AIR-GAP:** Causa mortis e atestados NUNCA são persistidos em claro no banco relacional. Apenas hash/token referenciando documento em S3/IAM restrito.
+   829→
+   830→#### Job Diário de Suspensão por Inadimplência
+   831→1.  Execução diária às 02:00 AM (horário de Brasília).
+   832→2.  Identifica contratos `APROVADO` onde `contas_a_pagar.status = PENDENTE` e `data_vencimento < NOW() - DIAS_SUSPENSAO_INADIMPLENCIA dias`.
+   833→3.  Atualiza `contratos.status` para `SUSPENSO`.
+   834→4.  🚨 **NOTIFICAÇÃO CDC:** Envia notificação obrigatória ao titular (email/SMS/app) ANTES e APÓS mudança de status, informando suspensão de cobertura e prazo para regularização.
+   835→5.  Frontend e App devem exibir banner vermelho "COBERTURA SUSPENSA" e bloquear botões de acionamento de sinistro.
+   836→
+   837→#### Fluxo de Récita (Reintegração Pós-Suspensão)
+   838→1.  Titular quita todas as parcelas em atraso (via boleto ou abatimento).
+   839→2.  Sistema recalcula carência proporcional: nova carência = `(dias_atraso / 30) * fator_proporcional` (conforme condições gerais).
+   840→3.  Atualiza `contratos.status` para `APROVADO`.
+   841→4.  Registra log de auditoria com timestamp de reativação e nova data de fim de carência.
+   842→
+   843→#### Remissão Automática por Óbito do Titular
+   844→1.  Ao confirmar óbito do titular (sinistro aprovado), sistema verifica `MESES_REMISSAO_OBITO > 0`.
+   845→2.  Cria registro em `remissoes_contrato` com `data_fim_remissao = data_obito + MESES_REMISSAO_OBITO meses`.
+   846→3.  Durante período de remissão: geração de `contas_a_pagar` continua, mas `valor = 0.00` e `status = ISENTO_REMISSAO`.
+   847→4.  Job diário verifica `data_fim_remissao`; ao expirar, retoma cobrança normal e notifica dependentes.
+   848→
+   849→#### Arrependimento CDC (7 Dias)
+   850→1.  Botão "Cancelar por Arrependimento" disponível no app/dashboard até 7 dias corridos após `data_inicio`.
+   851→2.  🚨 **NOTIFICAÇÃO LIMINAR:** Antes de processar, a UI deve exibir modal de confirmação explícita: *"Você tem certeza? O cancelamento por arrependimento é irreversível e todas as bonificações geradas serão estornadas."*
+   852→3.  Ao confirmar: cancela contrato com status **`CANCELADO_CDC`** (não utilizar `CANCELADO`), estorna 100% do valor pago (pro-rata integral) e estorna bonificações em cascata (mesmo fluxo de cancelamento pós-aprovação).
+   853→4.  💰 **ZERO MULTA:** Nenhuma taxa administrativa ou penalidade pode ser cobrada neste fluxo. Estorno deve ser processado em até 7 dias úteis conforme Art. 49 CDC.
+   854→
+   855→#### Expulsão Automática por Maioridade
+   856→1.  Job diário identifica dependentes/sub-dependentes com `parentesco = FILHO` e `data_nascimento + 21 anos <= NOW()`.
+   857→2.  Desativa vínculo logicamente (`data_fim_vinculo = NOW()`).
+   858→3.  Notifica titular com opção "Converter para Novo Contrato Individual" (link direto para fluxo de contratação pré-preenchido).
+   859→4.  Se não convertido em 30 dias, remove definitivamente da cobertura ativa.
+   860→
+   861→#### Retenção Tributária em Saques PF
+   862→1.  Ao criar `transacoes_pagamento` tipo saque e `SAQUE_PF_ATIVO = true`:
+   863→    -   Calcula IRRF conforme tabela vigente (campo `aliquota_irrf` em config).
+   864→    -   Calcula INSS sobre RPA (11% até teto).
+   865→    -   Persiste valores em campos `valor_irrf_retido` e `valor_inss_retido`.
+   866→    -   Valor líquido = `valor_bruto - irrf - inss`.
+   867→2.  Gera DARF/GPS automaticamente no módulo Financeiro.
+   868→
+   869→#### Anti-Vínculo Empregatício (Hardening Jurídico)
+   870→1.  ⚠️ **AIR-GAP FUNCIONAL:** Sistema NÃO pode conter telas, APIs ou campos relacionados a: cumprimento de horário, metas punitivas, subordinação hierárquica funcional, ponto eletrônico ou avaliação de desempenho para revendedores.
+   871→2.  Relação revendedor-sistema é EXCLUSIVAMENTE comercial/patrocínio multinível. Qualquer menção a "funcionário", "salário" ou "jornada" em logs/UI é bug crítico.
+   872→
+   873→---
+   874→
+   875→## 5. Ambientes de Gestão e Permissões Detalhados
+   876→
+   877→### 5.1 SuperAdmin
+   878→*   **Direito a acesso a todos os ambientes de todos os perfis de usuários:**
+   879→    *   Supervisor de Equipe
+   880→    *   Financeiro
+   881→    *   Técnico / Suporte
+   882→    *   Ambiente de Validação de Usuários
+   883→*   **Fila de Aprovação:**
+   884→    *   Lista paginada com filtros: data, seguradora, status, revendedor.
+   885→    *   Detalhe do contrato: Árvore visual de pessoas (Titular → Dependentes / Agregados → Sub-dependentes). Renderizada via JOIN de `pessoas_fisicas` + `vinculos`.
+   886→    *   Formulário de aprovação: Campos `capital_segurado_informado`, `codigo_seguradora_informado`, `observacoes_gestor`, `data_inicio` (opcional). Botões Aprovar/Rejeitar.
+   887→    *   Validação: Aprovar sem preencher capital e código → erro bloqueante. `data_inicio` não pode ser anterior à data atual.
+   888→*   **Gestão de Seguradoras:**
+   889→    *   CRUD completo.
+   890→    *   Editor Markdown com preview lado a lado.
+   891→    *   Botão "Testar Renderização PDF" que gera PDF de exemplo com dados fictícios.
+   892→*   **Configurações de Regras do Negócio:**
+   893→    *   CRUD de chaves/valores.
+   894→    *   Validação de tipo por chave (idade = int positivo, valores = decimal).
+   895→    *   Histórico de alterações de configuração.
+   896→*   **Gestão Cadastral:**
+   897→    *   Busca unificada por CPF/nome.
+   898→    *   Ações: Aprovar, Desativar, Cancelar, Editar (sem trava de idade, exceto na alteração de data_nascimento).
+   899→    *   Logs de auditoria visíveis.
+   900→*   **Financeiro:**
+   901→    *   CRUD de `contas_a_pagar`.
+   902→    *   Relatório de reconciliation: Comissões liberadas vs. Boletos pagos vs. Abatimentos via `transacoes_pagamento`.
+   903→    *   Visualização de carteiras com saldo devedor.
+   904→*   **Gestão de Rede:**
+   905→    *   Visualização gráfica da árvore de `patrocinios` (apenas vínculos ativos: `data_fim_vinculo IS NULL`).
+   906→    *   Histórico de realocações (vínculos com `data_fim_vinculo` preenchido).
+   907→    *   Busca por revendedor para ver subordinados diretos e indiretos.
+   908→    *   Exportação CSV da árvore.
+   909→
+   910→### 5.2 Cliente / Revendedor
+   911→*   **Dashboard:**
+   912→    *   Cards: Saldo Disponível (ou Saldo Devedor, se negativo), Saldo A Receber, Status do Plano, Link de Indicação (com rastreamento UTM).
+   913→    *   Gráfico de evolução de bonificações (últimos 6 meses).
+   914→*   **Autogestão de Vínculos:**
+   915→    *   Lista de dependentes, agregados e sub-dependentes.
+   916→    *   Botões Adicionar/Editar/Remover (respeitando limites e regras de estado civil).
+   917→    *   Indicador visual de proteção ativa/inativa (acima do limite de cobertura).
+   918→*   **Histórico Financeiro:**
+   919→    *   Extrato de transações de bonificação (geração, liberação, estorno, uso).
+   920→    *   Extrato de `transacoes_pagamento` (abatimentos realizados).
+   921→    *   Extrato de pagamentos com bonificação.
+   922→*   **Indicações:**
+   923→    *   Lista de indicados com status do contrato.
+   924→    *   Link personalizado para nova indicação.
+   925→
+   926→### 5.3 Supervisor de Equipe
+   927→*   **Direito a acesso ao ambiente de 'Cliente / Revendedor', mais:**
+   928→*   **Visão Hierárquica:**
+   929→    *   Dashboard com métricas agregadas da equipe subordinada (baseado em `patrocinios` ativos).
+   930→    *   Lista de subordinados diretos e seus indicadores de performance.
+   931→*   **Auxílio Cadastral:**
+   932→    *   Pode iniciar cadastro em nome de subordinado (logado como supervisor, mas `titular_id` do subordinado).
+   933→    *   Não acessa configurações globais, seguradoras ou fila de aprovação.
+   934→
+   935→### 5.4 Financeiro
+   936→*   **Contas a Pagar:** CRUD completo.
+   937→*   **Inadimplência:** Lista de contratos com parcelas atrasadas.
+   938→*   **Abatimentos:** Visualização de `transacoes_pagamento`. Capacidade de estornar abatimento (volta o valor para a carteira e reabre a parcela).
+   939→*   **Reconciliation:** Cruzamento de boletos pagos vs. bonificações liberadas vs. abatimentos via carteira.
+   940→*   **Sem acesso a:** Dados de saúde, cláusulas de seguradora, edição cadastral.
+   941→
+   942→### 5.5 Técnico / Suporte
+   943→*   **Logs de Integração:** Visualização de erros de API com seguradoras.
+   944→*   **Correção Cadastral:** Edição de qualquer campo de `pessoas_fisicas` sem trava de idade (exceto data_nascimento). Log obrigatório de motivo.
+   945→*   **Ferramentas de Diagnóstico:** Verificação de integridade de vínculos (consistência entre `pessoas_fisicas.titular_raiz_id` e `vinculos`), busca por CPF duplicado, validação de árvore de patrocínio (ciclos, órfãos), verificação de `saldo_disponivel` negativo.
+   946→*   **Sem acesso a:** Financeiro, bonificações, aprovação de contratos.
+   947→
+   948→### 5.6 Ambiente de Validação de Usuários
+   949→*   Fluxo pré-ativação para verificação de identidade (documento, selfie, etc.).
+   950→*   Integrado à fila de aprovação: Contrato só entra na fila após validação de usuário concluída.
+   951→*   Status intermediário: `VALIDACAO_PENDENTE`, `VALIDACAO_FALHOU`.
+   952→
+   953→---
+   954→
+   955→## 6. Diretrizes para Evitar Conflitos Futuros
+   956→
+   957→1.  **Fim Definitivo da Sincronização de Dados de Vínculos na Flat:** A equipe de engenharia **não deve** implementar triggers, jobs ou código para popular campos de dependentes/agregados na tabela `contratos_legado_flat`. Estes campos foram removidos do escopo documental. A única sincronização permitida para a flat são os campos financeiros e os dados de identificação do Titular Franqueado (`CPFCNPJFranq`, `NomeClientePFPJFranq`). Qualquer demanda de relatório/PDF de vínculos deve usar API normalizada.
+   958→2.  **Gatilho de Liberação de Comissão Acoplado à Aprovação:** A transição de `PENDENTE_APROVACAO` para `LIBERADO` deve ocorrer **exclusivamente** dentro da mesma transação de banco que muda `contratos.status` para `APROVADO`. Nunca em job assíncrono separado. Isso evita cenários de bonificação liberada sem contrato aprovado.
+   959→3.  **Imutabilidade do Capital Pós-Aprovação:** Constraint no banco: `UPDATE em dados_aprovacao_seguradora SET capital_segurado_informado WHERE contrato_id IN (SELECT id FROM contratos WHERE status = 'APROVADO')` deve ser bloqueado via trigger. Alterações exigem novo fluxo de endosso.
+   960→4.  **Componente Contextual Validado no Backend:** O backend deve validar que `tipo_registro` no payload corresponde à rota/sessão esperada. Ex: POST `/api/titular/dependentes` deve rejeitar payload com `tipo_registro=AGREGADO`. Isso previne injeção de tipos via manipulação de frontend.
+   961→5.  **Integridade de Sub-dependentes na Alteração de Estado Civil:** A lógica de preservação seletiva (manter filhos, remover apenas cônjuge) deve ser implementada **no backend** dentro da transação de atualização do agregado. Frontend apenas confirma a ação. Trigger ou stored procedure deve garantir que, ao mudar estado civil para individual, apenas vínculos `SUB_DEPENDENTE` com `parentesco='CONJUGE'` recebam `data_fim_vinculo`. Vínculos com `parentesco='FILHO'` não devem ser tocados.
+   962→6.  **Árvore de Patrocínio com Histórico e Atomicidade:** INSERT em `patrocinios` cria novo registro. UPDATE/DELETE em registros ativos são proibidos via constraint. Realocações exigem: (a) preencher `data_fim_vinculo` do registro atual do revendedor; (b) INSERT de novo registro com novo `patrocinador_id`, `nivel_profundidade` recalculado e `data_fim_vinculo = NULL`; (c) **Recálculo atômico em cascata** de todos os subordinados diretos e indiretos na mesma transação. A constraint `UNIQUE INDEX WHERE data_fim_vinculo IS NULL` garante que apenas um vínculo ativo existe por revendedor. Log de auditoria obrigatório em toda realocação.
+   963→7.  **CPF Futuro-Proof:** VARCHAR(14) já comporta CPF/CNPJ atual. Quando letras forem incluídas oficialmente, ajustar apenas regex de validação e máscara no frontend. Backend já aceita alfanumérico. Não alterar tipo de dado.
+   964→8.  **Sanitização de Markdown Server-Side:** Todo `clausulas_markdown` salvo em `seguradoras` deve passar por sanitização server-side antes de persistência, usando biblioteca nativa do ecossistema (ex: `isomorphic-dompurify`, `Bleach`, `HTMLPurifier`). Renderização em PDF deve usar biblioteca que não execute JavaScript.
+   965→9.  **ENUM de Emails Corrigido:** O campo `tipo` na tabela `emails` utiliza os valores `PRINCIPAL` e `SECUNDARIO`. Os valores anteriores (`PRINCIPAL_WHATSAPP`, `SECUNDARIO_RECADOS`) eram uma replicação indevida do ENUM de telefones e foram corrigidos. Sistemas legados que consumiam os valores antigos devem ser atualizados.
+   966→10. **Determinismo em Consultas:** Toda query que retorne listas de dependentes/agregados/sub-dependentes para exibição ou geração de documentos deve incluir `ORDER BY id ASC` ou `created_at ASC`. Sem isso, a ordem pode variar entre requisições, causando inconsistência em PDFs e relatórios.
+   967→11. **Unicidade de Contrato Ativo:** A constraint de índice parcial `UNIQUE INDEX idx_contrato_ativo_por_titular ON contratos (titular_id) WHERE status IN ('AGUARDANDO_APROVACAO', 'APROVADO')` deve existir no banco de dados. Frontend deve tratar o erro 409 (Conflict) exibindo mensagem: "Já existe um contrato ativo para este titular."
+   968→12. **Data de Início de Vigência:** O campo `contratos.data_inicio` só é preenchido na aprovação. Nunca deve ser anterior a `dados_aprovacao_seguradora.data_aprovacao`. Constraint no banco: `CHECK (data_inicio IS NULL OR data_inicio >= (SELECT data_aprovacao FROM dados_aprovacao_seguradora WHERE contrato_id = contratos.id))`.
+   969→13. **Vínculo Hierárquico Exclusivo:** O campo `agregado_pai_id` existe apenas na tabela `vinculos`. Nenhuma outra tabela deve armazenar esta relação. Queries que necessitem identificar o agregado pai de um sub-dependente devem fazer JOIN com `vinculos`.
+   970→14. **Idempotência de Comissões:** A constraint unique composta `(origem_contrato_id, carteira_id, nivel_origem)` em `transacoes_bonificacao` é obrigatória para prevenir duplicidade financeira em retries.
+   971→15. **Validação de Idade na Edição:** A exceção de reaplicação de validação na alteração de `data_nascimento` em modo edição deve ser documentada em todos os manuais de suporte e testada em QA.
+   972→
+   973→---
+   974→
+   975→## 7. Cenários de Teste Automatizado (E2E) – Critério de Aceite
+   976→
+   977→### Cenário 1: Sub-dependente Completo
+   978→Cadastrar Titular → Agregado Casado → Filho do Agregado → Verificar se `agregado_pai_id` está correto na tabela `vinculos` (e **não** em `pessoas_fisicas`) → Aprovar contrato → Verificar que `data_inicio` foi preenchido → Gerar PDF → Confirmar que sub-dependente aparece na apólice.
+   979→
+   980→### Cenário 2: Mudança de Estado Civil (Preservação Seletiva)
+   981→Cadastrar Agregado Casado → Vincular Sub-dependente Cônjuge + Sub-dependente Filho (< limite de cobertura) → Editar agregado para Solteiro → Confirmar que **apenas** o vínculo do Cônjuge recebeu `data_fim_vinculo` na tabela `vinculos` → Confirmar que o vínculo do Filho permanece ativo e com cobertura → Confirmar que novo cadastro de sub-dependente está bloqueado → Confirmar que PDF gerado pós-alteração exclui o cônjuge mas mantém o filho.
+   982→
+   983→### Cenário 3: Aprovação Manual com Validação de Campos
+   984→Submeter contrato → Verificar que `capital_segurado_informado` e `data_inicio` estão NULL → Tentar aprovar sem preencher capital e código → Confirmar erro bloqueante → Preencher capital, código e data_inicio → Aprovar → Confirmar que bonificação foi liberada, `data_inicio` preenchida e PDF gerado com capital informado.
+   985→
+   986→### Cenário 4: Unicidade de Contrato Ativo
+   987→Submeter contrato para Titular X (status = AGUARDANDO_APROVACAO) → Tentar submeter novo contrato para o mesmo Titular X → Confirmar erro 409 (Conflict) → Rejeitar o primeiro contrato → Tentar submeter novo contrato → Confirmar sucesso.
+   988→
+   989→### Cenário 5: Estorno em Cascata (Rejeição)
+   990→Submeter contrato com 3 níveis de patrocínio → Rejeitar → Confirmar que todas as 3 transações de bonificação foram estornadas, `data_estorno` preenchida e saldos bloqueados zerados.
+   991→
+   992→### Cenário 6: Estorno Pós-Aprovação (Cancelamento)
+   993→Submeter contrato com 2 níveis de patrocínio → Aprovar → Confirmar bonificações liberadas e `saldo_disponivel` atualizado → Cancelar contrato → Confirmar que bonificações foram estornadas → Confirmar que `saldo_disponivel` foi debitado → Se saldo ficar negativo, confirmar exibição de "Saldo Devedor" no dashboard.
+   994→
+   995→### Cenário 7: Abatimento de Parcela via Comissão
+   996→Aprovar contrato → Confirmar bonificação liberada → Acessar "Pagar Parcela com Comissão" → Selecionar parcela pendente → Abater valor parcial → Confirmar criação de `transacoes_pagamento` → Confirmar `contas_a_pagar.status` = `PARCIALMENTE_PAGO` e `valor_restante` atualizado → Confirmar geração de boleto residual → Abater o restante → Confirmar `contas_a_pagar.status` = `PAGO`.
+   997→
+   998→### Cenário 8: Validação de Idade com Exceção de Cobertura
+   999→Cadastrar Dependente FILHO com idade entre `IDADE_COBERTURA_FILHO` e `IDADE_LIMITE_DEPENDENTE` → Confirmar que formulário permite submit com tag amarela → Confirmar que backend persiste com tag "SEM DIREITO À PROTEÇÃO" → Confirmar que PDF exibe a tag → Cadastrar Dependente FILHO com idade > `IDADE_LIMITE_DEPENDENTE` → Confirmar bloqueio vermelho e impossibilidade de submit.
+  1000→
+  1001→### Cenário 9: Validação de Idade por Parentesco (Cônjuge vs Filho)
+  1002→Cadastrar Dependente CONJUGE → Confirmar que a chave usada é `IDADE_LIMITE_CONJUGE` → Cadastrar Dependente FILHO → Confirmar que a chave usada é `IDADE_LIMITE_DEPENDENTE` → Confirmar que as duas validações usam limites independentes.
+  1003→
+  1004→### Cenário 10: Flat Legada Depreciada
+  1005→Cadastrar contrato completo → Verificar que `contratos_legado_flat` tem apenas campos financeiros e dados do Titular (`CPFCNPJFranq`, `NomeClientePFPJFranq`) populados → Confirmar que campos de dependentes/agregados estão NULL/vazios → Editar nome do Titular → Confirmar que `NomeClientePFPJFranq` na flat é atualizado.
+  1006→
+  1007→### Cenário 11: Realocação na Árvore de Patrocínio com Recálculo
+  1008→Criar vínculo de patrocínio A→B→C (níveis 1,2,3) → Realocar B para D (nível 1) → Confirmar que o registro antigo de B recebeu `data_fim_vinculo` → Confirmar que novo registro de B foi criado com `data_fim_vinculo` = NULL → **Confirmar que C teve `nivel_profundidade` recalculado para 2** → Confirmar constraint de unicidade parcial → Confirmar log de auditoria.
+  1009→
+  1010→### Cenário 12: Edição com Alteração de Data de Nascimento
+  1011→Editar dependente (dentro do limite) → Alterar data para idade > limite → Confirmar que submit é bloqueado com mensagem vermelha → Alterar data para idade <= limite → Confirmar que submit é permitido.
+  1012→
+  1013→### Cenário 13: Bloqueio de Abatimento com Saldo Devedor
+  1014→Revendedor com saldo -100 → Tentar abater parcela → Confirmar que botão está desabilitado ou erro é exibido → Receber nova bonificação (+150) → Confirmar que saldo vai para +50 → Confirmar que abatimento agora é permitido.
+  1015→
+  1016→### Cenário 14: Idempotência de Comissão
+  1017→Simular falha de rede no retorno da aprovação → Retry automático → Confirmar que NÃO houve duplicação de `transacoes_bonificacao` nem saldo bloqueado duplicado (constraint unique deve atuar).
+  1018→
+  1019→### Cenário 15: Bloqueio de Sinistro em Período de Carência
+  1020→Cadastrar e aprovar contrato → Simular óbito natural com data < `MESES_CARENCIA_NATURAL` → Tentar acionar sinistro → Confirmar bloqueio automático + mensagem de carência → Confirmar que nenhum pagamento foi liberado.
+  1021→
+  1022→### Cenário 16: Suspensão Automática por Inadimplência
+  1023→Criar conta_a_pagar vencida há > `DIAS_SUSPENSAO_INADIMPLENCIA` → Executar job diário → Confirmar `contratos.status = SUSPENSO` → Confirmar envio de notificação CDC → Tentar acionar sinistro via app → Confirmar bloqueio visual e funcional.
+  1024→
+  1025→### Cenário 17: Récita e Recálculo de Carência
+  1026→Contrato SUSPENSO → Pagar todas as parcelas atrasadas → Confirmar `status = APROVADO` → Confirmar que nova data de fim de carência foi calculada e persistida → Confirmar que cobertura foi reativada.
+  1027→
+  1028→### Cenário 18: Remissão Pós-Óbito do Titular
+  1029→Aprovar contrato familiar → Simular óbito aprovado do titular → Confirmar criação de registro em `remissoes_contrato` → Gerar parcela do mês seguinte → Confirmar `valor = 0.00` e `status = ISENTO_REMISSAO` → Avançar tempo além de `MESES_REMISSAO_OBITO` → Confirmar retomada da cobrança normal.
+  1030→
+  1031→### Cenário 19: Arrependimento CDC Dentro do Prazo
+  1032→Aprovar contrato há 3 dias → Acionar botão "Cancelar por Arrependimento" → Confirmar `status = CANCELADO` → Confirmar estorno integral ao titular → Confirmar estorno em cascata de bonificações → Confirmar ausência de multa/taxa.
+  1033→
+  1034→### Cenário 20: Expulsão de Filho por Maioridade
+  1035→Cadastrar dependente FILHO com 20 anos e 11 meses → Avançar tempo para completar 21 anos → Executar job diário → Confirmar `data_fim_vinculo` preenchida → Confirmar notificação ao titular com link de conversão → Confirmar que filho não aparece mais em relatórios de cobertura ativa.
+  1036→
+  1037→### Cenário 21: Retenção IRRF/INSS em Saque PF
+  1038→Ativar `SAQUE_PF_ATIVO = true` → Revendedor PF solicitar saque acima de limite isento → Confirmar cálculo de IRRF e INSS → Confirmar persistência dos valores retidos → Confirmar que valor líquido creditado está correto → Confirmar geração de guia DARF no financeiro.
+  1039→

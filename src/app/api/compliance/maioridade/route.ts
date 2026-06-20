@@ -23,14 +23,22 @@ export async function POST(request: Request) {
     const today = new Date()
 
     // Find all vinculos where:
-    // - tipoVinculo = 'DEPENDENTE' and parentesco = 'FILHO'
+    // - tipoVinculo IN ('DEPENDENTE', 'SUB_DEPENDENTE') and parentesco = 'FILHO'
     // - pessoa_vinculada.data_nascimento + 21 years <= TODAY
     // - data_fim_vinculo IS NULL (still active)
+    const dataLimiteMaioridade = new Date(today)
+    dataLimiteMaioridade.setFullYear(dataLimiteMaioridade.getFullYear() - 21)
+
     const vinculosAtivos = await db.vinculo.findMany({
       where: {
-        tipoVinculo: 'DEPENDENTE',
+        tipoVinculo: { in: ['DEPENDENTE', 'SUB_DEPENDENTE'] },
         parentesco: 'FILHO',
         dataFimVinculo: null,
+        pessoaVinculada: {
+          dataNascimento: {
+            lte: dataLimiteMaioridade,
+          },
+        },
       },
       include: {
         pessoaVinculada: true,
@@ -42,15 +50,6 @@ export async function POST(request: Request) {
     const vinculosSkipped: { vinculoId: string; motivo: string }[] = []
 
     for (const vinculo of vinculosAtivos) {
-      const dataNascimento = vinculo.pessoaVinculada.dataNascimento
-      const idade21 = new Date(dataNascimento)
-      idade21.setFullYear(idade21.getFullYear() + 21)
-
-      // Check if turned 21
-      if (idade21 > today) {
-        continue // Not yet 21
-      }
-
       // Skip if person has special tag (inválido/incapaz) — check observacoes field (RN-05)
       const pessoa = vinculo.pessoaVinculada
       const observacoes = pessoa.observacoes || ''
@@ -80,9 +79,9 @@ export async function POST(request: Request) {
           acao: 'UPDATE',
           atorId: userId,
           ipAddress,
-          valoresAnteriores: JSON.stringify({ dataFimVinculo: null }),
+          valoresAnteriores: JSON.stringify({ dataFimVinculo: null, tipoVinculo: vinculo.tipoVinculo }),
           valoresNovos: JSON.stringify({ dataFimVinculo: new Date().toISOString() }),
-          observacao: `Maioridade: dependente FILHO '${vinculo.pessoaVinculada.nomeCompleto}' expirado (21 anos). Titular: ${vinculo.titularRaiz.nomeCompleto}. Notificar titular sobre exclusão do dependente.`,
+          observacao: `Maioridade: ${vinculo.tipoVinculo === 'SUB_DEPENDENTE' ? 'sub-dependente' : 'dependente'} FILHO '${vinculo.pessoaVinculada.nomeCompleto}' expirado (21 anos). Titular: ${vinculo.titularRaiz.nomeCompleto}. Notificar titular sobre exclusão.`,
         },
       })
     }

@@ -83,6 +83,12 @@ export async function POST(request: Request) {
     let countSuspensos = 0
 
     for (const [contratoId, info] of contratoMap) {
+      // Buscar contrato completo para obter titularId
+      const contrato = await db.contrato.findUnique({
+        where: { id: contratoId },
+        select: { id: true, titularId: true },
+      })
+
       // Suspend the contract
       await db.contrato.update({
         where: { id: contratoId },
@@ -109,6 +115,27 @@ export async function POST(request: Request) {
             dataSuspensao: new Date().toISOString(),
           }),
           observacao: `Auto-suspensão por inadimplência. Titular: ${info.titularNome}. Dias em atraso: ${info.diasAtraso}. Contas vencidas: ${info.contasVencidas}. Limite: ${diasSuspensao} dias. Executado por: ${user?.nome || userId}`,
+        },
+      })
+
+      // Notificação CDC obrigatória (§4.5) — Log para serviço de notificação
+      await db.auditLog.create({
+        data: {
+          entidade: 'Contrato',
+          entidadeId: contratoId,
+          acao: 'NOTIFICACAO_CDC_SUSPENSAO',
+          atorId: null,
+          ipAddress: null,
+          valoresNovos: JSON.stringify({
+            tipo: 'NOTIFICACAO_OBRIGATORIA_CDC',
+            mensagem: 'Contrato suspenso por inadimplência. Notificação obrigatória ao titular conforme CDC Art. 39 e SUSEP.',
+            titularId: contrato?.titularId,
+            contratoId: contratoId,
+            statusAnterior: 'APROVADO',
+            statusNovo: 'SUSPENSO',
+            canal: 'EMAIL_SMS_APP',
+            dataSuspensao: new Date().toISOString(),
+          }),
         },
       })
     }

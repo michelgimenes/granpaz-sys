@@ -200,6 +200,48 @@ export async function PATCH(
           })
         }
 
+        // Remissão automática por óbito do Titular (§4.5)
+        // Verificar configuração de meses de remissão alternativa
+        const configRemissao = await db.configuracaoRegraNegocio.findUnique({
+          where: { chave: 'MESES_REMISSAO_OBITO_PADRAO' }
+        })
+        const mesesRemissao = configRemissao ? parseInt(configRemissao.valor) : 0
+
+        if (mesesRemissao > 0 && !sinistro.contrato.remissao) {
+          const dataInicioRemissao = new Date(sinistro.dataOcorrencia)
+          const dataFimRemissao = new Date(dataInicioRemissao)
+          dataFimRemissao.setMonth(dataFimRemissao.getMonth() + mesesRemissao)
+
+          await db.remissaoContrato.create({
+            data: {
+              contratoId: sinistro.contratoId,
+              dataInicioRemissao,
+              dataFimRemissao,
+              mesesAplicados: mesesRemissao,
+              origemPrazo: 'CONFIGURACAO_PADRAO',
+            },
+          })
+
+          await db.auditLog.create({
+            data: {
+              entidade: 'RemissaoContrato',
+              entidadeId: sinistro.contratoId,
+              acao: 'CREATE',
+              atorId: userId,
+              ipAddress,
+              valoresNovos: JSON.stringify({
+                contratoId: sinistro.contratoId,
+                mesesAplicados: mesesRemissao,
+                origemPrazo: 'CONFIGURACAO_PADRAO',
+                dataInicioRemissao: dataInicioRemissao.toISOString(),
+                dataFimRemissao: dataFimRemissao.toISOString(),
+                motivo: 'Remissão automática por configuração padrão (§4.5)',
+              }),
+              observacao: `Remissão automática (CONFIGURACAO_PADRAO) criada: ${mesesRemissao} meses a partir da data do óbito.`,
+            },
+          })
+        }
+
         // ── Cascade estorno of bonificações for titular death ──
         // Find all LIBERADO bonificações for this contract's tree
         const bonificacoesLiberadas = await db.transacaoBonificacao.findMany({

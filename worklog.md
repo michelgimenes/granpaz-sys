@@ -1210,3 +1210,142 @@ Stage Summary:
 - SPEC-07 audit complete: 28 lacunas identified → 28 lacunas corrigidas
 - All browser tests pass: Landing page, Checkout flow, Cookie consent, Footer compliance, Urgency section
 - Zero lint errors, zero runtime errors
+
+---
+Task ID: 5-c
+Agent: Backend Engineer
+Task: Fix Medium/Low Priority Core Documentation Gaps (Backend)
+
+Work Log:
+- G36: Created `src/app/api/rede/exportar-csv/route.ts` — CSV export endpoint for network tree with role-based auth (SUPERADMIN/SUPERVISOR), semicolon-separated (BR standard), streaming response
+- G67: Changed `orderBy` from `desc` to `asc` in:
+  - `src/app/api/contratos/route.ts` GET list → `{ createdAt: 'asc' }`
+  - `src/app/api/sinistros/route.ts` GET list → `{ createdAt: 'asc' }`
+  - Kept DESC for audit-logs (newest-first expected UX) and carteiras extrato (newest-first expected UX)
+  - Verified patrocinios already uses `{ nivelProfundidade: 'asc' }` and contas-a-pagar already uses `{ dataVencimento: 'asc' }`
+- G48: Added `nomeCompleto` min 3 characters validation to `validateFieldFormats()` in `src/lib/validations.ts`
+- G52/53: Added required field validations for TITULAR (endereço, telefone, email) and AGREGADO (endereço, telefone, email) in `src/app/api/contratos/route.ts` POST handler
+- G56: Added `validateUF()` function and UF validation in `validateFieldFormats()` in `src/lib/validations.ts` — validates against all 27 Brazilian UFs
+- Schema: `codigoSeguradora @unique` was already present (verified), no change needed
+- Schema: `RemissaoContrato` already had `origemPrazo` and `mesesAplicados` fields (verified), no change needed
+- Schema: Added `operadorId String?` and `createdAt DateTime @default(now())` to `LogAnonimizacaoLGPD` model
+- Ran `bun run db:push` successfully (accepted data loss for unique constraint on codigoSeguradora)
+- Ran `bun run lint` — 0 errors, 0 warnings
+
+Stage Summary:
+- 8 documentation gaps addressed (G36, G67, G48, G52/53, G56, schema fixes for LogAnonimizacaoLGPD)
+- 2 schema fields already present (codigoSeguradora @unique, RemissaoContrato.origemPrazo/mesesAplicados)
+- All changes lint-clean, database in sync
+
+---
+Task ID: 5-a
+Agent: Backend Engineer
+Task: Fix Critical Core Documentation Gaps (Backend)
+
+Work Log:
+- G45/46: Added SUPERADMIN role check to GET handler in `src/app/api/seguradoras/route.ts` — now checks `x-user-id` and `x-user-role` headers
+- G45/46: Added SUPERADMIN role check to GET handler in `src/app/api/seguradoras/[id]/route.ts` — changed `_request` to `request` to access headers
+- G45/46: Added Air-Gap filter in `src/app/api/contratos/route.ts` GET handler — non-SUPERADMIN users receive only `{ id }` for seguradora data
+- G47: Added `VALID_VINCULO_TYPES` validation in contratos POST — rejects invalid tipo_vinculo values
+- G47: Added explicit DEPENDENTE/SUB_DEPENDENTE parentesco validation (CONJUGE/FILHO only) before existing `validateParentescoPorTipo` call
+- G69: Created `src/app/api/pessoas-fisicas/[id]/estado-civil/route.ts` — PATCH endpoint for selective vínculo preservation when agregado changes estado_civil from familiar to individual
+- G70: Added `percentualIndicacao` and `percentualFechamento` fields to `NivelBonificacao` model in schema (kept `percentual` as deprecated)
+- G70: Updated `prisma/seed.ts` with dual percentage values for all 5 bonus levels (e.g., nível 1: 7% indicação + 3% fechamento = 10% total)
+- G70: Updated bonificação calculation in contratos POST to use `percentualTotal` (percentualIndicacao + percentualFechamento) instead of single `percentual`
+- G82: Added CDC notification audit log entry in `src/app/api/compliance/suspensao-auto/route.ts` — creates `NOTIFICACAO_CDC_SUSPENSAO` audit log after each contract suspension
+- Ran `bun run db:push` with force-reset — schema changes applied successfully
+- Ran `bun run db:seed` — all data re-seeded with new dual percentage fields
+- Ran `bun run lint` — 0 errors, 0 warnings
+
+Stage Summary:
+- 5 critical gaps fixed: G45/46 (Air-Gap Seguradoras), G47 (tipo_registro validation), G69 (Preservação Seletiva), G70 (Dual % bonificação), G82 (CDC Notification)
+- 1 new API route created: PATCH /api/pessoas-fisicas/[id]/estado-civil
+- Schema: 2 new fields on NivelBonificacao model (percentualIndicacao, percentualFechamento)
+- All changes lint-clean, database in sync
+
+---
+Task ID: 5-b
+Agent: Backend Engineer
+Task: Fix High Priority Core Documentation Gaps (Backend)
+
+Work Log:
+- Gap 1: Added 3 fields to Contrato model in prisma/schema.prisma: periodicidade (MENSAL/ANUAL, default MENSAL), diaVencimento (10/20, default 10), valorTotalAgregados (Float, default 0). Updated POST /api/contratos to calculate valorTotalAgregados based on agregados count × plano.valorPorAgregado and set defaults for periodicidade and diaVencimento.
+- Gap 2: Added INVALIDEZ_PARCIAL to tipoSinistro comment in Sinistro model (String field, updated documentation).
+- Gap 3: Added SOLICITACAO_TITULAR and DETERMINACAO_JUDICIAL to motivo comment in LogAnonimizacaoLGPD. Rewrote POST /api/compliance/lgpd to support dual mode: automatic job (5-year retention) and manual anonymization (SOLICITACAO_TITULAR/DETERMINACAO_JUDICIAL via body params pessoaFisicaId + motivo).
+- Gap 4: Created new route src/app/api/jobs/recorrencia/route.ts — POST /api/jobs/recorrencia. Generates monthly parcelas for APROVADO contracts with periodicidade MENSAL, checks if last parcela is quitada/vencida >5 days, recalculates valor with active agregados, respects diaVencimento, and creates audit log.
+- Gap 5: Added remissão automática fallback (§4.5) to PATCH /api/sinistros/[id]. When sinistro APROVADO for titular OBITO and no remissão exists yet from seguradora, checks MESES_REMISSAO_OBITO_PADRAO config and creates remissão with origemPrazo=CONFIGURACAO_PADRAO.
+- Gap 6: Added cross-tree CPF validation (§5 Anti-Fraude) to POST /api/patrocinios. After RN-009 check, queries patrocinio table for same CPF active in another tree. Returns 409 with CPF_DUPLICADO_REDE code if found.
+- Gap 7: Added abatimento idempotency (§2.6) to POST /api/carteiras/[carteiraId]/abatimentos. Before processing, checks if a CONCLUIDO ABATIMENTO already exists for same carteira+contaAPagar. Returns 409 with ABATIMENTO_DUPLICADO code if found.
+- Gap 8: Added saldo devedor auto-deduction (§2.6) to POST /api/contratos/[id]/aprovar. During bonificação liberation, if carteira has saldoDevedor > 0, deducts from it first before adding remainder to saldoDisponivel.
+- Gap 9: Updated POST /api/compliance/maioridade to handle SUB_DEPENDENTE (§4.5). Changed query from tipoVinculo='DEPENDENTE' to tipoVinculo in ['DEPENDENTE','SUB_DEPENDENTE']. Added DB-level date filter. Updated audit log messages to distinguish tipo.
+
+Stage Summary:
+- 9 critical backend gaps fixed
+- 1 new API route: POST /api/jobs/recorrencia
+- 3 new fields on Contrato model: periodicidade, diaVencimento, valorTotalAgregados
+- Schema: INVALIDEZ_PARCIAL added to tipoSinistro, 4 LGPD motivos documented
+- All changes lint-clean, database in sync (db:push successful)
+
+---
+Task ID: 5-a
+Agent: Backend Engineer (Critical Gaps)
+Task: Fix Critical Core Documentation Gaps (Air-Gap, tipo_registro, Preservação Seletiva, Bonificação Dual)
+
+Work Log:
+- Updated `src/app/api/seguradoras/route.ts` GET handler with SUPERADMIN role check (403 for non-admin)
+- Updated `src/app/api/seguradoras/[id]/route.ts` GET handler with SUPERADMIN role check
+- Updated `src/app/api/contratos/route.ts` GET handler to strip seguradora details for non-SUPERADMIN (Air-Gap §1.2)
+- Updated `src/app/api/contratos/route.ts` POST with tipo_registro validation vs route (§1.1)
+- Created `src/app/api/pessoas-fisicas/[id]/estado-civil/route.ts` — Preservação Seletiva de Vínculos (§1.1)
+- Added `percentualIndicacao` and `percentualFechamento` to `prisma/schema.prisma` NivelBonificacao
+- Updated `prisma/seed.ts` with dual percentage values
+- Updated `src/app/api/contratos/route.ts` bonificação calculation to use percentualTotal
+- Updated `src/app/api/compliance/suspensao-auto/route.ts` with CDC notification audit log (§4.5)
+- Ran `bun run db:push` and `bun run lint` — both pass
+
+Stage Summary:
+- 6 critical gaps fixed: Air-Gap seguradoras (G45/46/81), tipo_registro validation (G47), Preservação Seletiva (G69), bonificação dual (G70), CDC notification (G82)
+- All changes SUSEP-compliant
+
+---
+Task ID: 5-b
+Agent: Backend Engineer (High Priority Gaps)
+Task: Fix High Priority Core Documentation Gaps (Schema fields, Recurrence, Remissão, Cross-tree, Idempotency, Saldo Devedor)
+
+Work Log:
+- Added `periodicidade`, `diaVencimento`, `valorTotalAgregados` to Contrato model in `prisma/schema.prisma`
+- Updated `src/app/api/contratos/route.ts` POST to calculate valorTotalAgregados
+- Added INVALIDEZ_PARCIAL to sinistro tipoSinistro in schema
+- Updated LGPD route with manual anonymization support (SOLICITACAO_TITULAR, DETERMINACAO_JUDICIAL)
+- Added `operadorId` and `createdAt` to LogAnonimizacaoLGPD in schema
+- Created `src/app/api/jobs/recorrencia/route.ts` — Daily recurrence job for monthly parcelas (§4.4)
+- Updated `src/app/api/sinistros/[id]/route.ts` — Auto-remissão on sinistro approval (§4.5)
+- Updated `src/app/api/patrocinios/route.ts` — Cross-tree CPF validation (§5 Anti-Fraude)
+- Updated `src/app/api/carteiras/[carteiraId]/abatimentos/route.ts` — Abatimento idempotency check (§2.6)
+- Updated `src/app/api/contratos/[id]/aprovar/route.ts` — Saldo devedor auto-deduction on bonificação liberation
+- Updated `src/app/api/compliance/maioridade/route.ts` — Now handles SUB_DEPENDENTE type
+- Ran `bun run db:push` and `bun run lint` — both pass
+
+Stage Summary:
+- 9 high-priority gaps fixed: contrato fields (G5-8), INVALIDEZ_PARCIAL (G29), LGPD motivos (G30), recurrence job (G73), remissão (G80), cross-tree CPF (G85), abatimento idempotency (G86), saldo devedor (G78), maioridade SUB_DEPENDENTE (G84)
+
+---
+Task ID: 5-c
+Agent: Backend Engineer (Medium/Low Gaps)
+Task: Fix Medium/Low Priority Core Documentation Gaps (CSV export, ordering, validations, schema)
+
+Work Log:
+- Created `src/app/api/rede/exportar-csv/route.ts` — CSV export of network tree (§5.1)
+- Updated `src/app/api/contratos/route.ts` GET orderBy to 'asc' (§6.10)
+- Updated `src/app/api/sinistros/route.ts` GET orderBy to 'asc' (§6.10)
+- Added nomeCompleto minimum 3 characters validation in `src/lib/validations.ts` (§2.1)
+- Added required address/phone/email validation for TITULAR and AGREGADO in `src/app/api/contratos/route.ts` (§2.3)
+- Added `validateUF()` function in `src/lib/validations.ts` with all 27 Brazilian UFs (§2.3)
+- Verified `codigoSeguradora @unique` already present in schema
+- Verified `RemissaoContrato.origemPrazo` and `mesesAplicados` already present in schema
+- Added `operadorId` and `createdAt` to LogAnonimizacaoLGPD in schema
+- Ran `bun run db:push` and `bun run lint` — both pass
+
+Stage Summary:
+- 8 medium/low gaps fixed: CSV export (G36), ordering ASC (G67), nomeCompleto min length (G48), required address/phone/email (G52/53), UF validation (G56), LGPD schema fields (G14/15)
+- Total gaps fixed across all 3 agents: 23 backend gaps

@@ -58,7 +58,7 @@ export async function GET(request: Request) {
           seguradora: { select: { id: true, nome: true, codigoSeguradora: true } },
           dadosAprovacao: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' },
         skip,
         take: limit,
       }),
@@ -80,10 +80,19 @@ export async function GET(request: Request) {
       })
     )
 
+    // Air-Gap (§1.2): Remover dados de seguradora para não-SUPERADMIN
+    const userRole = request.headers.get('x-user-role')
+    const sanitizedData = userRole !== 'SUPERADMIN'
+      ? contratosWithVinculos.map(c => {
+          const { seguradora, ...rest } = c
+          return { ...rest, seguradora: seguradora ? { id: (seguradora as { id: string }).id } : null }
+        })
+      : contratosWithVinculos
+
     const totalPages = Math.ceil(total / limit)
 
     return NextResponse.json({
-      data: contratosWithVinculos,
+      data: sanitizedData,
       pagination: {
         page,
         limit,
@@ -140,6 +149,19 @@ export async function POST(request: Request) {
     // ─── Validação RFC 5322 de e-mail do titular (SPEC-07 §4.5) ───
     if (titularSanitized.email && !validateEmail(titularSanitized.email as string)) {
       return NextResponse.json({ error: 'E-mail inválido.' }, { status: 400 })
+    }
+
+    // ─── Endereço obrigatório para TITULAR (§2.3) ───
+    if (!titularSanitized.cep || !titularSanitized.logradouro || !titularSanitized.bairro || !titularSanitized.cidade || !titularSanitized.estado) {
+      return NextResponse.json({ error: 'Endereço completo é obrigatório para o titular (CEP, logradouro, bairro, cidade e UF).' }, { status: 400 })
+    }
+    // ─── Telefone obrigatório para TITULAR (§2.3) ───
+    if (!titularSanitized.telefone) {
+      return NextResponse.json({ error: 'Telefone é obrigatório para o titular.' }, { status: 400 })
+    }
+    // ─── Email obrigatório para TITULAR (§2.3) ───
+    if (!titularSanitized.email) {
+      return NextResponse.json({ error: 'E-mail é obrigatório para o titular.' }, { status: 400 })
     }
 
     // ─── Profissão required for TITULAR ───
@@ -245,6 +267,30 @@ export async function POST(request: Request) {
         const tipoVinculo = vincSanitized.tipoVinculo || 'DEPENDENTE'
         const parentesco = vincSanitized.parentesco || 'FILHO'
 
+        // Validate tipo_registro vs route context (§1.1)
+        const VALID_VINCULO_TYPES = ['DEPENDENTE', 'AGREGADO', 'SUB_DEPENDENTE']
+        if (!VALID_VINCULO_TYPES.includes(tipoVinculo)) {
+          return NextResponse.json(
+            { error: `tipo_vinculo "${tipoVinculo}" inválido. Valores permitidos: ${VALID_VINCULO_TYPES.join(', ')}` },
+            { status: 400 }
+          )
+        }
+
+        // Dependentes só podem ser CONJUGE ou FILHO (§4.1)
+        if (tipoVinculo === 'DEPENDENTE' && !['CONJUGE', 'FILHO'].includes(parentesco)) {
+          return NextResponse.json(
+            { error: `Dependente deve ter parentesco CONJUGE ou FILHO. "${parentesco}" não é permitido.` },
+            { status: 400 }
+          )
+        }
+        // Sub-dependentes só podem ser CONJUGE ou FILHO
+        if (tipoVinculo === 'SUB_DEPENDENTE' && !['CONJUGE', 'FILHO'].includes(parentesco)) {
+          return NextResponse.json(
+            { error: `Sub-dependente deve ter parentesco CONJUGE ou FILHO. "${parentesco}" não é permitido.` },
+            { status: 400 }
+          )
+        }
+
         // ─── Validate parentesco for tipo_vinculo ───
         const parentescoCheck = validateParentescoPorTipo(tipoVinculo, parentesco)
         if (!parentescoCheck.valid) {
@@ -273,6 +319,25 @@ export async function POST(request: Request) {
           if (agregadosCount > planoConfig.maxAgregados) {
             return NextResponse.json(
               { error: `Limite de ${planoConfig.maxAgregados} agregados por contrato excedido.` },
+              { status: 400 }
+            )
+          }
+          // Endereço, telefone e email obrigatórios para AGREGADO (§2.3)
+          if (!vincSanitized.cep || !vincSanitized.logradouro || !vincSanitized.cidade || !vincSanitized.estado) {
+            return NextResponse.json(
+              { error: `Agregado ${vincSanitized.nomeCompleto}: endereço completo é obrigatório.` },
+              { status: 400 }
+            )
+          }
+          if (!vincSanitized.telefone) {
+            return NextResponse.json(
+              { error: `Agregado ${vincSanitized.nomeCompleto}: telefone é obrigatório.` },
+              { status: 400 }
+            )
+          }
+          if (!vincSanitized.email) {
+            return NextResponse.json(
+              { error: `Agregado ${vincSanitized.nomeCompleto}: e-mail é obrigatório.` },
               { status: 400 }
             )
           }
@@ -345,6 +410,10 @@ export async function POST(request: Request) {
       }
     }
 
+    // Calcular valor total de agregados (§2.4)
+    const agregadosCountCalc = vinculosProcessed.filter(v => v.vinculo.tipoVinculo === 'AGREGADO').length
+    const valorTotalAgregados = plano.valorPorAgregado * agregadosCountCalc
+
     // ─── Create contract ───
     const contrato = await db.contrato.create({
       data: {
@@ -354,6 +423,9 @@ export async function POST(request: Request) {
         status: 'AGUARDANDO_APROVACAO',
         valorParcelaBase: plano.valorBase,
         valorTaxaAdesao: plano.valorTaxaAdesao,
+        valorTotalAgregados, // §2.4 — calculado automaticamente
+        periodicidade: 'MENSAL', // Padrão
+        diaVencimento: 10, // Padrão
         patrocinadorId: patrocinadorId || null,
       },
       include: { titular: true, plano: true },
@@ -452,7 +524,7 @@ export async function POST(request: Request) {
         })
 
         if (niveisBonificacao.length > 0) {
-          // Build a map for quick lookup
+          // Build a map for quick lookup (mantido para fallback)
           const niveisMap = new Map(niveisBonificacao.map(n => [n.nivel, n.percentual]))
 
           // Traverse the sponsorship tree UP from patrocinador
@@ -460,8 +532,12 @@ export async function POST(request: Request) {
           let nivelAtual = 1
 
           while (currentPatrocinadorId && nivelAtual <= niveisBonificacao.length) {
-            const percentual = niveisMap.get(nivelAtual)
-            if (percentual === undefined || percentual === null) break
+            // G70: Dual percentage fields — percentualIndicacao + percentualFechamento
+            const nivelConfig = niveisBonificacao.find(n => n.nivel === nivelAtual)
+            const percentualIndicacao = nivelConfig?.percentualIndicacao ?? niveisMap.get(nivelAtual) ?? 0
+            const percentualFechamento = nivelConfig?.percentualFechamento ?? 0
+            const percentualTotal = percentualIndicacao + percentualFechamento
+            if (percentualTotal === 0) break
 
             // Ensure patrocinador has a carteira
             let carteiraPatrocinador = await db.carteiraDigital.findUnique({
@@ -478,7 +554,7 @@ export async function POST(request: Request) {
               })
             }
 
-            const valorBonificacao = Math.round(baseCalculo * (percentual / 100) * 100) / 100
+            const valorBonificacao = Math.round(baseCalculo * (percentualTotal / 100) * 100) / 100
 
             // Create TransacaoBonificacao with PENDENTE_APROVACAO
             try {
@@ -488,7 +564,7 @@ export async function POST(request: Request) {
                   carteiraId: carteiraPatrocinador.id,
                   nivelOrigem: nivelAtual,
                   valor: valorBonificacao,
-                  percentualAplicado: percentual,
+                  percentualAplicado: percentualTotal,
                   status: 'PENDENTE_APROVACAO',
                 },
               })

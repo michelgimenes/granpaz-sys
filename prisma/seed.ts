@@ -116,21 +116,26 @@ async function main() {
   // ─────────────────────────────────────────────────────────
   console.log('  → Seeding bonus levels...')
   const bonusLevels = [
-    { nivel: 1, percentual: 10.0, descricao: 'Nível 1 - Bônus direto (indicador direto)' },
-    { nivel: 2, percentual: 5.0, descricao: 'Nível 2 - Segunda geração' },
-    { nivel: 3, percentual: 3.0, descricao: 'Nível 3 - Terceira geração' },
-    { nivel: 4, percentual: 2.0, descricao: 'Nível 4 - Quarta geração' },
-    { nivel: 5, percentual: 1.0, descricao: 'Nível 5 - Quinta geração' },
+    { nivel: 1, percentual: 10.0, percentualIndicacao: 7.0, percentualFechamento: 3.0, descricao: 'Nível 1 - Bônus direto (indicador direto)' },
+    { nivel: 2, percentual: 5.0, percentualIndicacao: 3.5, percentualFechamento: 1.5, descricao: 'Nível 2 - Segunda geração' },
+    { nivel: 3, percentual: 3.0, percentualIndicacao: 2.0, percentualFechamento: 1.0, descricao: 'Nível 3 - Terceira geração' },
+    { nivel: 4, percentual: 2.0, percentualIndicacao: 1.5, percentualFechamento: 0.5, descricao: 'Nível 4 - Quarta geração' },
+    { nivel: 5, percentual: 1.0, percentualIndicacao: 0.7, percentualFechamento: 0.3, descricao: 'Nível 5 - Quinta geração' },
   ]
 
   for (const bl of bonusLevels) {
     await prisma.nivelBonificacao.upsert({
       where: { id: `nivel_bonificacao_${bl.nivel}` },
-      update: {},
+      update: {
+        percentualIndicacao: bl.percentualIndicacao,
+        percentualFechamento: bl.percentualFechamento,
+      },
       create: {
         id: `nivel_bonificacao_${bl.nivel}`,
         nivel: bl.nivel,
         percentual: bl.percentual,
+        percentualIndicacao: bl.percentualIndicacao,
+        percentualFechamento: bl.percentualFechamento,
         descricao: bl.descricao,
         ativo: true,
       },

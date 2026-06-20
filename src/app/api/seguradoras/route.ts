@@ -6,9 +6,17 @@ import { sanitizeMarkdown, sanitizeString } from '@/lib/sanitization'
 /**
  * GET /api/seguradoras - List all active seguradoras
  * L17: Basic listing endpoint
+ * Air-Gap de Seguradora (§1.2): Apenas SUPERADMIN pode listar seguradoras
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Air-Gap de Seguradora (§1.2): Apenas SUPERADMIN pode listar seguradoras
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
+    if (!userId || userRole !== 'SUPERADMIN') {
+      return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 })
+    }
+
     const seguradoras = await db.seguradora.findMany({
       where: { ativa: true },
       orderBy: { nome: 'asc' },

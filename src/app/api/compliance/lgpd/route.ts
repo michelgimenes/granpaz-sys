@@ -7,6 +7,10 @@ import crypto from 'crypto'
  * POST /api/compliance/lgpd
  * RN-06: LGPD anonymization job — Anonymize PII for ended contracts (5-year retention)
  * SuperAdmin only
+ *
+ * Suporta dois modos:
+ * 1. Job automático (sem body): anonimiza pessoas com contratos cancelados há 5+ anos ou óbito há 5+ anos
+ * 2. Anonimização manual (body com pessoaFisicaId + motivo): para SOLICITACAO_TITULAR ou DETERMINACAO_JUDICIAL
  */
 export async function POST(request: Request) {
   try {
@@ -21,6 +25,121 @@ export async function POST(request: Request) {
       )
     }
 
+    const body = await request.json().catch(() => ({}))
+    const { pessoaFisicaId, motivo: motivoManual } = body as { pessoaFisicaId?: string; motivo?: string }
+
+    // ── Modo manual: SOLICITACAO_TITULAR ou DETERMINACAO_JUDICIAL ──
+    const MOTIVOS_MANUAIS = ['SOLICITACAO_TITULAR', 'DETERMINACAO_JUDICIAL']
+    if (pessoaFisicaId && motivoManual) {
+      if (!MOTIVOS_MANUAIS.includes(motivoManual)) {
+        return NextResponse.json(
+          { error: `Motivo manual inválido. Permitidos: ${MOTIVOS_MANUAIS.join(', ')}` },
+          { status: 400 }
+        )
+      }
+
+      // Verificar se a pessoa existe
+      const pessoa = await db.pessoaFisica.findUnique({ where: { id: pessoaFisicaId } })
+      if (!pessoa) {
+        return NextResponse.json({ error: 'Pessoa física não encontrada.' }, { status: 404 })
+      }
+
+      // Verificar se já foi anonimizada
+      const jaAnonimizada = await db.logAnonimizacaoLGPD.findFirst({
+        where: { pessoaFisicaId },
+      })
+      if (jaAnonimizada) {
+        return NextResponse.json({ error: 'Esta pessoa já foi anonimizada.' }, { status: 409 })
+      }
+
+      // EC-03: Verificar pendências financeiras
+      const carteira = await db.carteiraDigital.findUnique({ where: { titularId: pessoaFisicaId } })
+      if (carteira && carteira.saldoDevedor > 0) {
+        return NextResponse.json(
+          { error: `Pessoa com pendência financeira: saldo_devedor = ${carteira.saldoDevedor}` },
+          { status: 400 }
+        )
+      }
+
+      const contasPendentes = await db.contaAPagar.findFirst({
+        where: {
+          contrato: { titularId: pessoaFisicaId },
+          status: 'PENDENTE',
+        },
+      })
+      if (contasPendentes) {
+        return NextResponse.json(
+          { error: 'Pessoa com pendência financeira: contas_a_pagar PENDENTE encontradas.' },
+          { status: 400 }
+        )
+      }
+
+      // Anonimizar
+      const salt = crypto.randomBytes(16).toString('hex')
+      const hashOriginal = crypto
+        .createHash('sha256')
+        .update(pessoa.nomeCompleto + salt)
+        .digest('hex')
+
+      const camposAnonimizados: Record<string, string> = {
+        nomeCompleto: pessoa.nomeCompleto,
+        cpf: pessoa.cpf ? 'REDACTED' : '',
+        email: pessoa.email ? 'REDACTED' : '',
+        telefone: pessoa.telefone ? 'REDACTED' : '',
+        cep: pessoa.cep ? 'REDACTED' : '',
+        logradouro: pessoa.logradouro ? 'REDACTED' : '',
+        numero: pessoa.numero ? 'REDACTED' : '',
+        complemento: pessoa.complemento ? 'REDACTED' : '',
+        bairro: pessoa.bairro ? 'REDACTED' : '',
+        profissao: pessoa.profissao ? 'REDACTED' : '',
+      }
+
+      await db.pessoaFisica.update({
+        where: { id: pessoaFisicaId },
+        data: {
+          nomeCompleto: `ANONIMIZADO_${hashOriginal.substring(0, 12)}`,
+          cpf: null,
+          email: null,
+          telefone: null,
+          cep: null,
+          logradouro: null,
+          numero: null,
+          complemento: null,
+          bairro: null,
+          profissao: null,
+        },
+      })
+
+      await db.logAnonimizacaoLGPD.create({
+        data: {
+          pessoaFisicaId,
+          motivo: motivoManual,
+          camposAnonimizados: JSON.stringify(camposAnonimizados),
+          hashOriginalSalt: `${hashOriginal}:${salt}`,
+        },
+      })
+
+      await db.auditLog.create({
+        data: {
+          entidade: 'PessoaFisica',
+          entidadeId: pessoaFisicaId,
+          acao: 'UPDATE',
+          atorId: userId,
+          ipAddress,
+          valoresAnteriores: JSON.stringify({ nomeCompleto: pessoa.nomeCompleto, cpf: pessoa.cpf ? 'REDACTED' : null }),
+          valoresNovos: JSON.stringify({ anonimizado: true, motivo: motivoManual }),
+          observacao: `LGPD: PII anonimizada manualmente. Motivo: ${motivoManual}. Executado por: ${user?.nome || userId}`,
+        },
+      })
+
+      return NextResponse.json({
+        message: 'Anonimização manual realizada com sucesso.',
+        pessoaFisicaId,
+        motivo: motivoManual,
+      })
+    }
+
+    // ── Modo automático: job de 5 anos ──
     const today = new Date()
     const fiveYearsAgo = new Date(today)
     fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5)
@@ -46,7 +165,7 @@ export async function POST(request: Request) {
     })
 
     // Collect unique pessoa IDs
-    const candidatoIds = new Set<string>()
+    const candidatoIds: Set<string> = new Set()
     const motivosMap = new Map<string, string>()
 
     for (const c of contratosCancelados) {

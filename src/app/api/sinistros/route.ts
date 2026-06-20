@@ -36,7 +36,7 @@ export async function GET(request: Request) {
             select: { id: true, nomeCompleto: true, tipoRegistro: true },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' },
         skip: (page - 1) * limit,
         take: limit,
       }),

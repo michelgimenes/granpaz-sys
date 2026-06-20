@@ -121,7 +121,7 @@ model Seguradora {
   id               String   @id @default(cuid())
   nome             String
   cnpj             String
-  codigoSeguradora String
+  codigoSeguradora String   @unique
   telefoneSinistro String
   processoSusep    String?
   clausulasMarkdown String?
@@ -150,6 +150,9 @@ model Contrato {
   dataSuspensao       DateTime?   // When contract was suspended (RN-03)
   motivoCancelamento  String?
   patrocinadorId      String?
+  periodicidade       String    @default("MENSAL")     // MENSAL / ANUAL
+  diaVencimento       Int       @default(10)            // Dia de vencimento: 10 ou 20
+  valorTotalAgregados Float     @default(0)             // DECIMAL — calculado automaticamente (§2.4)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @default(now())
 
@@ -331,7 +334,7 @@ model Sinistro {
   id                String    @id @default(cuid())
   contratoId        String
   pessoaVinculadaId String
-  tipoSinistro      String    // OBITO_NATURAL / OBITO_ACIDENTAL / SUICIDIO / INVALIDEZ_TOTAL
+  tipoSinistro      String    // OBITO_NATURAL / OBITO_ACIDENTAL / SUICIDIO / INVALIDEZ_TOTAL / INVALIDEZ_PARCIAL
   dataOcorrencia    DateTime
   status            String    // EM_ANALISE / APROVADO / NEGADO_CARENCIA / NEGADO_FRAUDE / NEGADO_EXCLUSAO
   documentoS3Hash   String?   // AIR-GAP: SHA-256 hash only — never store clinical data
@@ -368,12 +371,14 @@ model RemissaoContrato {
 // 15. Logs Anonimização LGPD — LGPD anonymization logs
 // ─────────────────────────────────────────────────────────
 model LogAnonimizacaoLGPD {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   pessoaFisicaId      String
-  dataAnonimizacao    DateTime @default(now())
-  motivo              String   // OBITO_5_ANOS / CANCELAMENTO_5_ANOS
-  camposAnonimizados  String   // JSON stored as Text in SQLite
+  operadorId          String?   // FK para User ou PessoaFisica que executou a anonimização
+  dataAnonimizacao    DateTime  @default(now())
+  motivo              String    // OBITO_5_ANOS / CANCELAMENTO_5_ANOS / SOLICITACAO_TITULAR / DETERMINACAO_JUDICIAL
+  camposAnonimizados  String    // JSON stored as Text in SQLite
   hashOriginalSalt    String
+  createdAt           DateTime  @default(now())
 
   pessoaFisica        PessoaFisica @relation(fields: [pessoaFisicaId], references: [id])
 
@@ -435,11 +440,13 @@ model User {
 // 19. Níveis Bonificação — Bonus levels configuration
 // ─────────────────────────────────────────────────────────
 model NivelBonificacao {
-  id          String   @id @default(cuid())
-  nivel       Int
-  percentual  Float
-  descricao   String
-  ativo       Boolean  @default(true)
+  id                    String   @id @default(cuid())
+  nivel                 Int
+  percentual            Float    // @deprecated — use percentualIndicacao + percentualFechamento
+  percentualIndicacao   Float    @default(0) // % sobre indicação direta
+  percentualFechamento  Float    @default(0) // % sobre fechamento
+  descricao             String
+  ativo                 Boolean  @default(true)
 
   @@map("niveis_bonificacao")
 }

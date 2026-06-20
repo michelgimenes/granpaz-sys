@@ -212,6 +212,23 @@ export async function POST(request: Request) {
       )
     }
 
+    // ─── Cross-Tree CPF validation (§5 Anti-Fraude): Impedir CPF ativo em múltiplas redes ───
+    if (revendedor.cpf) {
+      const cpfEmOutraRede = await db.patrocinio.findFirst({
+        where: {
+          revendedor: { cpf: revendedor.cpf },
+          dataFimVinculo: null,
+          NOT: { revendedorId }, // Excluir o próprio registro se existir
+        },
+      })
+      if (cpfEmOutraRede) {
+        return NextResponse.json(
+          { error: 'Este CPF já possui vínculo ativo em outra rede de patrocínio.', code: 'CPF_DUPLICADO_REDE' },
+          { status: 409 }
+        )
+      }
+    }
+
     // ─── Validate patrocinador has an active vínculo (dataFimVinculo IS NULL) ───
     const patrocinioAtivoPatrocinador = await db.patrocinio.findFirst({
       where: { revendedorId: patrocinadorId, dataFimVinculo: null },
