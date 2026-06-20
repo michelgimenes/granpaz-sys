@@ -624,7 +624,7 @@ export function ContractsTab() {
       {toast && (
         <div
           className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
-            toast.type === 'success' ? 'bg-state-success text-white' : 'bg-state-error text-white'
+            toast.type === 'success' ? 'bg-state-success text-primary-foreground' : 'bg-state-error text-primary-foreground'
           }`}
           role="alert"
         >

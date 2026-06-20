@@ -1,0 +1,1375 @@
+     1→'use client'
+     2→
+     3→import { useState, useCallback, useMemo } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { useAppStore } from '@/lib/store'
+     6→import { formatCPF, formatDate } from '@/lib/helpers'
+     7→import { toast } from 'sonner'
+     8→
+     9→// shadcn/ui
+    10→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    11→import { Button } from '@/components/ui/button'
+    12→import { Badge } from '@/components/ui/badge'
+    13→import { Input } from '@/components/ui/input'
+    14→import { Label } from '@/components/ui/label'
+    15→import { Textarea } from '@/components/ui/textarea'
+    16→import { Separator } from '@/components/ui/separator'
+    17→import {
+    18→  Dialog,
+    19→  DialogContent,
+    20→  DialogHeader,
+    21→  DialogTitle,
+    22→  DialogFooter,
+    23→  DialogDescription,
+    24→} from '@/components/ui/dialog'
+    25→import {
+    26→  Select,
+    27→  SelectContent,
+    28→  SelectItem,
+    29→  SelectTrigger,
+    30→  SelectValue,
+    31→} from '@/components/ui/select'
+    32→import {
+    33→  AlertDialog,
+    34→  AlertDialogContent,
+    35→  AlertDialogHeader,
+    36→  AlertDialogTitle,
+    37→  AlertDialogFooter,
+    38→  AlertDialogDescription,
+    39→  AlertDialogAction,
+    40→  AlertDialogCancel,
+    41→} from '@/components/ui/alert-dialog'
+    42→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    43→
+    44→// Icons
+    45→import {
+    46→  Download,
+    47→  Users,
+    48→  TreePine,
+    49→  UserPlus,
+    50→  ArrowRightLeft,
+    51→  Search,
+    52→  ChevronRight,
+    53→  ChevronDown,
+    54→  Shield,
+    55→  History,
+    56→  UserCheck,
+    57→  Leaf,
+    58→  Layers,
+    59→  Loader2,
+    60→  AlertTriangle,
+    61→} from 'lucide-react'
+    62→
+    63→// ─── Types ───
+    64→
+    65→interface TreeNode {
+    66→  id: string
+    67→  revendedorId: string
+    68→  nomeCompleto: string
+    69→  cpf: string | null
+    70→  nivelProfundidade: number
+    71→  subordinados: TreeNode[]
+    72→}
+    73→
+    74→interface PatrocinioItem {
+    75→  id: string
+    76→  nivelProfundidade: number
+    77→  dataEntrada: string
+    78→  dataFimVinculo: string | null
+    79→  motivoRealocacao: string | null
+    80→  revendedor: { id: string; nomeCompleto: string; cpf: string | null }
+    81→  patrocinador: { id: string; nomeCompleto: string; cpf: string | null }
+    82→}
+    83→
+    84→interface PatrocinioPaginated {
+    85→  data: PatrocinioItem[]
+    86→  pagination: { page: number; limit: number; total: number; totalPages: number }
+    87→}
+    88→
+    89→interface HistoricoEntry {
+    90→  id: string
+    91→  patrocinadorId: string
+    92→  patrocinadorNome: string
+    93→  patrocinadorCpf: string | null
+    94→  nivelProfundidade: number
+    95→  dataEntrada: string
+    96→  dataFimVinculo: string | null
+    97→  motivoRealocacao: string | null
+    98→  ativo: boolean
+    99→}
+   100→
+   101→interface HistoricoResponse {
+   102→  revendedor: { id: string; nomeCompleto: string; cpf: string | null }
+   103→  historico: HistoricoEntry[]
+   104→  total: number
+   105→  ativos: number
+   106→  realocacoes: number
+   107→}
+   108→
+   109→interface SubordinadoItem {
+   110→  patrocinioId: string
+   111→  revendedorId: string
+   112→  nomeCompleto: string
+   113→  cpf: string | null
+   114→  tipoRegistro: string
+   115→  nivelProfundidade: number
+   116→  dataEntrada: string
+   117→  relacao: 'direto' | 'indireto'
+   118→}
+   119→
+   120→interface SubordinadosResponse {
+   121→  data: SubordinadoItem[]
+   122→  countPorNivel: Record<number, number>
+   123→  pagination: { page: number; limit: number; total: number; totalPages: number }
+   124→}
+   125→
+   126→interface PessoaOption {
+   127→  id: string
+   128→  nomeCompleto: string
+   129→  cpf: string | null
+   130→}
+   131→
+   132→// ─── Constants ───
+   133→
+   134→const levelColors = [
+   135→  'bg-primary/10 text-primary',
+   136→  'bg-brand-accent/10 text-brand-accent',
+   137→  'bg-state-success/10 text-state-success',
+   138→  'bg-state-warning/10 text-state-warning',
+   139→  'bg-state-error/10 text-state-error',
+   140→]
+   141→
+   142→const levelBorderColors = [
+   143→  'border-l-primary',
+   144→  'border-l-brand-accent',
+   145→  'border-l-state-success',
+   146→  'border-l-state-warning',
+   147→  'border-l-state-error',
+   148→]
+   149→
+   150→function getLevelColor(level: number): string {
+   151→  return levelColors[(level - 1) % levelColors.length]
+   152→}
+   153→
+   154→function getLevelBorderColor(level: number): string {
+   155→  return levelBorderColors[(level - 1) % levelBorderColors.length]
+   156→}
+   157→
+   158→// ─── Helper: count all nodes in tree ───
+   159→
+   160→function countNodes(nodes: TreeNode[]): number {
+   161→  let count = 0
+   162→  for (const node of nodes) {
+   163→    count += 1
+   164→    if (node.subordinados.length > 0) {
+   165→      count += countNodes(node.subordinados)
+   166→    }
+   167→  }
+   168→  return count
+   169→}
+   170→
+   171→// ─── Helper: count leaves (nodes with no subordinados) ───
+   172→
+   173→function countLeaves(nodes: TreeNode[]): number {
+   174→  let count = 0
+   175→  for (const node of nodes) {
+   176→    if (node.subordinados.length === 0) {
+   177→      count += 1
+   178→    } else {
+   179→      count += countLeaves(node.subordinados)
+   180→    }
+   181→  }
+   182→  return count
+   183→}
+   184→
+   185→// ─── Helper: max depth of tree ───
+   186→
+   187→function maxDepth(nodes: TreeNode[]): number {
+   188→  if (nodes.length === 0) return 0
+   189→  let max = 0
+   190→  for (const node of nodes) {
+   191→    const childDepth = maxDepth(node.subordinados)
+   192→    max = Math.max(max, node.nivelProfundidade, childDepth)
+   193→  }
+   194→  return max
+   195→}
+   196→
+   197→// ─── Helper: collect all unique patrocinadores from patrocinios list ───
+   198→
+   199→function uniquePatrocinadores(patrocinios: PatrocinioItem[]): Set<string> {
+   200→  const set = new Set<string>()
+   201→  for (const p of patrocinios) {
+   202→    set.add(p.patrocinador.id)
+   203→  }
+   204→  return set
+   205→}
+   206→
+   207→// ─── Helper: filter tree by search term ───
+   208→
+   209→function filterTree(nodes: TreeNode[], term: string): TreeNode[] {
+   210→  if (!term.trim()) return nodes
+   211→  const lower = term.toLowerCase()
+   212→
+   213→  return nodes.reduce<TreeNode[]>((acc, node) => {
+   214→    const nameMatch = node.nomeCompleto.toLowerCase().includes(lower)
+   215→    const cpfMatch = node.cpf ? node.cpf.includes(term.replace(/\D/g, '')) : false
+   216→    const filteredChildren = filterTree(node.subordinados, term)
+   217→
+   218→    if (nameMatch || cpfMatch || filteredChildren.length > 0) {
+   219→      acc.push({
+   220→        ...node,
+   221→        subordinados: filteredChildren,
+   222→      })
+   223→    }
+   224→    return acc
+   225→  }, [])
+   226→}
+   227→
+   228→// ─── Tree Node Component ───
+   229→
+   230→function TreeNodeItem({
+   231→  node,
+   232→  isSuperAdmin,
+   233→  onRealocar,
+   234→  onViewSubordinados,
+   235→  onViewHistorico,
+   236→  depth = 0,
+   237→}: {
+   238→  node: TreeNode
+   239→  isSuperAdmin: boolean
+   240→  onRealocar: (node: TreeNode) => void
+   241→  onViewSubordinados: (node: TreeNode) => void
+   242→  onViewHistorico: (node: TreeNode) => void
+   243→  depth?: number
+   244→}) {
+   245→  const [expanded, setExpanded] = useState(depth < 2)
+   246→  const hasChildren = node.subordinados.length > 0
+   247→
+   248→  return (
+   249→    <div className="select-none">
+   250→      <div
+   251→        className={`flex items-center gap-2 py-2 px-3 rounded-lg border-l-4 ${getLevelBorderColor(node.nivelProfundidade)} hover:bg-muted/50 transition-colors group`}
+   252→        style={{ marginLeft: `${depth * 24}px` }}
+   253→        role="treeitem"
+   254→        aria-selected={false}
+   255→        aria-expanded={hasChildren ? expanded : undefined}
+   256→        tabIndex={0}
+   257→        onKeyDown={(e) => {
+   258→          if (e.key === 'Enter' && hasChildren) {
+   259→            e.preventDefault()
+   260→            setExpanded(!expanded)
+   261→          }
+   262→        }}
+   263→      >
+   264→        {/* Expand/Collapse */}
+   265→        <button
+   266→          onClick={() => hasChildren && setExpanded(!expanded)}
+   267→          className={`shrink-0 h-5 w-5 flex items-center justify-center rounded transition-colors ${
+   268→            hasChildren
+   269→              ? 'hover:bg-muted cursor-pointer'
+   270→              : 'opacity-0 cursor-default'
+   271→          }`}
+   272→          aria-label={expanded ? 'Recolher' : 'Expandir'}
+   273→          tabIndex={-1}
+   274→        >
+   275→          {hasChildren ? (
+   276→            expanded ? (
+   277→              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+   278→            ) : (
+   279→              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+   280→            )
+   281→          ) : (
+   282→            <span className="h-4 w-4" />
+   283→          )}
+   284→        </button>
+   285→
+   286→        {/* Level Badge */}
+   287→        <Badge className={`text-[10px] px-1.5 py-0 ${getLevelColor(node.nivelProfundidade)}`}>
+   288→          N{node.nivelProfundidade}
+   289→        </Badge>
+   290→
+   291→        {/* Name & CPF */}
+   292→        <div className="flex-1 min-w-0">
+   293→          <span className="font-medium text-sm text-foreground truncate block">
+   294→            {node.nomeCompleto}
+   295→          </span>
+   296→          {node.cpf && (
+   297→            <span className="text-xs text-muted-foreground">
+   298→              {formatCPF(node.cpf)}
+   299→            </span>
+   300→          )}
+   301→        </div>
+   302→
+   303→        {/* Subordinates count */}
+   304→        {hasChildren && (
+   305→          <span className="text-xs text-muted-foreground shrink-0">
+   306→            {node.subordinados.length} {node.subordinados.length === 1 ? 'subordinado' : 'subordinados'}
+   307→          </span>
+   308→        )}
+   309→
+   310→        {/* Actions */}
+   311→        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+   312→          <Button
+   313→            variant="ghost"
+   314→            size="sm"
+   315→            className="h-7 px-2 text-xs"
+   316→            onClick={() => onViewSubordinados(node)}
+   317→            title="Ver subordinados"
+   318→          >
+   319→            <Users className="h-3 w-3" />
+   320→          </Button>
+   321→          <Button
+   322→            variant="ghost"
+   323→            size="sm"
+   324→            className="h-7 px-2 text-xs"
+   325→            onClick={() => onViewHistorico(node)}
+   326→            title="Ver histórico"
+   327→          >
+   328→            <History className="h-3 w-3" />
+   329→          </Button>
+   330→          {isSuperAdmin && (
+   331→            <Button
+   332→              variant="ghost"
+   333→              size="sm"
+   334→              className="h-7 px-2 text-xs text-state-warning"
+   335→              onClick={() => onRealocar(node)}
+   336→              title="Realocar"
+   337→            >
+   338→              <ArrowRightLeft className="h-3 w-3" />
+   339→            </Button>
+   340→          )}
+   341→        </div>
+   342→      </div>
+   343→
+   344→      {/* Children */}
+   345→      {hasChildren && expanded && (
+   346→        <div role="group">
+   347→          {node.subordinados.map((child) => (
+   348→            <TreeNodeItem
+   349→              key={child.id}
+   350→              node={child}
+   351→              isSuperAdmin={isSuperAdmin}
+   352→              onRealocar={onRealocar}
+   353→              onViewSubordinados={onViewSubordinados}
+   354→              onViewHistorico={onViewHistorico}
+   355→              depth={depth + 1}
+   356→            />
+   357→          ))}
+   358→        </div>
+   359→      )}
+   360→    </div>
+   361→  )
+   362→}
+   363→
+   364→// ─── Main Component ───
+   365→
+   366→export function NetworkTab() {
+   367→  const queryClient = useQueryClient()
+   368→  const { user } = useAppStore()
+   369→  const isSuperAdmin = user?.role === 'SUPERADMIN'
+   370→
+   371→  // ─── State ───
+   372→  const [treeSearch, setTreeSearch] = useState('')
+   373→  const [selectedRevendedor, setSelectedRevendedor] = useState<TreeNode | null>(null)
+   374→  const [activeTab, setActiveTab] = useState('arvore')
+   375→
+   376→  // Create Patrocínio dialog
+   377→  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+   378→  const [createRevendedorId, setCreateRevendedorId] = useState('')
+   379→  const [createPatrocinadorId, setCreatePatrocinadorId] = useState('')
+   380→  const [createSubmitting, setCreateSubmitting] = useState(false)
+   381→
+   382→  // Realocação dialog
+   383→  const [realocarDialogOpen, setRealocarDialogOpen] = useState(false)
+   384→  const [realocarNode, setRealocarNode] = useState<TreeNode | null>(null)
+   385→  const [realocarNovoPatrocinadorId, setRealocarNovoPatrocinadorId] = useState('')
+   386→  const [realocarMotivo, setRealocarMotivo] = useState('')
+   387→  const [realocarConfirmOpen, setRealocarConfirmOpen] = useState(false)
+   388→  const [realocarSubmitting, setRealocarSubmitting] = useState(false)
+   389→
+   390→  // Subordinates view
+   391→  const [subordinadosTipo, setSubordinadosTipo] = useState<'diretos' | 'indiretos' | 'todos'>('diretos')
+   392→  const [subordinadosPage, setSubordinadosPage] = useState(1)
+   393→
+   394→  // History view
+   395→  const [historicoRevendedorId, setHistoricoRevendedorId] = useState<string | null>(null)
+   396→
+   397→  // CSV export
+   398→  const [csvExportHistorico, setCsvExportHistorico] = useState(false)
+   399→  const [csvExportNivel, setCsvExportNivel] = useState<string>('all')
+   400→
+   401→  // ─── Queries ───
+   402→
+   403→  // Patrocínios list (for stats + CSV + selects)
+   404→  const { data: patrociniosData, isLoading: patrociniosLoading } = useQuery<PatrocinioPaginated>({
+   405→    queryKey: ['patrocinios', 'all'],
+   406→    queryFn: async () => {
+   407→      const res = await fetch('/api/patrocinios?limit=100&incluirInativos=true')
+   408→      if (!res.ok) throw new Error('Erro ao carregar patrocínios')
+   409→      return res.json()
+   410→    },
+   411→  })
+   412→
+   413→  // Active patrocínios (for stats)
+   414→  const { data: patrociniosAtivosData } = useQuery<PatrocinioPaginated>({
+   415→    queryKey: ['patrocinios', 'active'],
+   416→    queryFn: async () => {
+   417→      const res = await fetch('/api/patrocinios?limit=100')
+   418→      if (!res.ok) throw new Error('Erro ao carregar patrocínios ativos')
+   419→      return res.json()
+   420→    },
+   421→  })
+   422→
+   423→  // Tree data
+   424→  const { data: treeData, isLoading: treeLoading } = useQuery<{ trees?: TreeNode[]; tree?: TreeNode }>({
+   425→    queryKey: ['rede', 'arvore'],
+   426→    queryFn: async () => {
+   427→      const res = await fetch('/api/rede/arvore?max_nivel=10')
+   428→      if (!res.ok) throw new Error('Erro ao carregar árvore')
+   429→      return res.json()
+   430→    },
+   431→  })
+   432→
+   433→  // People for selects (all pessoas_fisicas who are titulares)
+   434→  const { data: pessoasData } = useQuery<{ data: PessoaOption[] }>({
+   435→    queryKey: ['pessoas-fisicas'],
+   436→    queryFn: async () => {
+   437→      // Use patrocinios to derive available people
+   438→      const res = await fetch('/api/contratos?limit=100')
+   439→      if (!res.ok) return { data: [] }
+   440→      const json = await res.json()
+   441→      // Extract unique titular people from contracts
+   442→      const people: PessoaOption[] = []
+   443→      const seen = new Set<string>()
+   444→      if (json.data) {
+   445→        for (const c of json.data) {
+   446→          if (c.titular && !seen.has(c.titular.id)) {
+   447→            seen.add(c.titular.id)
+   448→            people.push({
+   449→              id: c.titular.id,
+   450→              nomeCompleto: c.titular.nomeCompleto,
+   451→              cpf: c.titular.cpf || null,
+   452→            })
+   453→          }
+   454→        }
+   455→      }
+   456→      return { data: people }
+   457→    },
+   458→  })
+   459→
+   460→  // All people from patrocínios (both revendedores and patrocinadores)
+   461→  const allPeopleFromPatrocinios = useMemo<PessoaOption[]>(() => {
+   462→    if (!patrociniosData?.data) return []
+   463→    const map = new Map<string, PessoaOption>()
+   464→    for (const p of patrociniosData.data) {
+   465→      if (!map.has(p.revendedor.id)) {
+   466→        map.set(p.revendedor.id, {
+   467→          id: p.revendedor.id,
+   468→          nomeCompleto: p.revendedor.nomeCompleto,
+   469→          cpf: p.revendedor.cpf,
+   470→        })
+   471→      }
+   472→      if (!map.has(p.patrocinador.id)) {
+   473→        map.set(p.patrocinador.id, {
+   474→          id: p.patrocinador.id,
+   475→          nomeCompleto: p.patrocinador.nomeCompleto,
+   476→          cpf: p.patrocinador.cpf,
+   477→        })
+   478→      }
+   479→    }
+   480→    return Array.from(map.values()).sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto))
+   481→  }, [patrociniosData])
+   482→
+   483→  // Merge people from contracts + patrocínios for selects
+   484→  const allPeopleOptions = useMemo<PessoaOption[]>(() => {
+   485→    const map = new Map<string, PessoaOption>()
+   486→    for (const p of allPeopleFromPatrocinios) {
+   487→      if (!map.has(p.id)) map.set(p.id, p)
+   488→    }
+   489→    if (pessoasData?.data) {
+   490→      for (const p of pessoasData.data) {
+   491→        if (!map.has(p.id)) map.set(p.id, p)
+   492→      }
+   493→    }
+   494→    return Array.from(map.values()).sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto))
+   495→  }, [allPeopleFromPatrocinios, pessoasData])
+   496→
+   497→  // Available revendedores = people without active patrocínio
+   498→  const availableRevendedores = useMemo<PessoaOption[]>(() => {
+   499→    const activeRevendedorIds = new Set(
+   500→      (patrociniosAtivosData?.data || []).map(p => p.revendedor.id)
+   501→    )
+   502→    return allPeopleOptions.filter(p => !activeRevendedorIds.has(p.id))
+   503→  }, [allPeopleOptions, patrociniosAtivosData])
+   504→
+   505→  // Available patrocinadores = people with active patrocínio or root
+   506→  const availablePatrocinadores = useMemo<PessoaOption[]>(() => {
+   507→    const activePatrocinadores = new Set(
+   508→      (patrociniosAtivosData?.data || []).map(p => p.patrocinador.id)
+   509→    )
+   510→    const activeRevendedores = new Set(
+   511→      (patrociniosAtivosData?.data || []).map(p => p.revendedor.id)
+   512→    )
+   513→    // Patrocinadores are those who are active in the network (either as a patrocinador or as a revendedor)
+   514→    // Or root nodes (are patrocinadores but don't have active patrocínio as revendedor)
+   515→    return allPeopleOptions.filter(p => {
+   516→      return activePatrocinadores.has(p.id) || activeRevendedores.has(p.id)
+   517→    })
+   518→  }, [allPeopleOptions, patrociniosAtivosData])
+   519→
+   520→  // Subordinates query
+   521→  const { data: subordinadosData, isLoading: subordinadosLoading } = useQuery<SubordinadosResponse>({
+   522→    queryKey: ['rede', 'subordinados', selectedRevendedor?.revendedorId, subordinadosTipo, subordinadosPage],
+   523→    queryFn: async () => {
+   524→      const params = new URLSearchParams({
+   525→        revendedor_id: selectedRevendedor!.revendedorId,
+   526→        tipo: subordinadosTipo,
+   527→        page: String(subordinadosPage),
+   528→        limit: '20',
+   529→      })
+   530→      const res = await fetch(`/api/rede/subordinados?${params}`)
+   531→      if (!res.ok) throw new Error('Erro ao carregar subordinados')
+   532→      return res.json()
+   533→    },
+   534→    enabled: !!selectedRevendedor && activeTab === 'subordinados',
+   535→  })
+   536→
+   537→  // History query
+   538→  const { data: historicoData, isLoading: historicoLoading } = useQuery<HistoricoResponse>({
+   539→    queryKey: ['rede', 'historico', historicoRevendedorId],
+   540→    queryFn: async () => {
+   541→      const res = await fetch(`/api/rede/historico?revendedor_id=${historicoRevendedorId}`)
+   542→      if (!res.ok) throw new Error('Erro ao carregar histórico')
+   543→      return res.json()
+   544→    },
+   545→    enabled: !!historicoRevendedorId && activeTab === 'historico',
+   546→  })
+   547→
+   548→  // Realocação: count subordinados for confirmation
+   549→  const realocarSubordinadosCount = useMemo(() => {
+   550→    if (!realocarNode) return 0
+   551→    return countNodes(realocarNode.subordinados)
+   552→  }, [realocarNode])
+   553→
+   554→  // ─── Mutations ───
+   555→
+   556→  const createPatrocinioMutation = useMutation({
+   557→    mutationFn: async (data: { revendedorId: string; patrocinadorId: string }) => {
+   558→      const res = await fetch('/api/patrocinios', {
+   559→        method: 'POST',
+   560→        headers: { 'Content-Type': 'application/json' },
+   561→        body: JSON.stringify(data),
+   562→      })
+   563→      const json = await res.json()
+   564→      if (!res.ok) throw json
+   565→      return json
+   566→    },
+   567→    onSuccess: () => {
+   568→      toast.success('Vínculo criado com sucesso')
+   569→      setCreateDialogOpen(false)
+   570→      setCreateRevendedorId('')
+   571→      setCreatePatrocinadorId('')
+   572→      queryClient.invalidateQueries({ queryKey: ['patrocinios'] })
+   573→      queryClient.invalidateQueries({ queryKey: ['rede'] })
+   574→    },
+   575→    onError: (error: Record<string, unknown>) => {
+   576→      const err = error as { error?: string; code?: string }
+   577→      const codeMessages: Record<string, string> = {
+   578→        CONFLITO_DE_REDE: 'Revendedor já possui vínculo ativo em outra árvore de patrocínio.',
+   579→        AUTO_PATROCINIO_PROIBIDO: 'Auto-patrocínio não é permitido.',
+   580→        AIR_GAP_CLT: 'Requisição contém termos proibidos (Air-Gap CLT).',
+   581→        PATROCINADOR_INATIVO: 'Patrocinador não possui vínculo ativo na rede.',
+   582→      }
+   583→      toast.error(codeMessages[err.code || ''] || err.error || 'Erro ao criar vínculo')
+   584→    },
+   585→  })
+   586→
+   587→  const realocarMutation = useMutation({
+   588→    mutationFn: async (data: { revendedor_id: string; novo_patrocinador_id: string; motivo: string }) => {
+   589→      const res = await fetch('/api/rede/realocar', {
+   590→        method: 'POST',
+   591→        headers: { 'Content-Type': 'application/json' },
+   592→        body: JSON.stringify(data),
+   593→      })
+   594→      const json = await res.json()
+   595→      if (!res.ok) throw json
+   596→      return json
+   597→    },
+   598→    onSuccess: (data) => {
+   599→      const count = data.subordinadosAfetados || 0
+   600→      toast.success(`Realocação concluída. ${count} subordinado${count !== 1 ? 's' : ''} recalculado${count !== 1 ? 's' : ''}.`)
+   601→      setRealocarDialogOpen(false)
+   602→      setRealocarConfirmOpen(false)
+   603→      setRealocarNode(null)
+   604→      setRealocarNovoPatrocinadorId('')
+   605→      setRealocarMotivo('')
+   606→      queryClient.invalidateQueries({ queryKey: ['patrocinios'] })
+   607→      queryClient.invalidateQueries({ queryKey: ['rede'] })
+   608→    },
+   609→    onError: (error: Record<string, unknown>) => {
+   610→      const err = error as { error?: string; code?: string }
+   611→      const codeMessages: Record<string, string> = {
+   612→        CICLO_DE_PATROCINIO_DETECTADO: 'A realocação criaria um ciclo na árvore de patrocínio.',
+   613→        CONFLITO_DE_REDE: 'Conflito de rede detectado.',
+   614→        AUTO_PATROCINIO_PROIBIDO: 'Auto-patrocínio não é permitido.',
+   615→        PATROCINADOR_INATIVO: 'Novo patrocinador não possui vínculo ativo.',
+   616→        SEM_VINCULO_ATIVO: 'Revendedor não possui vínculo ativo na rede.',
+   617→        MESMO_PATROCINADOR: 'Novo patrocinador é o mesmo que o atual.',
+   618→        ACESSO_NEGADO: 'Acesso negado. Apenas SuperAdmin pode realizar realocação.',
+   619→      }
+   620→      toast.error(codeMessages[err.code || ''] || err.error || 'Erro ao realizar realocação')
+   621→    },
+   622→  })
+   623→
+   624→  // ─── Computed ───
+   625→
+   626→  const trees = useMemo<TreeNode[]>(() => {
+   627→    if (treeData?.trees) return treeData.trees
+   628→    if (treeData?.tree) return [treeData.tree]
+   629→    return []
+   630→  }, [treeData])
+   631→
+   632→  const filteredTrees = useMemo(() => {
+   633→    return filterTree(trees, treeSearch)
+   634→  }, [trees, treeSearch])
+   635→
+   636→  const patrociniosAtivos = patrociniosAtivosData?.data || []
+   637→  const patrociniosAll = patrociniosData?.data || []
+   638→
+   639→  const stats = useMemo(() => {
+   640→    const totalAtivos = patrociniosAtivos.length
+   641→    const niveis = new Set(patrociniosAtivos.map(p => p.nivelProfundidade))
+   642→    const maxNivel = niveis.size > 0 ? Math.max(...niveis) : 0
+   643→    const patrocinadoresUnicos = uniquePatrocinadores(patrociniosAtivos).size
+   644→    const folhas = trees.length > 0 ? countLeaves(trees) : 0
+   645→
+   646→    return { totalAtivos, maxNivel, patrocinadoresUnicos, folhas }
+   647→  }, [patrociniosAtivos, trees])
+   648→
+   649→  // Preview nivel for create patrocínio
+   650→  const createNivelPreview = useMemo(() => {
+   651→    if (!createPatrocinadorId) return null
+   652→    const patrocinioAtivoPatrocinador = patrociniosAtivos.find(
+   653→      p => p.revendedor.id === createPatrocinadorId
+   654→    )
+   655→    if (patrocinioAtivoPatrocinador) {
+   656→      return patrocinioAtivoPatrocinador.nivelProfundidade + 1
+   657→    }
+   658→    // Check if they're a root (patrocinador but not revendedor)
+   659→    const isPatrocinador = patrociniosAtivos.some(p => p.patrocinador.id === createPatrocinadorId)
+   660→    if (isPatrocinador) return 1
+   661→    return null
+   662→  }, [createPatrocinadorId, patrociniosAtivos])
+   663→
+   664→  // ─── Handlers ───
+   665→
+   666→  const handleViewSubordinados = useCallback((node: TreeNode) => {
+   667→    setSelectedRevendedor(node)
+   668→    setSubordinadosPage(1)
+   669→    setActiveTab('subordinados')
+   670→  }, [])
+   671→
+   672→  const handleViewHistorico = useCallback((node: TreeNode) => {
+   673→    setHistoricoRevendedorId(node.revendedorId)
+   674→    setActiveTab('historico')
+   675→  }, [])
+   676→
+   677→  const handleRealocar = useCallback((node: TreeNode) => {
+   678→    setRealocarNode(node)
+   679→    setRealocarNovoPatrocinadorId('')
+   680→    setRealocarMotivo('')
+   681→    setRealocarDialogOpen(true)
+   682→  }, [])
+   683→
+   684→  const handleCreateSubmit = useCallback(() => {
+   685→    if (!createRevendedorId || !createPatrocinadorId) {
+   686→      toast.error('Selecione revendedor e patrocinador')
+   687→      return
+   688→    }
+   689→    setCreateSubmitting(true)
+   690→    createPatrocinioMutation.mutate(
+   691→      { revendedorId: createRevendedorId, patrocinadorId: createPatrocinadorId },
+   692→      { onSettled: () => setCreateSubmitting(false) }
+   693→    )
+   694→  }, [createRevendedorId, createPatrocinadorId, createPatrocinioMutation])
+   695→
+   696→  const handleRealocarSubmit = useCallback(() => {
+   697→    if (!realocarNode || !realocarNovoPatrocinadorId) return
+   698→    setRealocarSubmitting(true)
+   699→    realocarMutation.mutate(
+   700→      {
+   701→        revendedor_id: realocarNode.revendedorId,
+   702→        novo_patrocinador_id: realocarNovoPatrocinadorId,
+   703→        motivo: realocarMotivo,
+   704→      },
+   705→      { onSettled: () => setRealocarSubmitting(false) }
+   706→    )
+   707→  }, [realocarNode, realocarNovoPatrocinadorId, realocarMotivo, realocarMutation])
+   708→
+   709→  const handleExportCSV = useCallback(() => {
+   710→    let dataToExport = csvExportHistorico ? patrociniosAll : patrociniosAtivos
+   711→
+   712→    if (csvExportNivel !== 'all') {
+   713→      const nivelNum = parseInt(csvExportNivel, 10)
+   714→      dataToExport = dataToExport.filter(p => p.nivelProfundidade === nivelNum)
+   715→    }
+   716→
+   717→    const headers = 'Nível;Revendedor;CPF Revendedor;Patrocinador;CPF Patrocinador;Data Entrada;Data Fim;Status\n'
+   718→    const rows = dataToExport.map(p =>
+   719→      `${p.nivelProfundidade};${p.revendedor.nomeCompleto};${p.revendedor.cpf || ''};${p.patrocinador.nomeCompleto};${p.patrocinador.cpf || ''};${formatDate(p.dataEntrada)};${p.dataFimVinculo ? formatDate(p.dataFimVinculo) : ''};${p.dataFimVinculo ? 'Inativo' : 'Ativo'}`
+   720→    ).join('\n')
+   721→    const csv = headers + rows
+   722→    const BOM = '\uFEFF'
+   723→    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' })
+   724→    const link = document.createElement('a')
+   725→    link.href = URL.createObjectURL(blob)
+   726→    link.download = `rede-patrocinio${csvExportHistorico ? '-completo' : '-ativos'}.csv`
+   727→    link.click()
+   728→    URL.revokeObjectURL(link.href)
+   729→  }, [csvExportHistorico, csvExportNivel, patrociniosAll, patrociniosAtivos])
+   730→
+   731→  // Available levels for CSV filter
+   732→  const availableLevels = useMemo(() => {
+   733→    const levels = new Set(patrociniosAtivos.map(p => p.nivelProfundidade))
+   734→    return Array.from(levels).sort((a, b) => a - b)
+   735→  }, [patrociniosAtivos])
+   736→
+   737→  // ─── Render ───
+   738→
+   739→  return (
+   740→    <div className="animate-fade-up">
+   741→      {/* ─── Compliance Banner (ADR-03) ─── */}
+   742→      <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-state-success/5 border border-state-success/20 text-sm text-state-success">
+   743→        <Shield className="h-4 w-4 shrink-0" aria-hidden="true" />
+   744→        <span>
+   745→          <strong>Compliance:</strong> Este sistema não gerencia metas, horários ou subordinação trabalhista (Air-Gap Funcional ADR-03)
+   746→        </span>
+   747→      </div>
+   748→
+   749→      {/* ─── Header ─── */}
+   750→      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+   751→        <div>
+   752→          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Rede / Patrocínio</h1>
+   753→          <p className="text-muted-foreground mt-1">Visualização e gestão da rede de patrocínio</p>
+   754→        </div>
+   755→        <div className="flex items-center gap-2 flex-wrap">
+   756→          {isSuperAdmin && (
+   757→            <Button
+   758→              onClick={() => {
+   759→                setCreateRevendedorId('')
+   760→                setCreatePatrocinadorId('')
+   761→                setCreateDialogOpen(true)
+   762→              }}
+   763→              size="sm"
+   764→            >
+   765→              <UserPlus className="h-4 w-4 mr-2" aria-hidden="true" />
+   766→              Adicionar Vínculo
+   767→            </Button>
+   768→          )}
+   769→          <Button variant="outline" onClick={handleExportCSV} size="sm">
+   770→            <Download className="h-4 w-4 mr-2" aria-hidden="true" />
+   771→            Exportar CSV
+   772→          </Button>
+   773→        </div>
+   774→      </div>
+   775→
+   776→      {/* ─── Stats Dashboard ─── */}
+   777→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+   778→        <Card className="border-border/50">
+   779→          <CardContent className="py-4">
+   780→            <div className="flex items-center gap-2 mb-1">
+   781→              <UserCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+   782→              <p className="text-xs text-muted-foreground">Membros Ativos</p>
+   783→            </div>
+   784→            <p className="text-2xl font-bold text-foreground">
+   785→              {patrociniosLoading ? (
+   786→                <span className="inline-block h-7 w-10 bg-muted animate-pulse rounded" />
+   787→              ) : (
+   788→                stats.totalAtivos
+   789→              )}
+   790→            </p>
+   791→          </CardContent>
+   792→        </Card>
+   793→        <Card className="border-border/50">
+   794→          <CardContent className="py-4">
+   795→            <div className="flex items-center gap-2 mb-1">
+   796→              <Layers className="h-4 w-4 text-brand-accent" aria-hidden="true" />
+   797→              <p className="text-xs text-muted-foreground">Níveis de Profundidade</p>
+   798→            </div>
+   799→            <p className="text-2xl font-bold text-foreground">
+   800→              {patrociniosLoading ? (
+   801→                <span className="inline-block h-7 w-10 bg-muted animate-pulse rounded" />
+   802→              ) : (
+   803→                stats.maxNivel
+   804→              )}
+   805→            </p>
+   806→          </CardContent>
+   807→        </Card>
+   808→        <Card className="border-border/50">
+   809→          <CardContent className="py-4">
+   810→            <div className="flex items-center gap-2 mb-1">
+   811→              <Users className="h-4 w-4 text-state-success" aria-hidden="true" />
+   812→              <p className="text-xs text-muted-foreground">Patrocinadores Únicos</p>
+   813→            </div>
+   814→            <p className="text-2xl font-bold text-foreground">
+   815→              {patrociniosLoading ? (
+   816→                <span className="inline-block h-7 w-10 bg-muted animate-pulse rounded" />
+   817→              ) : (
+   818→                stats.patrocinadoresUnicos
+   819→              )}
+   820→            </p>
+   821→          </CardContent>
+   822→        </Card>
+   823→        <Card className="border-border/50">
+   824→          <CardContent className="py-4">
+   825→            <div className="flex items-center gap-2 mb-1">
+   826→              <Leaf className="h-4 w-4 text-state-warning" aria-hidden="true" />
+   827→              <p className="text-xs text-muted-foreground">Sem Subordinados</p>
+   828→            </div>
+   829→            <p className="text-2xl font-bold text-foreground">
+   830→              {treeLoading ? (
+   831→                <span className="inline-block h-7 w-10 bg-muted animate-pulse rounded" />
+   832→              ) : (
+   833→                stats.folhas
+   834→              )}
+   835→            </p>
+   836→          </CardContent>
+   837→        </Card>
+   838→      </div>
+   839→
+   840→      {/* ─── CSV Export Options (collapsible) ─── */}
+   841→      <Card className="border-border/50 mb-6">
+   842→        <CardContent className="py-3">
+   843→          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+   844→            <p className="text-xs font-medium text-muted-foreground shrink-0">Opções de Exportação:</p>
+   845→            <div className="flex items-center gap-4 flex-wrap">
+   846→              <label className="flex items-center gap-2 text-sm cursor-pointer">
+   847→                <input
+   848→                  type="checkbox"
+   849→                  checked={csvExportHistorico}
+   850→                  onChange={(e) => setCsvExportHistorico(e.target.checked)}
+   851→                  className="rounded border-border"
+   852→                />
+   853→                Incluir inativos/histórico
+   854→              </label>
+   855→              <div className="flex items-center gap-2">
+   856→                <Label className="text-xs text-muted-foreground shrink-0">Filtrar nível:</Label>
+   857→                <Select value={csvExportNivel} onValueChange={setCsvExportNivel}>
+   858→                  <SelectTrigger className="h-8 w-32 text-xs">
+   859→                    <SelectValue />
+   860→                  </SelectTrigger>
+   861→                  <SelectContent>
+   862→                    <SelectItem value="all">Todos</SelectItem>
+   863→                    {availableLevels.map(l => (
+   864→                      <SelectItem key={l} value={String(l)}>Nível {l}</SelectItem>
+   865→                    ))}
+   866→                  </SelectContent>
+   867→                </Select>
+   868→              </div>
+   869→            </div>
+   870→          </div>
+   871→        </CardContent>
+   872→      </Card>
+   873→
+   874→      {/* ─── Main Tabs ─── */}
+   875→      <Tabs value={activeTab} onValueChange={setActiveTab}>
+   876→        <TabsList className="mb-4">
+   877→          <TabsTrigger value="arvore" className="gap-1.5">
+   878→            <TreePine className="h-3.5 w-3.5" />
+   879→            Árvore
+   880→          </TabsTrigger>
+   881→          <TabsTrigger value="subordinados" className="gap-1.5" disabled={!selectedRevendedor}>
+   882→            <Users className="h-3.5 w-3.5" />
+   883→            Subordinados
+   884→          </TabsTrigger>
+   885→          <TabsTrigger value="historico" className="gap-1.5" disabled={!historicoRevendedorId}>
+   886→            <History className="h-3.5 w-3.5" />
+   887→            Histórico
+   888→          </TabsTrigger>
+   889→        </TabsList>
+   890→
+   891→        {/* ─── Árvore Tab ─── */}
+   892→        <TabsContent value="arvore">
+   893→          {/* Search */}
+   894→          <div className="relative mb-4">
+   895→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   896→            <Input
+   897→              placeholder="Buscar por nome ou CPF..."
+   898→              value={treeSearch}
+   899→              onChange={(e) => setTreeSearch(e.target.value)}
+   900→              className="pl-9"
+   901→            />
+   902→          </div>
+   903→
+   904→          {treeLoading ? (
+   905→            <div className="flex items-center justify-center py-20">
+   906→              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+   907→            </div>
+   908→          ) : filteredTrees.length === 0 ? (
+   909→            <Card className="border-border/50">
+   910→              <CardContent className="py-12 text-center">
+   911→                <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+   912→                <p className="text-muted-foreground">
+   913→                  {treeSearch ? 'Nenhum resultado encontrado para a busca' : 'Nenhum membro na rede'}
+   914→                </p>
+   915→              </CardContent>
+   916→            </Card>
+   917→          ) : (
+   918→            <Card className="border-border/50">
+   919→              <CardHeader className="pb-3">
+   920→                <div className="flex items-center justify-between">
+   921→                  <CardTitle className="text-sm">
+   922→                    {treeSearch
+   923→                      ? `${countNodes(filteredTrees)} resultado${countNodes(filteredTrees) !== 1 ? 's' : ''} encontrado${countNodes(filteredTrees) !== 1 ? 's' : ''}`
+   924→                      : `${countNodes(trees)} membro${countNodes(trees) !== 1 ? 's' : ''} na rede`
+   925→                    }
+   926→                  </CardTitle>
+   927→                  <div className="flex items-center gap-2">
+   928→                    {availableLevels.map(l => {
+   929→                      const countInTree = countAtLevel(trees, l)
+   930→                      return countInTree > 0 ? (
+   931→                        <Badge key={l} className={`text-[10px] px-1.5 py-0 ${getLevelColor(l)}`}>
+   932→                          N{l}: {countInTree}
+   933→                        </Badge>
+   934→                      ) : null
+   935→                    })}
+   936→                  </div>
+   937→                </div>
+   938→              </CardHeader>
+   939→              <CardContent>
+   940→                <div className="max-h-[600px] overflow-y-auto custom-scrollbar space-y-0.5" role="tree">
+   941→                  {filteredTrees.map((tree) => (
+   942→                    <TreeNodeItem
+   943→                      key={tree.id}
+   944→                      node={tree}
+   945→                      isSuperAdmin={isSuperAdmin}
+   946→                      onRealocar={handleRealocar}
+   947→                      onViewSubordinados={handleViewSubordinados}
+   948→                      onViewHistorico={handleViewHistorico}
+   949→                    />
+   950→                  ))}
+   951→                </div>
+   952→              </CardContent>
+   953→            </Card>
+   954→          )}
+   955→        </TabsContent>
+   956→
+   957→        {/* ─── Subordinados Tab ─── */}
+   958→        <TabsContent value="subordinados">
+   959→          {selectedRevendedor ? (
+   960→            <Card className="border-border/50">
+   961→              <CardHeader className="pb-3">
+   962→                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+   963→                  <div>
+   964→                    <CardTitle className="text-base">
+   965→                      Subordinados de {selectedRevendedor.nomeCompleto}
+   966→                    </CardTitle>
+   967→                    <p className="text-sm text-muted-foreground mt-1">
+   968→                      {formatCPF(selectedRevendedor.cpf || '')} — Nível {selectedRevendedor.nivelProfundidade}
+   969→                    </p>
+   970→                  </div>
+   971→                  <Select value={subordinadosTipo} onValueChange={(v) => { setSubordinadosTipo(v as 'diretos' | 'indiretos' | 'todos'); setSubordinadosPage(1) }}>
+   972→                    <SelectTrigger className="w-40">
+   973→                      <SelectValue />
+   974→                    </SelectTrigger>
+   975→                    <SelectContent>
+   976→                      <SelectItem value="diretos">Diretos</SelectItem>
+   977→                      <SelectItem value="indiretos">Indiretos</SelectItem>
+   978→                      <SelectItem value="todos">Todos</SelectItem>
+   979→                    </SelectContent>
+   980→                  </Select>
+   981→                </div>
+   982→              </CardHeader>
+   983→              <CardContent>
+   984→                {subordinadosLoading ? (
+   985→                  <div className="flex items-center justify-center py-12">
+   986→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+   987→                  </div>
+   988→                ) : !subordinadosData?.data || subordinadosData.data.length === 0 ? (
+   989→                  <p className="text-center text-muted-foreground py-8">Nenhum subordinado encontrado</p>
+   990→                ) : (
+   991→                  <>
+   992→                    <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+   993→                      {subordinadosData.data.map((sub) => (
+   994→                        <div
+   995→                          key={sub.patrocinioId}
+   996→                          className="flex items-center justify-between p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors"
+   997→                        >
+   998→                          <div className="min-w-0">
+   999→                            <div className="flex items-center gap-2">
+  1000→                              <span className="font-medium text-sm text-foreground truncate">{sub.nomeCompleto}</span>
+  1001→                              <Badge className={`text-[10px] px-1.5 py-0 ${getLevelColor(sub.nivelProfundidade)}`}>
+  1002→                                N{sub.nivelProfundidade}
+  1003→                              </Badge>
+  1004→                              {sub.relacao === 'direto' ? (
+  1005→                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">Direto</Badge>
+  1006→                              ) : (
+  1007→                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">Indireto</Badge>
+  1008→                              )}
+  1009→                            </div>
+  1010→                            {sub.cpf && (
+  1011→                              <p className="text-xs text-muted-foreground">{formatCPF(sub.cpf)}</p>
+  1012→                            )}
+  1013→                          </div>
+  1014→                          <span className="text-xs text-muted-foreground shrink-0 ml-2">
+  1015→                            {formatDate(sub.dataEntrada)}
+  1016→                          </span>
+  1017→                        </div>
+  1018→                      ))}
+  1019→                    </div>
+  1020→
+  1021→                    {/* Pagination */}
+  1022→                    {subordinadosData.pagination.totalPages > 1 && (
+  1023→                      <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-border/50">
+  1024→                        <Button
+  1025→                          variant="outline"
+  1026→                          size="sm"
+  1027→                          disabled={subordinadosPage <= 1}
+  1028→                          onClick={() => setSubordinadosPage(p => p - 1)}
+  1029→                        >
+  1030→                          Anterior
+  1031→                        </Button>
+  1032→                        <span className="text-sm text-muted-foreground">
+  1033→                          {subordinadosPage} / {subordinadosData.pagination.totalPages}
+  1034→                        </span>
+  1035→                        <Button
+  1036→                          variant="outline"
+  1037→                          size="sm"
+  1038→                          disabled={subordinadosPage >= subordinadosData.pagination.totalPages}
+  1039→                          onClick={() => setSubordinadosPage(p => p + 1)}
+  1040→                        >
+  1041→                          Próxima
+  1042→                        </Button>
+  1043→                      </div>
+  1044→                    )}
+  1045→                  </>
+  1046→                )}
+  1047→              </CardContent>
+  1048→            </Card>
+  1049→          ) : (
+  1050→            <Card className="border-border/50">
+  1051→              <CardContent className="py-12 text-center">
+  1052→                <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+  1053→                <p className="text-muted-foreground">Selecione um membro na árvore para ver seus subordinados</p>
+  1054→              </CardContent>
+  1055→            </Card>
+  1056→          )}
+  1057→        </TabsContent>
+  1058→
+  1059→        {/* ─── Histórico Tab ─── */}
+  1060→        <TabsContent value="historico">
+  1061→          {historicoRevendedorId ? (
+  1062→            <Card className="border-border/50">
+  1063→              <CardHeader className="pb-3">
+  1064→                {historicoData ? (
+  1065→                  <div>
+  1066→                    <CardTitle className="text-base">
+  1067→                      Histórico de {historicoData.revendedor.nomeCompleto}
+  1068→                    </CardTitle>
+  1069→                    <p className="text-sm text-muted-foreground mt-1">
+  1070→                      {formatCPF(historicoData.revendedor.cpf || '')} — {historicoData.total} registro{historicoData.total !== 1 ? 's' : ''} ({historicoData.ativos} ativo{historicoData.ativos !== 1 ? 's' : ''}, {historicoData.realocacoes} realocação{historicoData.realocacoes !== 1 ? 'ões' : ''})
+  1071→                    </p>
+  1072→                  </div>
+  1073→                ) : (
+  1074→                  <CardTitle className="text-base">Histórico de Patrocínio</CardTitle>
+  1075→                )}
+  1076→              </CardHeader>
+  1077→              <CardContent>
+  1078→                {historicoLoading ? (
+  1079→                  <div className="flex items-center justify-center py-12">
+  1080→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  1081→                  </div>
+  1082→                ) : !historicoData?.historico || historicoData.historico.length === 0 ? (
+  1083→                  <p className="text-center text-muted-foreground py-8">Nenhum histórico encontrado</p>
+  1084→                ) : (
+  1085→                  <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
+  1086→                    {historicoData.historico.map((entry, idx) => (
+  1087→                      <div
+  1088→                        key={entry.id}
+  1089→                        className={`p-4 rounded-lg border ${
+  1090→                          entry.ativo
+  1091→                            ? 'bg-state-success/5 border-state-success/20'
+  1092→                            : 'bg-muted/30 border-border/50'
+  1093→                        }`}
+  1094→                      >
+  1095→                        <div className="flex items-start justify-between gap-3">
+  1096→                          <div>
+  1097→                            <div className="flex items-center gap-2 flex-wrap">
+  1098→                              <span className="font-medium text-sm text-foreground">
+  1099→                                Patrocinador: {entry.patrocinadorNome}
+  1100→                              </span>
+  1101→                              <Badge className={`text-[10px] px-1.5 py-0 ${getLevelColor(entry.nivelProfundidade)}`}>
+  1102→                                Nível {entry.nivelProfundidade}
+  1103→                              </Badge>
+  1104→                              {entry.ativo ? (
+  1105→                                <Badge className="text-[10px] px-1.5 py-0 bg-state-success/10 text-state-success">Ativo</Badge>
+  1106→                              ) : (
+  1107→                                <Badge className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">Inativo</Badge>
+  1108→                              )}
+  1109→                            </div>
+  1110→                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+  1111→                              <span>Entrada: {formatDate(entry.dataEntrada)}</span>
+  1112→                              {entry.dataFimVinculo && (
+  1113→                                <span>Fim: {formatDate(entry.dataFimVinculo)}</span>
+  1114→                              )}
+  1115→                            </div>
+  1116→                            {entry.motivoRealocacao && (
+  1117→                              <p className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+  1118→                                <strong>Motivo:</strong> {entry.motivoRealocacao}
+  1119→                              </p>
+  1120→                            )}
+  1121→                          </div>
+  1122→                        </div>
+  1123→                      </div>
+  1124→                    ))}
+  1125→                  </div>
+  1126→                )}
+  1127→              </CardContent>
+  1128→            </Card>
+  1129→          ) : (
+  1130→            <Card className="border-border/50">
+  1131→              <CardContent className="py-12 text-center">
+  1132→                <History className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+  1133→                <p className="text-muted-foreground">Selecione um membro na árvore para ver seu histórico</p>
+  1134→              </CardContent>
+  1135→            </Card>
+  1136→          )}
+  1137→        </TabsContent>
+  1138→      </Tabs>
+  1139→
+  1140→      {/* ─── Create Patrocínio Dialog ─── */}
+  1141→      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+  1142→        <DialogContent className="sm:max-w-lg">
+  1143→          <DialogHeader>
+  1144→            <DialogTitle>Adicionar Vínculo de Patrocínio</DialogTitle>
+  1145→            <DialogDescription>
+  1146→              Crie um novo vínculo entre revendedor e patrocinador na rede.
+  1147→            </DialogDescription>
+  1148→          </DialogHeader>
+  1149→
+  1150→          <div className="space-y-4 py-2">
+  1151→            {/* Revendedor */}
+  1152→            <div className="space-y-2">
+  1153→              <Label htmlFor="create-revendedor">Revendedor</Label>
+  1154→              <Select value={createRevendedorId} onValueChange={setCreateRevendedorId}>
+  1155→                <SelectTrigger id="create-revendedor">
+  1156→                  <SelectValue placeholder="Selecione o revendedor..." />
+  1157→                </SelectTrigger>
+  1158→                <SelectContent className="max-h-60">
+  1159→                  {availableRevendedores.length === 0 ? (
+  1160→                    <div className="px-2 py-3 text-sm text-muted-foreground text-center">
+  1161→                      Nenhum revendedor disponível (sem vínculo ativo)
+  1162→                    </div>
+  1163→                  ) : (
+  1164→                    availableRevendedores.map(p => (
+  1165→                      <SelectItem key={p.id} value={p.id}>
+  1166→                        {p.nomeCompleto}{p.cpf ? ` — ${formatCPF(p.cpf)}` : ''}
+  1167→                      </SelectItem>
+  1168→                    ))
+  1169→                  )}
+  1170→                </SelectContent>
+  1171→              </Select>
+  1172→              <p className="text-xs text-muted-foreground">
+  1173→                Apenas pessoas sem vínculo ativo na rede
+  1174→              </p>
+  1175→            </div>
+  1176→
+  1177→            {/* Patrocinador */}
+  1178→            <div className="space-y-2">
+  1179→              <Label htmlFor="create-patrocinador">Patrocinador</Label>
+  1180→              <Select value={createPatrocinadorId} onValueChange={setCreatePatrocinadorId}>
+  1181→                <SelectTrigger id="create-patrocinador">
+  1182→                  <SelectValue placeholder="Selecione o patrocinador..." />
+  1183→                </SelectTrigger>
+  1184→                <SelectContent className="max-h-60">
+  1185→                  {availablePatrocinadores
+  1186→                    .filter(p => p.id !== createRevendedorId)
+  1187→                    .map(p => (
+  1188→                      <SelectItem key={p.id} value={p.id}>
+  1189→                        {p.nomeCompleto}{p.cpf ? ` — ${formatCPF(p.cpf)}` : ''}
+  1190→                      </SelectItem>
+  1191→                    ))}
+  1192→                </SelectContent>
+  1193→              </Select>
+  1194→              <p className="text-xs text-muted-foreground">
+  1195→                Membros ativos na rede ou raízes
+  1196→              </p>
+  1197→            </div>
+  1198→
+  1199→            {/* Nível Preview */}
+  1200→            {createNivelPreview !== null && (
+  1201→              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+  1202→                <Badge className={getLevelColor(createNivelPreview)}>
+  1203→                  Nível {createNivelPreview}
+  1204→                </Badge>
+  1205→                <span className="text-sm text-muted-foreground">
+  1206→                  Nível de profundidade que será atribuído
+  1207→                </span>
+  1208→              </div>
+  1209→            )}
+  1210→
+  1211→            {/* Air-Gap Note */}
+  1212→            <div className="flex items-start gap-2 p-3 rounded-lg bg-state-success/5 border border-state-success/20">
+  1213→              <Shield className="h-4 w-4 text-state-success mt-0.5 shrink-0" aria-hidden="true" />
+  1214→              <p className="text-xs text-state-success">
+  1215→                Este sistema não gerencia metas, horários ou relações de subordinação trabalhista.
+  1216→              </p>
+  1217→            </div>
+  1218→          </div>
+  1219→
+  1220→          <DialogFooter>
+  1221→            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+  1222→              Cancelar
+  1223→            </Button>
+  1224→            <Button
+  1225→              onClick={handleCreateSubmit}
+  1226→              disabled={!createRevendedorId || !createPatrocinadorId || createSubmitting}
+  1227→            >
+  1228→              {createSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+  1229→              Criar Vínculo
+  1230→            </Button>
+  1231→          </DialogFooter>
+  1232→        </DialogContent>
+  1233→      </Dialog>
+  1234→
+  1235→      {/* ─── Realocação Dialog ─── */}
+  1236→      <Dialog open={realocarDialogOpen} onOpenChange={setRealocarDialogOpen}>
+  1237→        <DialogContent className="sm:max-w-lg">
+  1238→          <DialogHeader>
+  1239→            <DialogTitle>Realocar Membro</DialogTitle>
+  1240→            <DialogDescription>
+  1241→              Move {realocarNode?.nomeCompleto || 'o membro'} para um novo patrocinador na rede.
+  1242→            </DialogDescription>
+  1243→          </DialogHeader>
+  1244→
+  1245→          {realocarNode && (
+  1246→            <div className="space-y-4 py-2">
+  1247→              {/* Current info */}
+  1248→              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+  1249→                <p className="text-sm font-medium text-foreground">{realocarNode.nomeCompleto}</p>
+  1250→                {realocarNode.cpf && (
+  1251→                  <p className="text-xs text-muted-foreground">{formatCPF(realocarNode.cpf)}</p>
+  1252→                )}
+  1253→                <div className="flex items-center gap-2 mt-1">
+  1254→                  <Badge className={`text-[10px] px-1.5 py-0 ${getLevelColor(realocarNode.nivelProfundidade)}`}>
+  1255→                    Nível atual: {realocarNode.nivelProfundidade}
+  1256→                  </Badge>
+  1257→                  {realocarSubordinadosCount > 0 && (
+  1258→                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+  1259→                      {realocarSubordinadosCount} subordinado{realocarSubordinadosCount !== 1 ? 's' : ''}
+  1260→                    </Badge>
+  1261→                  )}
+  1262→                </div>
+  1263→              </div>
+  1264→
+  1265→              {/* New Patrocinador */}
+  1266→              <div className="space-y-2">
+  1267→                <Label htmlFor="realocar-patrocinador">Novo Patrocinador</Label>
+  1268→                <Select value={realocarNovoPatrocinadorId} onValueChange={setRealocarNovoPatrocinadorId}>
+  1269→                  <SelectTrigger id="realocar-patrocinador">
+  1270→                    <SelectValue placeholder="Selecione o novo patrocinador..." />
+  1271→                  </SelectTrigger>
+  1272→                  <SelectContent className="max-h-60">
+  1273→                    {availablePatrocinadores
+  1274→                      .filter(p => p.id !== realocarNode.revendedorId)
+  1275→                      .map(p => (
+  1276→                        <SelectItem key={p.id} value={p.id}>
+  1277→                          {p.nomeCompleto}{p.cpf ? ` — ${formatCPF(p.cpf)}` : ''}
+  1278→                        </SelectItem>
+  1279→                      ))}
+  1280→                  </SelectContent>
+  1281→                </Select>
+  1282→              </div>
+  1283→
+  1284→              {/* Motivo */}
+  1285→              <div className="space-y-2">
+  1286→                <Label htmlFor="realocar-motivo">Motivo da Realocação</Label>
+  1287→                <Textarea
+  1288→                  id="realocar-motivo"
+  1289→                  placeholder="Descreva o motivo da realocação (mín. 10 caracteres)..."
+  1290→                  value={realocarMotivo}
+  1291→                  onChange={(e) => setRealocarMotivo(e.target.value)}
+  1292→                  rows={3}
+  1293→                  maxLength={500}
+  1294→                />
+  1295→                <p className="text-xs text-muted-foreground">
+  1296→                  {realocarMotivo.length}/500 caracteres (mínimo 10)
+  1297→                </p>
+  1298→              </div>
+  1299→
+  1300→              {/* Warning */}
+  1301→              <div className="flex items-start gap-2 p-3 rounded-lg bg-state-warning/5 border border-state-warning/20">
+  1302→                <AlertTriangle className="h-4 w-4 text-state-warning mt-0.5 shrink-0" aria-hidden="true" />
+  1303→                <p className="text-xs text-state-warning">
+  1304→                  A realocação recalculará automaticamente a profundidade de todos os subordinados em cascata.
+  1305→                </p>
+  1306→              </div>
+  1307→
+  1308→              {/* Air-Gap Note */}
+  1309→              <div className="flex items-start gap-2 p-3 rounded-lg bg-state-success/5 border border-state-success/20">
+  1310→                <Shield className="h-4 w-4 text-state-success mt-0.5 shrink-0" aria-hidden="true" />
+  1311→                <p className="text-xs text-state-success">
+  1312→                  Este sistema não gerencia metas, horários ou relações de subordinação trabalhista.
+  1313→                </p>
+  1314→              </div>
+  1315→            </div>
+  1316→          )}
+  1317→
+  1318→          <DialogFooter>
+  1319→            <Button variant="outline" onClick={() => setRealocarDialogOpen(false)}>
+  1320→              Cancelar
+  1321→            </Button>
+  1322→            <Button
+  1323→              variant="destructive"
+  1324→              disabled={
+  1325→                !realocarNovoPatrocinadorId ||
+  1326→                realocarMotivo.length < 10 ||
+  1327→                realocarSubmitting
+  1328→              }
+  1329→              onClick={() => setRealocarConfirmOpen(true)}
+  1330→            >
+  1331→              Realocar
+  1332→            </Button>
+  1333→          </DialogFooter>
+  1334→        </DialogContent>
+  1335→      </Dialog>
+  1336→
+  1337→      {/* ─── Realocação Confirmation ─── */}
+  1338→      <AlertDialog open={realocarConfirmOpen} onOpenChange={setRealocarConfirmOpen}>
+  1339→        <AlertDialogContent>
+  1340→          <AlertDialogHeader>
+  1341→            <AlertDialogTitle>Confirmar Realocação</AlertDialogTitle>
+  1342→            <AlertDialogDescription>
+  1343→              Tem certeza? Esta ação é atômica e afetará{' '}
+  1344→              <strong>{realocarSubordinadosCount} subordinado{realocarSubordinadosCount !== 1 ? 's' : ''}</strong>.
+  1345→              A profundidade de todos os membros abaixo será recalculada em cascata.
+  1346→            </AlertDialogDescription>
+  1347→          </AlertDialogHeader>
+  1348→          <AlertDialogFooter>
+  1349→            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+  1350→            <AlertDialogAction
+  1351→              onClick={handleRealocarSubmit}
+  1352→              disabled={realocarSubmitting}
+  1353→              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+  1354→            >
+  1355→              {realocarSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+  1356→              Confirmar Realocação
+  1357→            </AlertDialogAction>
+  1358→          </AlertDialogFooter>
+  1359→        </AlertDialogContent>
+  1360→      </AlertDialog>
+  1361→    </div>
+  1362→  )
+  1363→}
+  1364→
+  1365→// ─── Utility: count nodes at a specific level ───
+  1366→
+  1367→function countAtLevel(nodes: TreeNode[], level: number): number {
+  1368→  let count = 0
+  1369→  for (const node of nodes) {
+  1370→    if (node.nivelProfundidade === level) count++
+  1371→    count += countAtLevel(node.subordinados, level)
+  1372→  }
+  1373→  return count
+  1374→}
+  1375→

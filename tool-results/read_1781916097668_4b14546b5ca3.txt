@@ -1,0 +1,1077 @@
+     1→'use client'
+     2→
+     3→import { useState } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { useAppStore } from '@/lib/store'
+     6→import { formatCurrency, formatDate, formatCPF } from '@/lib/helpers'
+     7→import { toast } from 'sonner'
+     8→
+     9→// shadcn/ui
+    10→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    11→import { Button } from '@/components/ui/button'
+    12→import { Badge } from '@/components/ui/badge'
+    13→import { Input } from '@/components/ui/input'
+    14→import { Label } from '@/components/ui/label'
+    15→import { Textarea } from '@/components/ui/textarea'
+    16→import {
+    17→  Dialog,
+    18→  DialogContent,
+    19→  DialogHeader,
+    20→  DialogTitle,
+    21→  DialogDescription,
+    22→  DialogFooter,
+    23→} from '@/components/ui/dialog'
+    24→import {
+    25→  Select,
+    26→  SelectContent,
+    27→  SelectItem,
+    28→  SelectTrigger,
+    29→  SelectValue,
+    30→} from '@/components/ui/select'
+    31→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    32→
+    33→// Icons
+    34→import {
+    35→  Wallet,
+    36→  Lock,
+    37→  TrendingDown,
+    38→  ArrowUpRight,
+    39→  FileText,
+    40→  Clock,
+    41→  CheckCircle2,
+    42→  XCircle,
+    43→  AlertTriangle,
+    44→  ChevronLeft,
+    45→  ChevronRight,
+    46→  Landmark,
+    47→  Receipt,
+    48→  Loader2,
+    49→} from 'lucide-react'
+    50→
+    51→// ─────────────────────────────────────────────────────────
+    52→// Types
+    53→// ─────────────────────────────────────────────────────────
+    54→
+    55→interface TitularInfo {
+    56→  id: string
+    57→  nomeCompleto: string
+    58→  cpf: string | null
+    59→}
+    60→
+    61→interface CarteiraDigital {
+    62→  id: string
+    63→  titularId: string
+    64→  saldoDisponivel: number
+    65→  saldoBloqueado: number
+    66→  saldoDevedor: number
+    67→  titular: TitularInfo
+    68→}
+    69→
+    70→interface ContaAPagar {
+    71→  id: string
+    72→  contratoId: string
+    73→  descricao: string
+    74→  valor: number
+    75→  valorRestante: number
+    76→  dataVencimento: string
+    77→  status: string
+    78→  contrato?: {
+    79→    id: string
+    80→    titular: TitularInfo
+    81→  }
+    82→}
+    83→
+    84→interface ExtratoItem {
+    85→  id: string
+    86→  tipo: string
+    87→  valor: number
+    88→  status: string
+    89→  data: string
+    90→  descricao: string
+    91→}
+    92→
+    93→interface TransacaoPagamento {
+    94→  id: string
+    95→  carteiraId: string
+    96→  tipoTransacao: string
+    97→  valorAbatido: number
+    98→  valorIrrfRetido: number | null
+    99→  valorInssRetido: number | null
+   100→  valorLiquido: number | null
+   101→  status: string
+   102→  dataTransacao: string
+   103→  observacoes: string | null
+   104→  motivoRejeicao: string | null
+   105→  carteira: {
+   106→    titular: TitularInfo
+   107→  }
+   108→}
+   109→
+   110→interface PaginationInfo {
+   111→  page: number
+   112→  limit: number
+   113→  total: number
+   114→  totalPages: number
+   115→}
+   116→
+   117→// ─────────────────────────────────────────────────────────
+   118→// Status badge helper
+   119→// ─────────────────────────────────────────────────────────
+   120→
+   121→function StatusBadge({ status }: { status: string }) {
+   122→  const config: Record<string, { label: string; className: string }> = {
+   123→    PENDENTE: { label: 'Pendente', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
+   124→    PENDENTE_APROVACAO: { label: 'Pendente Aprovação', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
+   125→    PARCIALMENTE_PAGO: { label: 'Parcialmente Pago', className: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-800' },
+   126→    PAGO: { label: 'Pago', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
+   127→    CONCLUIDO: { label: 'Concluído', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
+   128→    LIBERADO: { label: 'Liberado', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
+   129→    ESTORNADO: { label: 'Estornado', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
+   130→    CANCELADO: { label: 'Cancelado', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
+   131→    VENCIDO: { label: 'Vencido', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
+   132→  }
+   133→  const c = config[status] || { label: status, className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700' }
+   134→  return (
+   135→    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${c.className}`}>
+   136→      {c.label}
+   137→    </Badge>
+   138→  )
+   139→}
+   140→
+   141→// ─────────────────────────────────────────────────────────
+   142→// Pagination controls
+   143→// ─────────────────────────────────────────────────────────
+   144→
+   145→function PaginationControls({
+   146→  pagination,
+   147→  onPageChange,
+   148→}: {
+   149→  pagination: PaginationInfo
+   150→  onPageChange: (page: number) => void
+   151→}) {
+   152→  if (pagination.totalPages <= 1) return null
+   153→  return (
+   154→    <div className="flex items-center justify-between pt-3">
+   155→      <p className="text-xs text-muted-foreground">
+   156→        {pagination.total} resultado{pagination.total !== 1 ? 's' : ''}
+   157→      </p>
+   158→      <div className="flex items-center gap-1">
+   159→        <Button
+   160→          variant="outline"
+   161→          size="icon"
+   162→          className="h-7 w-7"
+   163→          disabled={pagination.page <= 1}
+   164→          onClick={() => onPageChange(pagination.page - 1)}
+   165→          aria-label="Página anterior"
+   166→        >
+   167→          <ChevronLeft className="h-3.5 w-3.5" />
+   168→        </Button>
+   169→        <span className="text-xs text-muted-foreground px-2">
+   170→          {pagination.page} / {pagination.totalPages}
+   171→        </span>
+   172→        <Button
+   173→          variant="outline"
+   174→          size="icon"
+   175→          className="h-7 w-7"
+   176→          disabled={pagination.page >= pagination.totalPages}
+   177→          onClick={() => onPageChange(pagination.page + 1)}
+   178→          aria-label="Próxima página"
+   179→        >
+   180→          <ChevronRight className="h-3.5 w-3.5" />
+   181→        </Button>
+   182→      </div>
+   183→    </div>
+   184→  )
+   185→}
+   186→
+   187→// ─────────────────────────────────────────────────────────
+   188→// Main Component
+   189→// ─────────────────────────────────────────────────────────
+   190→
+   191→export function FinancialTab() {
+   192→  const user = useAppStore((s) => s.user)
+   193→  const queryClient = useQueryClient()
+   194→  const isAdmin = user?.role === 'SUPERADMIN' || user?.role === 'FINANCEIRO'
+   195→
+   196→  // ── Wallet query ──
+   197→  const {
+   198→    data: carteiraData,
+   199→    isLoading: loadingCarteira,
+   200→  } = useQuery({
+   201→    queryKey: ['carteira', user?.pessoaFisicaId],
+   202→    queryFn: async () => {
+   203→      const params = new URLSearchParams()
+   204→      if (user?.pessoaFisicaId) params.set('titularId', user.pessoaFisicaId)
+   205→      params.set('limit', '1')
+   206→      const res = await fetch(`/api/carteiras?${params}`)
+   207→      if (!res.ok) throw new Error('Erro ao buscar carteira')
+   208→      const json = await res.json()
+   209→      return (json.data as CarteiraDigital[])[0] || null
+   210→    },
+   211→    enabled: !!user,
+   212→  })
+   213→
+   214→  const carteira = carteiraData
+   215→
+   216→  // ── Contas a Pagar ──
+   217→  const [contasPage, setContasPage] = useState(1)
+   218→  const [contasStatus, setContasStatus] = useState<string>('all')
+   219→
+   220→  const {
+   221→    data: contasData,
+   222→    isLoading: loadingContas,
+   223→  } = useQuery({
+   224→    queryKey: ['contas-a-pagar', contasPage, contasStatus],
+   225→    queryFn: async () => {
+   226→      const params = new URLSearchParams()
+   227→      params.set('page', String(contasPage))
+   228→      params.set('limit', '10')
+   229→      if (contasStatus !== 'all') params.set('status', contasStatus)
+   230→      const res = await fetch(`/api/contas-a-pagar?${params}`)
+   231→      if (!res.ok) throw new Error('Erro ao buscar contas')
+   232→      return res.json() as Promise<{ data: ContaAPagar[]; pagination: PaginationInfo }>
+   233→    },
+   234→  })
+   235→
+   236→  // ── Extrato ──
+   237→  const [extratoPage, setExtratoPage] = useState(1)
+   238→  const [extratoTipo, setExtratoTipo] = useState<string>('todos')
+   239→  const [extratoDataInicio, setExtratoDataInicio] = useState('')
+   240→  const [extratoDataFim, setExtratoDataFim] = useState('')
+   241→
+   242→  const {
+   243→    data: extratoData,
+   244→    isLoading: loadingExtrato,
+   245→  } = useQuery({
+   246→    queryKey: ['extrato', carteira?.id, extratoPage, extratoTipo, extratoDataInicio, extratoDataFim],
+   247→    queryFn: async () => {
+   248→      if (!carteira?.id) return { data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } }
+   249→      const params = new URLSearchParams()
+   250→      params.set('page', String(extratoPage))
+   251→      params.set('limit', '10')
+   252→      if (extratoTipo !== 'todos') params.set('tipo', extratoTipo)
+   253→      if (extratoDataInicio) params.set('data_inicio', extratoDataInicio)
+   254→      if (extratoDataFim) params.set('data_fim', extratoDataFim)
+   255→      const res = await fetch(`/api/carteiras/${carteira.id}/extrato?${params}`)
+   256→      if (!res.ok) throw new Error('Erro ao buscar extrato')
+   257→      return res.json() as Promise<{ data: ExtratoItem[]; pagination: PaginationInfo }>
+   258→    },
+   259→    enabled: !!carteira?.id,
+   260→  })
+   261→
+   262→  // ── Admin: Pending Saques ──
+   263→  const [saquesPage, setSaquesPage] = useState(1)
+   264→
+   265→  const {
+   266→    data: saquesData,
+   267→    isLoading: loadingSaques,
+   268→  } = useQuery({
+   269→    queryKey: ['admin-saques', saquesPage],
+   270→    queryFn: async () => {
+   271→      const params = new URLSearchParams()
+   272→      params.set('page', String(saquesPage))
+   273→      params.set('limit', '10')
+   274→      params.set('status', 'PENDENTE_APROVACAO')
+   275→      const res = await fetch(`/api/admin/saques?${params}`)
+   276→      if (!res.ok) throw new Error('Erro ao buscar saques pendentes')
+   277→      return res.json() as Promise<{ data: TransacaoPagamento[]; pagination: PaginationInfo }>
+   278→    },
+   279→    enabled: isAdmin,
+   280→  })
+   281→
+   282→  // ── Abatimento Mutation ──
+   283→  const abatimentoMutation = useMutation({
+   284→    mutationFn: async ({ carteiraId, contaAPagarId }: { carteiraId: string; contaAPagarId: string }) => {
+   285→      const res = await fetch(`/api/carteiras/${carteiraId}/abatimentos`, {
+   286→        method: 'POST',
+   287→        headers: { 'Content-Type': 'application/json' },
+   288→        body: JSON.stringify({ contaAPagarId }),
+   289→      })
+   290→      const data = await res.json()
+   291→      if (!res.ok) throw new Error(data.error || 'Erro ao realizar abatimento')
+   292→      return data
+   293→    },
+   294→    onSuccess: (data) => {
+   295→      const valor = data._meta?.valorAbatido ?? 0
+   296→      toast.success(`Abatimento de ${formatCurrency(valor)} realizado com sucesso!`)
+   297→      if (data._meta?.isPartial) {
+   298→        toast.info('Abatimento parcial — restam ' + formatCurrency(data._meta.saldoRestanteParcela))
+   299→      }
+   300→      queryClient.invalidateQueries({ queryKey: ['carteira'] })
+   301→      queryClient.invalidateQueries({ queryKey: ['contas-a-pagar'] })
+   302→      queryClient.invalidateQueries({ queryKey: ['extrato'] })
+   303→      setAbatimentoDialogOpen(false)
+   304→      setSelectedConta(null)
+   305→    },
+   306→    onError: (err: Error) => {
+   307→      toast.error(err.message)
+   308→    },
+   309→  })
+   310→
+   311→  // ── Saque Mutation ──
+   312→  const saqueMutation = useMutation({
+   313→    mutationFn: async ({ carteiraId, valor }: { carteiraId: string; valor: number }) => {
+   314→      const res = await fetch(`/api/carteiras/${carteiraId}/saques`, {
+   315→        method: 'POST',
+   316→        headers: { 'Content-Type': 'application/json' },
+   317→        body: JSON.stringify({ valor }),
+   318→      })
+   319→      const data = await res.json()
+   320→      if (!res.ok) throw new Error(data.error || 'Erro ao solicitar saque')
+   321→      return data
+   322→    },
+   323→    onSuccess: (data) => {
+   324→      const meta = data._meta
+   325→      toast.success(`Saque de ${formatCurrency(meta.valor)} solicitado com sucesso!`)
+   326→      if (meta.status === 'PENDENTE_APROVACAO') {
+   327→        toast.info('Seu saque está pendente de aprovação do Financeiro.', { duration: 6000 })
+   328→      }
+   329→      queryClient.invalidateQueries({ queryKey: ['carteira'] })
+   330→      queryClient.invalidateQueries({ queryKey: ['extrato'] })
+   331→      queryClient.invalidateQueries({ queryKey: ['admin-saques'] })
+   332→      setSaqueDialogOpen(false)
+   333→      setSaqueValor('')
+   334→    },
+   335→    onError: (err: Error) => {
+   336→      toast.error(err.message)
+   337→    },
+   338→  })
+   339→
+   340→  // ── Aprovar Saque Mutation ──
+   341→  const aprovarMutation = useMutation({
+   342→    mutationFn: async ({ transacaoId, aprovado, motivoRejeicao }: { transacaoId: string; aprovado: boolean; motivoRejeicao?: string }) => {
+   343→      const res = await fetch(`/api/admin/saques/${transacaoId}/aprovar`, {
+   344→        method: 'POST',
+   345→        headers: { 'Content-Type': 'application/json' },
+   346→        body: JSON.stringify({ aprovado, motivoRejeicao }),
+   347→      })
+   348→      const data = await res.json()
+   349→      if (!res.ok) throw new Error(data.error || 'Erro ao processar aprovação')
+   350→      return data
+   351→    },
+   352→    onSuccess: (data) => {
+   353→      const acao = data._meta?.acao
+   354→      if (acao === 'APROVADO') {
+   355→        toast.success('Saque aprovado com sucesso!')
+   356→      } else {
+   357→        toast.success('Saque rejeitado com sucesso.')
+   358→      }
+   359→      queryClient.invalidateQueries({ queryKey: ['admin-saques'] })
+   360→      setRejeitarDialogOpen(false)
+   361→      setRejeitarTransacaoId(null)
+   362→      setMotivoRejeicao('')
+   363→    },
+   364→    onError: (err: Error) => {
+   365→      toast.error(err.message)
+   366→    },
+   367→  })
+   368→
+   369→  // ── Dialog states ──
+   370→  const [abatimentoDialogOpen, setAbatimentoDialogOpen] = useState(false)
+   371→  const [selectedConta, setSelectedConta] = useState<ContaAPagar | null>(null)
+   372→  const [saqueDialogOpen, setSaqueDialogOpen] = useState(false)
+   373→  const [saqueValor, setSaqueValor] = useState('')
+   374→  const [rejeitarDialogOpen, setRejeitarDialogOpen] = useState(false)
+   375→  const [rejeitarTransacaoId, setRejeitarTransacaoId] = useState<string | null>(null)
+   376→  const [motivoRejeicao, setMotivoRejeicao] = useState('')
+   377→
+   378→  // ── Abatimento handlers ──
+   379→  const openAbatimento = (conta: ContaAPagar) => {
+   380→    setSelectedConta(conta)
+   381→    setAbatimentoDialogOpen(true)
+   382→  }
+   383→
+   384→  // ── Saque calculations ──
+   385→  const saqueValorNum = parseFloat(saqueValor) || 0
+   386→  const saqueIrrfPreview = calcularIRRF(saqueValorNum)
+   387→  const saqueInssPreview = calcularINSS(saqueValorNum)
+   388→  const saqueLiquidoPreview = saqueValorNum - saqueIrrfPreview - saqueInssPreview
+   389→
+   390→  // ── Wallet cards config ──
+   391→  const walletCards = [
+   392→    {
+   393→      title: 'Saldo Disponível',
+   394→      value: carteira?.saldoDisponivel ?? 0,
+   395→      icon: Wallet,
+   396→      color: 'text-state-success',
+   397→      bgColor: 'bg-state-success/10',
+   398→    },
+   399→    {
+   400→      title: 'Saldo Bloqueado',
+   401→      value: carteira?.saldoBloqueado ?? 0,
+   402→      icon: Lock,
+   403→      color: 'text-state-warning',
+   404→      bgColor: 'bg-state-warning/10',
+   405→    },
+   406→    {
+   407→      title: 'Saldo Devedor',
+   408→      value: carteira?.saldoDevedor ?? 0,
+   409→      icon: TrendingDown,
+   410→      color: 'text-state-error',
+   411→      bgColor: 'bg-state-error/10',
+   412→    },
+   413→  ]
+   414→
+   415→  // ── Tab value ──
+   416→  const [activeTab, setActiveTab] = useState('carteira')
+   417→
+   418→  return (
+   419→    <div className="animate-fade-up">
+   420→      {/* Header */}
+   421→      <div className="mb-6">
+   422→        <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Financeiro</h1>
+   423→        <p className="text-muted-foreground mt-1">Carteira digital, contas e transações</p>
+   424→      </div>
+   425→
+   426→      {/* Main Tabs */}
+   427→      <Tabs value={activeTab} onValueChange={setActiveTab}>
+   428→        <TabsList className="mb-6">
+   429→          <TabsTrigger value="carteira">
+   430→            <Wallet className="h-4 w-4 mr-1.5" />
+   431→            Carteira
+   432→          </TabsTrigger>
+   433→          <TabsTrigger value="extrato">
+   434→            <Receipt className="h-4 w-4 mr-1.5" />
+   435→            Extrato
+   436→          </TabsTrigger>
+   437→          {isAdmin && (
+   438→            <TabsTrigger value="aprovacoes">
+   439→              <Clock className="h-4 w-4 mr-1.5" />
+   440→              Aprovações
+   441→            </TabsTrigger>
+   442→          )}
+   443→        </TabsList>
+   444→
+   445→        {/* ═══════════ CARTEIRA TAB ═══════════ */}
+   446→        <TabsContent value="carteira">
+   447→          {/* Wallet Owner Info */}
+   448→          {carteira?.titular && (
+   449→            <Card className="border-border/50 mb-4">
+   450→              <CardContent className="p-4">
+   451→                <div className="flex items-center gap-3">
+   452→                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+   453→                    <Landmark className="h-5 w-5 text-primary" aria-hidden="true" />
+   454→                  </div>
+   455→                  <div>
+   456→                    <p className="text-sm font-semibold text-foreground">{carteira.titular.nomeCompleto}</p>
+   457→                    {carteira.titular.cpf && (
+   458→                      <p className="text-xs text-muted-foreground">CPF: {formatCPF(carteira.titular.cpf)}</p>
+   459→                    )}
+   460→                  </div>
+   461→                </div>
+   462→              </CardContent>
+   463→            </Card>
+   464→          )}
+   465→
+   466→          {/* Balance Cards */}
+   467→          <div className="grid sm:grid-cols-3 gap-4 mb-4">
+   468→            {walletCards.map((card, i) => {
+   469→              const Icon = card.icon
+   470→              return (
+   471→                <Card key={i} className="border-border/50">
+   472→                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+   473→                    <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+   474→                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.bgColor}`}>
+   475→                      <Icon className={`h-4 w-4 ${card.color}`} aria-hidden="true" />
+   476→                    </div>
+   477→                  </CardHeader>
+   478→                  <CardContent>
+   479→                    <div className="text-2xl font-bold text-foreground">
+   480→                      {loadingCarteira ? (
+   481→                        <div className="h-8 w-24 bg-muted rounded animate-pulse" />
+   482→                      ) : (
+   483→                        formatCurrency(card.value)
+   484→                      )}
+   485→                    </div>
+   486→                  </CardContent>
+   487→                </Card>
+   488→              )
+   489→            })}
+   490→          </div>
+   491→
+   492→          {/* Saldo Devedor Warning */}
+   493→          {!loadingCarteira && carteira && carteira.saldoDevedor > 0 && (
+   494→            <div className="mb-6 p-4 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+   495→              <div className="flex items-start gap-3">
+   496→                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" aria-hidden="true" />
+   497→                <div>
+   498→                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+   499→                    Saldo devedor pendente
+   500→                  </p>
+   501→                  <p className="text-sm text-red-700 dark:text-red-400 mt-0.5">
+   502→                    Regularize seu saldo devedor de{' '}
+   503→                    <strong>{formatCurrency(carteira.saldoDevedor)}</strong> antes de realizar novos saques.
+   504→                  </p>
+   505→                </div>
+   506→              </div>
+   507→            </div>
+   508→          )}
+   509→
+   510→          {/* No wallet message */}
+   511→          {!loadingCarteira && !carteira && (
+   512→            <Card className="border-border/50 mb-6">
+   513→              <CardContent className="p-8 text-center">
+   514→                <Wallet className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
+   515→                <p className="text-sm text-muted-foreground">Nenhuma carteira digital encontrada para seu perfil.</p>
+   516→              </CardContent>
+   517→            </Card>
+   518→          )}
+   519→
+   520→          {/* Actions */}
+   521→          {carteira && (
+   522→            <div className="flex gap-3 mb-6">
+   523→              <Button
+   524→                className="bg-primary text-primary-foreground hover:bg-primary/90"
+   525→                onClick={() => setSaqueDialogOpen(true)}
+   526→                disabled={carteira.saldoDisponivel <= 0}
+   527→              >
+   528→                <ArrowUpRight className="h-4 w-4 mr-2" aria-hidden="true" />
+   529→                Solicitar Saque
+   530→              </Button>
+   531→            </div>
+   532→          )}
+   533→
+   534→          {/* Contas a Pagar */}
+   535→          <Card className="border-border/50">
+   536→            <CardHeader className="flex flex-row items-center justify-between pb-3">
+   537→              <CardTitle className="text-base">Contas a Pagar</CardTitle>
+   538→              <Select value={contasStatus} onValueChange={(v) => { setContasStatus(v); setContasPage(1) }}>
+   539→                <SelectTrigger className="w-[160px] h-8 text-xs">
+   540→                  <SelectValue placeholder="Filtrar status" />
+   541→                </SelectTrigger>
+   542→                <SelectContent>
+   543→                  <SelectItem value="all">Todos</SelectItem>
+   544→                  <SelectItem value="PENDENTE">Pendente</SelectItem>
+   545→                  <SelectItem value="PARCIALMENTE_PAGO">Parcial</SelectItem>
+   546→                  <SelectItem value="PAGO">Pago</SelectItem>
+   547→                  <SelectItem value="VENCIDO">Vencido</SelectItem>
+   548→                  <SelectItem value="CANCELADO">Cancelado</SelectItem>
+   549→                </SelectContent>
+   550→              </Select>
+   551→            </CardHeader>
+   552→            <CardContent>
+   553→              {loadingContas ? (
+   554→                <div className="flex items-center justify-center py-10">
+   555→                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+   556→                </div>
+   557→              ) : !contasData?.data?.length ? (
+   558→                <p className="text-sm text-muted-foreground text-center py-8">Nenhuma conta a pagar encontrada</p>
+   559→              ) : (
+   560→                <>
+   561→                  <div className="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+   562→                    {contasData.data.map((conta) => (
+   563→                      <div
+   564→                        key={conta.id}
+   565→                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/30 text-sm gap-2"
+   566→                      >
+   567→                        <div className="flex-1 min-w-0">
+   568→                          <div className="flex items-center gap-2 mb-0.5">
+   569→                            <p className="font-medium text-foreground truncate">{conta.descricao}</p>
+   570→                            <StatusBadge status={conta.status} />
+   571→                          </div>
+   572→                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+   573→                            <span>Valor: {formatCurrency(conta.valor)}</span>
+   574→                            <span>Restante: {formatCurrency(conta.valorRestante)}</span>
+   575→                            <span>Vencimento: {formatDate(conta.dataVencimento)}</span>
+   576→                          </div>
+   577→                        </div>
+   578→                        {(conta.status === 'PENDENTE' || conta.status === 'PARCIALMENTE_PAGO') && carteira && (
+   579→                          <Button
+   580→                            size="sm"
+   581→                            variant="outline"
+   582→                            className="shrink-0"
+   583→                            onClick={() => openAbatimento(conta)}
+   584→                          >
+   585→                            <FileText className="h-3.5 w-3.5 mr-1.5" />
+   586→                            Abater
+   587→                          </Button>
+   588→                        )}
+   589→                      </div>
+   590→                    ))}
+   591→                  </div>
+   592→                  {contasData.pagination && (
+   593→                    <PaginationControls
+   594→                      pagination={contasData.pagination}
+   595→                      onPageChange={setContasPage}
+   596→                    />
+   597→                  )}
+   598→                </>
+   599→              )}
+   600→            </CardContent>
+   601→          </Card>
+   602→        </TabsContent>
+   603→
+   604→        {/* ═══════════ EXTRATO TAB ═══════════ */}
+   605→        <TabsContent value="extrato">
+   606→          {!carteira ? (
+   607→            <Card className="border-border/50">
+   608→              <CardContent className="p-8 text-center">
+   609→                <Receipt className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
+   610→                <p className="text-sm text-muted-foreground">Nenhuma carteira digital encontrada para visualizar o extrato.</p>
+   611→              </CardContent>
+   612→            </Card>
+   613→          ) : (
+   614→            <Card className="border-border/50">
+   615→              <CardHeader className="pb-3">
+   616→                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+   617→                  <CardTitle className="text-base">Extrato</CardTitle>
+   618→                  <div className="flex flex-wrap items-center gap-2">
+   619→                    <Select value={extratoTipo} onValueChange={(v) => { setExtratoTipo(v); setExtratoPage(1) }}>
+   620→                      <SelectTrigger className="w-[150px] h-8 text-xs">
+   621→                        <SelectValue />
+   622→                      </SelectTrigger>
+   623→                      <SelectContent>
+   624→                        <SelectItem value="todos">Todos</SelectItem>
+   625→                        <SelectItem value="bonificacao">Bonificações</SelectItem>
+   626→                        <SelectItem value="pagamento">Pagamentos</SelectItem>
+   627→                      </SelectContent>
+   628→                    </Select>
+   629→                    <Input
+   630→                      type="date"
+   631→                      className="w-[140px] h-8 text-xs"
+   632→                      value={extratoDataInicio}
+   633→                      onChange={(e) => { setExtratoDataInicio(e.target.value); setExtratoPage(1) }}
+   634→                      aria-label="Data início"
+   635→                    />
+   636→                    <Input
+   637→                      type="date"
+   638→                      className="w-[140px] h-8 text-xs"
+   639→                      value={extratoDataFim}
+   640→                      onChange={(e) => { setExtratoDataFim(e.target.value); setExtratoPage(1) }}
+   641→                      aria-label="Data fim"
+   642→                    />
+   643→                  </div>
+   644→                </div>
+   645→              </CardHeader>
+   646→              <CardContent>
+   647→                {loadingExtrato ? (
+   648→                  <div className="flex items-center justify-center py-10">
+   649→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+   650→                  </div>
+   651→                ) : !extratoData?.data?.length ? (
+   652→                  <p className="text-sm text-muted-foreground text-center py-8">Nenhuma movimentação encontrada</p>
+   653→                ) : (
+   654→                  <>
+   655→                    <div className="space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar">
+   656→                      {extratoData.data.map((item) => (
+   657→                        <div
+   658→                          key={`${item.tipo}-${item.id}`}
+   659→                          className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/30 text-sm gap-2"
+   660→                        >
+   661→                          <div className="flex-1 min-w-0">
+   662→                            <div className="flex items-center gap-2 mb-0.5">
+   663→                              {item.tipo === 'bonificacao' ? (
+   664→                                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
+   665→                                  <CheckCircle2 className="h-3.5 w-3.5" />
+   666→                                  Bonificação
+   667→                                </span>
+   668→                              ) : (
+   669→                                <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-400">
+   670→                                  <ArrowUpRight className="h-3.5 w-3.5" />
+   671→                                  Pagamento
+   672→                                </span>
+   673→                              )}
+   674→                              <StatusBadge status={item.status} />
+   675→                            </div>
+   676→                            <p className="text-xs text-muted-foreground truncate">{item.descricao}</p>
+   677→                            <p className="text-xs text-muted-foreground">{formatDate(item.data)}</p>
+   678→                          </div>
+   679→                          <div className="text-right shrink-0">
+   680→                            <p className={`font-semibold ${item.tipo === 'bonificacao' ? 'text-green-700 dark:text-green-400' : 'text-foreground'}`}>
+   681→                              {item.tipo === 'bonificacao' ? '+' : '-'}{formatCurrency(item.valor)}
+   682→                            </p>
+   683→                          </div>
+   684→                        </div>
+   685→                      ))}
+   686→                    </div>
+   687→                    {extratoData.pagination && (
+   688→                      <PaginationControls
+   689→                        pagination={extratoData.pagination}
+   690→                        onPageChange={setExtratoPage}
+   691→                      />
+   692→                    )}
+   693→                  </>
+   694→                )}
+   695→              </CardContent>
+   696→            </Card>
+   697→          )}
+   698→        </TabsContent>
+   699→
+   700→        {/* ═══════════ APROVAÇÕES TAB (Admin Only) ═══════════ */}
+   701→        {isAdmin && (
+   702→          <TabsContent value="aprovacoes">
+   703→            <Card className="border-border/50">
+   704→              <CardHeader>
+   705→                <CardTitle className="text-base flex items-center gap-2">
+   706→                  <Clock className="h-4 w-4 text-amber-600" />
+   707→                  Saques Pendentes de Aprovação
+   708→                </CardTitle>
+   709→              </CardHeader>
+   710→              <CardContent>
+   711→                {loadingSaques ? (
+   712→                  <div className="flex items-center justify-center py-10">
+   713→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+   714→                  </div>
+   715→                ) : !saquesData?.data?.length ? (
+   716→                  <p className="text-sm text-muted-foreground text-center py-8">Nenhum saque pendente de aprovação</p>
+   717→                ) : (
+   718→                  <>
+   719→                    <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar">
+   720→                      {saquesData.data.map((saque) => (
+   721→                        <div
+   722→                          key={saque.id}
+   723→                          className="p-4 rounded-lg border border-border/50 bg-muted/20"
+   724→                        >
+   725→                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+   726→                            <div className="flex-1 min-w-0">
+   727→                              <div className="flex items-center gap-2 mb-1">
+   728→                                <p className="font-semibold text-foreground text-sm">
+   729→                                  {saque.carteira?.titular?.nomeCompleto || 'Desconhecido'}
+   730→                                </p>
+   731→                                {saque.carteira?.titular?.cpf && (
+   732→                                  <span className="text-xs text-muted-foreground">
+   733→                                    CPF: {formatCPF(saque.carteira.titular.cpf)}
+   734→                                  </span>
+   735→                                )}
+   736→                              </div>
+   737→                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
+   738→                                <div>
+   739→                                  <span className="block text-[10px] uppercase tracking-wider">Valor Bruto</span>
+   740→                                  <span className="font-medium text-foreground">{formatCurrency(saque.valorAbatido)}</span>
+   741→                                </div>
+   742→                                <div>
+   743→                                  <span className="block text-[10px] uppercase tracking-wider">IRRF</span>
+   744→                                  <span className="font-medium text-foreground">{formatCurrency(saque.valorIrrfRetido ?? 0)}</span>
+   745→                                </div>
+   746→                                <div>
+   747→                                  <span className="block text-[10px] uppercase tracking-wider">INSS</span>
+   748→                                  <span className="font-medium text-foreground">{formatCurrency(saque.valorInssRetido ?? 0)}</span>
+   749→                                </div>
+   750→                                <div>
+   751→                                  <span className="block text-[10px] uppercase tracking-wider">Líquido</span>
+   752→                                  <span className="font-medium text-green-700 dark:text-green-400">{formatCurrency(saque.valorLiquido ?? 0)}</span>
+   753→                                </div>
+   754→                              </div>
+   755→                              <p className="text-xs text-muted-foreground mt-1.5">
+   756→                                Solicitado em: {formatDate(saque.dataTransacao)}
+   757→                              </p>
+   758→                            </div>
+   759→                            <div className="flex gap-2 shrink-0">
+   760→                              <Button
+   761→                                size="sm"
+   762→                                className="bg-green-600 hover:bg-green-700 text-white"
+   763→                                disabled={aprovarMutation.isPending}
+   764→                                onClick={() => aprovarMutation.mutate({ transacaoId: saque.id, aprovado: true })}
+   765→                              >
+   766→                                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+   767→                                Aprovar
+   768→                              </Button>
+   769→                              <Button
+   770→                                size="sm"
+   771→                                variant="destructive"
+   772→                                disabled={aprovarMutation.isPending}
+   773→                                onClick={() => {
+   774→                                  setRejeitarTransacaoId(saque.id)
+   775→                                  setRejeitarDialogOpen(true)
+   776→                                }}
+   777→                              >
+   778→                                <XCircle className="h-3.5 w-3.5 mr-1" />
+   779→                                Rejeitar
+   780→                              </Button>
+   781→                            </div>
+   782→                          </div>
+   783→                        </div>
+   784→                      ))}
+   785→                    </div>
+   786→                    {saquesData.pagination && (
+   787→                      <PaginationControls
+   788→                        pagination={saquesData.pagination}
+   789→                        onPageChange={setSaquesPage}
+   790→                      />
+   791→                    )}
+   792→                  </>
+   793→                )}
+   794→              </CardContent>
+   795→            </Card>
+   796→          </TabsContent>
+   797→        )}
+   798→      </Tabs>
+   799→
+   800→      {/* ═══════════ ABATIMENTO DIALOG ═══════════ */}
+   801→      <Dialog open={abatimentoDialogOpen} onOpenChange={setAbatimentoDialogOpen}>
+   802→        <DialogContent>
+   803→          <DialogHeader>
+   804→            <DialogTitle>Abatimento de Parcela</DialogTitle>
+   805→            <DialogDescription>
+   806→              Utilize o saldo da carteira para abater o valor desta conta.
+   807→            </DialogDescription>
+   808→          </DialogHeader>
+   809→
+   810→          {selectedConta && carteira && (
+   811→            <div className="space-y-4">
+   812→              {/* Saldo Devedor Block */}
+   813→              {carteira.saldoDevedor > 0 && (
+   814→                <div className="p-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+   815→                  <div className="flex items-start gap-2">
+   816→                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+   817→                    <p className="text-sm text-red-700 dark:text-red-400">
+   818→                      Você possui saldo devedor de <strong>{formatCurrency(carteira.saldoDevedor)}</strong>.
+   819→                      Regularize antes de realizar abatimentos. (RN-007)
+   820→                    </p>
+   821→                  </div>
+   822→                </div>
+   823→              )}
+   824→
+   825→              {/* Conta Details */}
+   826→              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
+   827→                <div className="flex justify-between text-sm">
+   828→                  <span className="text-muted-foreground">Descrição</span>
+   829→                  <span className="font-medium text-foreground">{selectedConta.descricao}</span>
+   830→                </div>
+   831→                <div className="flex justify-between text-sm">
+   832→                  <span className="text-muted-foreground">Valor Total</span>
+   833→                  <span className="font-medium text-foreground">{formatCurrency(selectedConta.valor)}</span>
+   834→                </div>
+   835→                <div className="flex justify-between text-sm">
+   836→                  <span className="text-muted-foreground">Valor Restante</span>
+   837→                  <span className="font-medium text-foreground">{formatCurrency(selectedConta.valorRestante)}</span>
+   838→                </div>
+   839→              </div>
+   840→
+   841→              {/* Calculated abatimento */}
+   842→              {(() => {
+   843→                const valorAbatido = Math.min(carteira.saldoDisponivel, selectedConta.valorRestante)
+   844→                const isPartial = valorAbatido < selectedConta.valorRestante
+   845→                return (
+   846→                  <div className="space-y-2 p-3 rounded-lg border border-border">
+   847→                    <div className="flex justify-between text-sm">
+   848→                      <span className="text-muted-foreground">Saldo Disponível</span>
+   849→                      <span className="font-medium text-foreground">{formatCurrency(carteira.saldoDisponivel)}</span>
+   850→                    </div>
+   851→                    <div className="flex justify-between text-sm">
+   852→                      <span className="text-muted-foreground">Valor do Abatimento</span>
+   853→                      <span className="font-bold text-primary">{formatCurrency(valorAbatido)}</span>
+   854→                    </div>
+   855→                    {isPartial && (
+   856→                      <div className="p-2 rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+   857→                        <p className="text-xs text-amber-700 dark:text-amber-400">
+   858→                          Abatimento parcial — seu saldo disponível não cobre o valor restante da conta.
+   859→                          Após o abatimento, restará <strong>{formatCurrency(selectedConta.valorRestante - valorAbatido)}</strong>.
+   860→                        </p>
+   861→                      </div>
+   862→                    )}
+   863→                  </div>
+   864→                )
+   865→              })()}
+   866→
+   867→              <DialogFooter>
+   868→                <Button variant="outline" onClick={() => setAbatimentoDialogOpen(false)}>
+   869→                  Cancelar
+   870→                </Button>
+   871→                <Button
+   872→                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+   873→                  disabled={
+   874→                    abatimentoMutation.isPending ||
+   875→                    carteira.saldoDevedor > 0 ||
+   876→                    carteira.saldoDisponivel <= 0
+   877→                  }
+   878→                  onClick={() => {
+   879→                    if (selectedConta && carteira) {
+   880→                      abatimentoMutation.mutate({
+   881→                        carteiraId: carteira.id,
+   882→                        contaAPagarId: selectedConta.id,
+   883→                      })
+   884→                    }
+   885→                  }}
+   886→                >
+   887→                  {abatimentoMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+   888→                  Confirmar Abatimento
+   889→                </Button>
+   890→              </DialogFooter>
+   891→            </div>
+   892→          )}
+   893→        </DialogContent>
+   894→      </Dialog>
+   895→
+   896→      {/* ═══════════ SAQUE DIALOG ═══════════ */}
+   897→      <Dialog open={saqueDialogOpen} onOpenChange={setSaqueDialogOpen}>
+   898→        <DialogContent>
+   899→          <DialogHeader>
+   900→            <DialogTitle>Solicitar Saque</DialogTitle>
+   901→            <DialogDescription>
+   902→              Solicite o saque do saldo disponível na sua carteira digital.
+   903→            </DialogDescription>
+   904→          </DialogHeader>
+   905→
+   906→          {carteira && (
+   907→            <div className="space-y-4">
+   908→              {/* Saldo Devedor Block */}
+   909→              {carteira.saldoDevedor > 0 && (
+   910→                <div className="p-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+   911→                  <div className="flex items-start gap-2">
+   912→                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+   913→                    <p className="text-sm text-red-700 dark:text-red-400">
+   914→                      Você possui saldo devedor de <strong>{formatCurrency(carteira.saldoDevedor)}</strong>.
+   915→                      Regularize antes de solicitar saques. (RN-007)
+   916→                    </p>
+   917→                  </div>
+   918→                </div>
+   919→              )}
+   920→
+   921→              {/* Saldo disponível */}
+   922→              <div className="p-3 rounded-lg bg-muted/50 text-sm">
+   923→                <div className="flex justify-between">
+   924→                  <span className="text-muted-foreground">Saldo Disponível</span>
+   925→                  <span className="font-bold text-foreground">{formatCurrency(carteira.saldoDisponivel)}</span>
+   926→                </div>
+   927→              </div>
+   928→
+   929→              {/* Valor input */}
+   930→              <div className="space-y-2">
+   931→                <Label htmlFor="saque-valor">Valor do Saque (mínimo R$ 10,00)</Label>
+   932→                <Input
+   933→                  id="saque-valor"
+   934→                  type="number"
+   935→                  step="0.01"
+   936→                  min="10"
+   937→                  max={carteira.saldoDisponivel}
+   938→                  placeholder="0,00"
+   939→                  value={saqueValor}
+   940→                  onChange={(e) => setSaqueValor(e.target.value)}
+   941→                  disabled={carteira.saldoDevedor > 0}
+   942→                />
+   943→              </div>
+   944→
+   945→              {/* Tax preview */}
+   946→              {saqueValorNum >= 10 && (
+   947→                <div className="space-y-2 p-3 rounded-lg border border-border">
+   948→                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Prévia de Descontos</p>
+   949→                  <div className="flex justify-between text-sm">
+   950→                    <span className="text-muted-foreground">Valor Bruto</span>
+   951→                    <span className="font-medium text-foreground">{formatCurrency(saqueValorNum)}</span>
+   952→                  </div>
+   953→                  <div className="flex justify-between text-sm">
+   954→                    <span className="text-muted-foreground">IRRF</span>
+   955→                    <span className="font-medium text-foreground">{formatCurrency(saqueIrrfPreview)}</span>
+   956→                  </div>
+   957→                  <div className="flex justify-between text-sm">
+   958→                    <span className="text-muted-foreground">INSS</span>
+   959→                    <span className="font-medium text-foreground">{formatCurrency(saqueInssPreview)}</span>
+   960→                  </div>
+   961→                  <div className="border-t border-border pt-2 flex justify-between text-sm">
+   962→                    <span className="font-semibold text-foreground">Valor Líquido</span>
+   963→                    <span className="font-bold text-green-700 dark:text-green-400">{formatCurrency(saqueLiquidoPreview)}</span>
+   964→                  </div>
+   965→                </div>
+   966→              )}
+   967→
+   968→              {/* Validation messages */}
+   969→              {saqueValorNum > 0 && saqueValorNum < 10 && (
+   970→                <p className="text-xs text-amber-600 dark:text-amber-400">Valor mínimo para saque é R$ 10,00.</p>
+   971→              )}
+   972→              {saqueValorNum > carteira.saldoDisponivel && (
+   973→                <p className="text-xs text-red-600 dark:text-red-400">Valor excede o saldo disponível.</p>
+   974→              )}
+   975→
+   976→              <DialogFooter>
+   977→                <Button variant="outline" onClick={() => { setSaqueDialogOpen(false); setSaqueValor('') }}>
+   978→                  Cancelar
+   979→                </Button>
+   980→                <Button
+   981→                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+   982→                  disabled={
+   983→                    saqueMutation.isPending ||
+   984→                    carteira.saldoDevedor > 0 ||
+   985→                    saqueValorNum < 10 ||
+   986→                    saqueValorNum > carteira.saldoDisponivel
+   987→                  }
+   988→                  onClick={() => {
+   989→                    if (carteira && saqueValorNum >= 10) {
+   990→                      saqueMutation.mutate({
+   991→                        carteiraId: carteira.id,
+   992→                        valor: saqueValorNum,
+   993→                      })
+   994→                    }
+   995→                  }}
+   996→                >
+   997→                  {saqueMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+   998→                  Confirmar Saque
+   999→                </Button>
+  1000→              </DialogFooter>
+  1001→            </div>
+  1002→          )}
+  1003→        </DialogContent>
+  1004→      </Dialog>
+  1005→
+  1006→      {/* ═══════════ REJEITAR SAQUE DIALOG ═══════════ */}
+  1007→      <Dialog open={rejeitarDialogOpen} onOpenChange={setRejeitarDialogOpen}>
+  1008→        <DialogContent>
+  1009→          <DialogHeader>
+  1010→            <DialogTitle>Rejeitar Saque</DialogTitle>
+  1011→            <DialogDescription>
+  1012→              Informe o motivo da rejeição. O valor será estornado para a carteira do revendedor.
+  1013→            </DialogDescription>
+  1014→          </DialogHeader>
+  1015→          <div className="space-y-4">
+  1016→            <div className="space-y-2">
+  1017→              <Label htmlFor="motivo-rejeicao">Motivo da Rejeição</Label>
+  1018→              <Textarea
+  1019→                id="motivo-rejeicao"
+  1020→                placeholder="Descreva o motivo da rejeição (mínimo 10 caracteres)..."
+  1021→                value={motivoRejeicao}
+  1022→                onChange={(e) => setMotivoRejeicao(e.target.value)}
+  1023→                rows={4}
+  1024→              />
+  1025→              {motivoRejeicao.length > 0 && motivoRejeicao.trim().length < 10 && (
+  1026→                <p className="text-xs text-amber-600">Mínimo de 10 caracteres ({motivoRejeicao.trim().length}/10)</p>
+  1027→              )}
+  1028→            </div>
+  1029→            <DialogFooter>
+  1030→              <Button variant="outline" onClick={() => { setRejeitarDialogOpen(false); setMotivoRejeicao('') }}>
+  1031→                Cancelar
+  1032→              </Button>
+  1033→              <Button
+  1034→                variant="destructive"
+  1035→                disabled={
+  1036→                  aprovarMutation.isPending ||
+  1037→                  motivoRejeicao.trim().length < 10
+  1038→                }
+  1039→                onClick={() => {
+  1040→                  if (rejeitarTransacaoId) {
+  1041→                    aprovarMutation.mutate({
+  1042→                      transacaoId: rejeitarTransacaoId,
+  1043→                      aprovado: false,
+  1044→                      motivoRejeicao,
+  1045→                    })
+  1046→                  }
+  1047→                }}
+  1048→              >
+  1049→                {aprovarMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+  1050→                Rejeitar Saque
+  1051→              </Button>
+  1052→            </DialogFooter>
+  1053→          </div>
+  1054→        </DialogContent>
+  1055→      </Dialog>
+  1056→    </div>
+  1057→  )
+  1058→}
+  1059→
+  1060→// ─────────────────────────────────────────────────────────
+  1061→// IRRF/INSS calculation helpers (mirrors backend logic)
+  1062→// ─────────────────────────────────────────────────────────
+  1063→
+  1064→function calcularIRRF(base: number): number {
+  1065→  if (base <= 2251.05) return 0
+  1066→  if (base <= 2826.65) return Math.max(0, base * 0.075 - 168.83)
+  1067→  if (base <= 3751.05) return Math.max(0, base * 0.15 - 381.44)
+  1068→  if (base <= 4664.68) return Math.max(0, base * 0.225 - 662.77)
+  1069→  return Math.max(0, base * 0.275 - 896.00)
+  1070→}
+  1071→
+  1072→function calcularINSS(base: number): number {
+  1073→  const teto = 908.85
+  1074→  const calculado = base * 0.11
+  1075→  return Math.min(calculado, teto)
+  1076→}
+  1077→

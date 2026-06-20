@@ -1,0 +1,1510 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback } from 'react'
+     4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Label } from '@/components/ui/label'
+     9→import { Textarea } from '@/components/ui/textarea'
+    10→import { Separator } from '@/components/ui/separator'
+    11→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+    12→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    13→import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+    14→import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+    15→import {
+    16→  AlertTriangle, Plus, Clock, CheckCircle2, XCircle,
+    17→  ChevronDown, ChevronUp, Loader2, Shield, ShieldCheck,
+    18→  ShieldAlert, FileText, Ban, UserX, Scale, Eye,
+    19→  Lock, Fingerprint, CalendarDays, Hourglass, Play,
+    20→  ChevronLeft, ChevronRight, RefreshCw
+    21→} from 'lucide-react'
+    22→import { formatCurrency, formatDate } from '@/lib/helpers'
+    23→import { useAppStore } from '@/lib/store'
+    24→import { toast } from 'sonner'
+    25→
+    26→// ─── Types ───────────────────────────────────────────────
+    27→
+    28→interface Vinculo {
+    29→  id: string
+    30→  tipoVinculo: string
+    31→  parentesco: string
+    32→  dataFimVinculo?: string | null
+    33→  pessoaVinculada: {
+    34→    id: string
+    35→    nomeCompleto: string
+    36→    tipoRegistro: string
+    37→    dataNascimento?: string
+    38→    cpf?: string | null
+    39→  }
+    40→}
+    41→
+    42→interface Contrato {
+    43→  id: string
+    44→  status: string
+    45→  valorParcelaBase: number
+    46→  valorTaxaAdesao: number
+    47→  dataInicio: string | null
+    48→  dataCancelamento: string | null
+    49→  motivoCancelamento: string | null
+    50→  dataSuspensao: string | null
+    51→  createdAt: string
+    52→  titular: {
+    53→    id: string
+    54→    nomeCompleto: string
+    55→    cpf: string | null
+    56→  }
+    57→  plano: {
+    58→    nome: string
+    59→    tipo: string
+    60→  }
+    61→  vinculos?: Vinculo[]
+    62→  dadosAprovacao?: {
+    63→    dataAprovacao: string | null
+    64→  } | null
+    65→  remissao?: {
+    66→    id: string
+    67→    dataInicioRemissao: string
+    68→    dataFimRemissao: string
+    69→    mesesAplicados: number
+    70→    origemPrazo: string
+    71→  } | null
+    72→}
+    73→
+    74→interface RemissaoInfo {
+    75→  id: string
+    76→  dataInicioRemissao: string
+    77→  dataFimRemissao: string
+    78→  mesesAplicados: number
+    79→  origemPrazo: string
+    80→}
+    81→
+    82→interface Sinistro {
+    83→  id: string
+    84→  contratoId: string
+    85→  pessoaVinculadaId: string
+    86→  tipoSinistro: string
+    87→  dataOcorrencia: string
+    88→  status: string
+    89→  documentoS3Hash: string | null
+    90→  motivoNegacao: string | null
+    91→  carenciaDias: number | null
+    92→  carenciaMeses: number | null
+    93→  observacoes: string | null
+    94→  createdAt: string
+    95→  contrato: {
+    96→    id: string
+    97→    titular: { id: string; nomeCompleto: string }
+    98→    plano: { nome: string }
+    99→    remissao?: RemissaoInfo | null
+   100→  }
+   101→  pessoaVinculada: {
+   102→    id: string
+   103→    nomeCompleto: string
+   104→    tipoRegistro: string
+   105→  }
+   106→}
+   107→
+   108→interface PaginatedSinistros {
+   109→  data: Sinistro[]
+   110→  pagination: {
+   111→    page: number
+   112→    limit: number
+   113→    total: number
+   114→    totalPages: number
+   115→  }
+   116→}
+   117→
+   118→interface PaginatedContratos {
+   119→  data: Contrato[]
+   120→  pagination: {
+   121→    page: number
+   122→    limit: number
+   123→    total: number
+   124→    totalPages: number
+   125→  }
+   126→}
+   127→
+   128→// ─── Constants ───────────────────────────────────────────
+   129→
+   130→const STATUS_LABELS: Record<string, string> = {
+   131→  EM_ANALISE: 'Em Análise',
+   132→  APROVADO: 'Aprovado',
+   133→  NEGADO_CARENCIA: 'Negado - Carência',
+   134→  NEGADO_FRAUDE: 'Negado - Fraude',
+   135→  NEGADO_EXCLUSAO: 'Negado - Exclusão',
+   136→}
+   137→
+   138→const STATUS_COLORS: Record<string, string> = {
+   139→  EM_ANALISE: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+   140→  APROVADO: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+   141→  NEGADO_CARENCIA: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+   142→  NEGADO_FRAUDE: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+   143→  NEGADO_EXCLUSAO: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+   144→}
+   145→
+   146→const STATUS_ICONS: Record<string, React.ElementType> = {
+   147→  EM_ANALISE: Clock,
+   148→  APROVADO: CheckCircle2,
+   149→  NEGADO_CARENCIA: XCircle,
+   150→  NEGADO_FRAUDE: ShieldAlert,
+   151→  NEGADO_EXCLUSAO: Ban,
+   152→}
+   153→
+   154→const TIPO_SINISTRO_LABELS: Record<string, string> = {
+   155→  OBITO_NATURAL: 'Óbito Natural',
+   156→  OBITO_ACIDENTAL: 'Óbito Acidental',
+   157→  SUICIDIO: 'Suicídio',
+   158→  INVALIDEZ_TOTAL: 'Invalidez Total',
+   159→}
+   160→
+   161→const CARENCIA_INFO: Record<string, string> = {
+   162→  OBITO_ACIDENTAL: '3 dias',
+   163→  OBITO_NATURAL: '6 meses',
+   164→  SUICIDIO: '24 meses',
+   165→  INVALIDEZ_TOTAL: '6 meses',
+   166→}
+   167→
+   168→// ─── Helper: get auth headers ────────────────────────────
+   169→
+   170→function getAuthHeaders(userId?: string): Record<string, string> {
+   171→  return {
+   172→    'Content-Type': 'application/json',
+   173→    ...(userId ? { 'x-user-id': userId } : {}),
+   174→  }
+   175→}
+   176→
+   177→// ─── Main Component ──────────────────────────────────────
+   178→
+   179→export function ClaimsTab() {
+   180→  const queryClient = useQueryClient()
+   181→  const user = useAppStore((s) => s.user)
+   182→  const isSuperAdmin = user?.role === 'SUPERADMIN'
+   183→  const isFinanceiroOrAdmin = user?.role === 'SUPERADMIN' || user?.role === 'FINANCEIRO'
+   184→
+   185→  // ── Form state ──
+   186→  const [showForm, setShowForm] = useState(false)
+   187→  const [form, setForm] = useState({
+   188→    contratoId: '',
+   189→    pessoaVinculadaId: '',
+   190→    tipoSinistro: 'OBITO_NATURAL',
+   191→    dataOcorrencia: '',
+   192→    documentoS3Hash: '',
+   193→    observacoes: '',
+   194→  })
+   195→  const [formError, setFormError] = useState<string | null>(null)
+   196→  const [carenciaResult, setCarenciaResult] = useState<{
+   197→    negado: boolean
+   198→    motivoNegacao?: string
+   199→    carenciaDias?: number | null
+   200→    carenciaMeses?: number | null
+   201→  } | null>(null)
+   202→
+   203→  // ── List state ──
+   204→  const [statusFilter, setStatusFilter] = useState<string>('ALL')
+   205→  const [sinistrosPage, setSinistrosPage] = useState(1)
+   206→  const [expandedSinistro, setExpandedSinistro] = useState<string | null>(null)
+   207→  const [sinistroDetail, setSinistroDetail] = useState<Sinistro | null>(null)
+   208→
+   209→  // ── Action dialogs ──
+   210→  const [approveDialog, setApproveDialog] = useState<{ open: boolean; sinistroId: string }>({ open: false, sinistroId: '' })
+   211→  const [denyFraudDialog, setDenyFraudDialog] = useState<{ open: boolean; sinistroId: string }>({ open: false, sinistroId: '' })
+   212→  const [denyExclusionDialog, setDenyExclusionDialog] = useState<{ open: boolean; sinistroId: string }>({ open: false, sinistroId: '' })
+   213→  const [denyMotivo, setDenyMotivo] = useState('')
+   214→
+   215→  // ── Suspension dialog ──
+   216→  const [suspensionDialog, setSuspensionDialog] = useState<{
+   217→    open: boolean
+   218→    contratoId: string
+   219→    acao: 'SUSPENDER' | 'REATIVAR'
+   220→    contratoTitulo: string
+   221→  }>({ open: false, contratoId: '', acao: 'SUSPENDER', contratoTitulo: '' })
+   222→  const [suspensionMotivo, setSuspensionMotivo] = useState('')
+   223→
+   224→  // ── CDC dialog ──
+   225→  const [cdcDialog, setCdcDialog] = useState<{
+   226→    open: boolean
+   227→    contratoId: string
+   228→    contratoTitulo: string
+   229→    dataInicio: string
+   230→    diasRestantes: number
+   231→  }>({ open: false, contratoId: '', contratoTitulo: '', dataInicio: '', diasRestantes: 0 })
+   232→
+   233→  // ── Compliance dialog ──
+   234→  const [complianceDialog, setComplianceDialog] = useState<{
+   235→    open: boolean
+   236→    tipo: 'maioridade' | 'lgpd' | 'suspensao-auto'
+   237→    titulo: string
+   238→    descricao: string
+   239→  }>({ open: false, tipo: 'maioridade', titulo: '', descricao: '' })
+   240→
+   241→  // ── Compliance section open ──
+   242→  const [complianceOpen, setComplianceOpen] = useState(false)
+   243→
+   244→  // ── Contracts for CDC and suspension ──
+   245→  const [contratosPage, setContratosPage] = useState(1)
+   246→
+   247→  // ─── Queries ───
+   248→
+   249→  const { data: sinistrosData, isLoading: sinistrosLoading } = useQuery<PaginatedSinistros>({
+   250→    queryKey: ['sinistros', sinistrosPage, statusFilter],
+   251→    queryFn: async () => {
+   252→      const params = new URLSearchParams({ page: String(sinistrosPage), limit: '10' })
+   253→      if (statusFilter !== 'ALL') params.set('status', statusFilter)
+   254→      const res = await fetch(`/api/sinistros?${params}`)
+   255→      if (!res.ok) throw new Error('Erro ao carregar sinistros')
+   256→      return res.json()
+   257→    },
+   258→  })
+   259→
+   260→  const { data: contratosData } = useQuery<PaginatedContratos>({
+   261→    queryKey: ['contratos-claims', contratosPage],
+   262→    queryFn: async () => {
+   263→      const res = await fetch(`/api/contratos?page=${contratosPage}&limit=50`)
+   264→      if (!res.ok) return { data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }
+   265→      return res.json()
+   266→    },
+   267→  })
+   268→
+   269→  // Get vinculos for selected contract
+   270→  const selectedContrato = contratosData?.data?.find((c) => c.id === form.contratoId)
+   271→  const activeVinculos = selectedContrato?.vinculos?.filter((v) => !v.dataFimVinculo) || []
+   272→
+   273→  // Sinistro detail query
+   274→  const { data: sinistroDetailData } = useQuery<Sinistro>({
+   275→    queryKey: ['sinistro-detail', expandedSinistro],
+   276→    queryFn: async () => {
+   277→      if (!expandedSinistro) return null
+   278→      const res = await fetch(`/api/sinistros/${expandedSinistro}`)
+   279→      if (!res.ok) throw new Error('Erro')
+   280→      return res.json()
+   281→    },
+   282→    enabled: !!expandedSinistro,
+   283→  })
+   284→
+   285→  // ─── Mutations ───
+   286→
+   287→  const createSinistroMutation = useMutation({
+   288→    mutationFn: async () => {
+   289→      const body = {
+   290→        contratoId: form.contratoId,
+   291→        pessoaVinculadaId: form.pessoaVinculadaId || undefined,
+   292→        tipoSinistro: form.tipoSinistro,
+   293→        dataOcorrencia: form.dataOcorrencia,
+   294→        documentoS3Hash: form.documentoS3Hash || undefined,
+   295→        observacoes: form.observacoes || undefined,
+   296→      }
+   297→      const res = await fetch('/api/sinistros', {
+   298→        method: 'POST',
+   299→        headers: getAuthHeaders(user?.id),
+   300→        body: JSON.stringify(body),
+   301→      })
+   302→      const data = await res.json()
+   303→      if (!res.ok) throw new Error(data.error || 'Erro ao registrar sinistro')
+   304→      return data
+   305→    },
+   306→    onSuccess: (data: Sinistro) => {
+   307→      queryClient.invalidateQueries({ queryKey: ['sinistros'] })
+   308→      setShowForm(false)
+   309→      setForm({
+   310→        contratoId: '',
+   311→        pessoaVinculadaId: '',
+   312→        tipoSinistro: 'OBITO_NATURAL',
+   313→        dataOcorrencia: '',
+   314→        documentoS3Hash: '',
+   315→        observacoes: '',
+   316→      })
+   317→
+   318→      // Show carência result
+   319→      if (data.status === 'NEGADO_CARENCIA') {
+   320→        setCarenciaResult({
+   321→          negado: true,
+   322→          motivoNegacao: data.motivoNegacao || undefined,
+   323→          carenciaDias: data.carenciaDias,
+   324→          carenciaMeses: data.carenciaMeses,
+   325→        })
+   326→        toast.error('Sinistro negado por carência', {
+   327→          description: data.motivoNegacao || 'Período de carência não cumprido.',
+   328→          duration: 8000,
+   329→        })
+   330→      } else {
+   331→        setCarenciaResult({ negado: false })
+   332→        toast.success('Sinistro registrado', {
+   333→          description: 'O sinistro foi aberto e está em análise.',
+   334→        })
+   335→      }
+   336→    },
+   337→    onError: (error: Error) => {
+   338→      toast.error('Erro ao registrar sinistro', { description: error.message })
+   339→    },
+   340→  })
+   341→
+   342→  const updateSinistroMutation = useMutation({
+   343→    mutationFn: async ({ id, status, motivoNegacao }: { id: string; status: string; motivoNegacao?: string }) => {
+   344→      const res = await fetch(`/api/sinistros/${id}`, {
+   345→        method: 'PATCH',
+   346→        headers: getAuthHeaders(user?.id),
+   347→        body: JSON.stringify({ status, motivoNegacao }),
+   348→      })
+   349→      const data = await res.json()
+   350→      if (!res.ok) throw new Error(data.error || 'Erro ao atualizar sinistro')
+   351→      return data
+   352→    },
+   353→    onSuccess: (_data, variables) => {
+   354→      queryClient.invalidateQueries({ queryKey: ['sinistros'] })
+   355→      queryClient.invalidateQueries({ queryKey: ['sinistro-detail'] })
+   356→      if (variables.status === 'APROVADO') {
+   357→        toast.success('Sinistro aprovado', { description: 'O sinistro foi aprovado com sucesso.' })
+   358→      } else {
+   359→        toast.success('Sinistro negado', { description: `Status alterado para ${STATUS_LABELS[variables.status]}` })
+   360→      }
+   361→      setApproveDialog({ open: false, sinistroId: '' })
+   362→      setDenyFraudDialog({ open: false, sinistroId: '' })
+   363→      setDenyExclusionDialog({ open: false, sinistroId: '' })
+   364→      setDenyMotivo('')
+   365→    },
+   366→    onError: (error: Error) => {
+   367→      toast.error('Erro ao atualizar sinistro', { description: error.message })
+   368→    },
+   369→  })
+   370→
+   371→  const cancelarCdcMutation = useMutation({
+   372→    mutationFn: async (contratoId: string) => {
+   373→      const res = await fetch(`/api/contratos/${contratoId}/cancelar-cdc`, {
+   374→        method: 'POST',
+   375→        headers: getAuthHeaders(user?.id),
+   376→      })
+   377→      const data = await res.json()
+   378→      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar contrato')
+   379→      return data
+   380→    },
+   381→    onSuccess: () => {
+   382→      queryClient.invalidateQueries({ queryKey: ['contratos-claims'] })
+   383→      queryClient.invalidateQueries({ queryKey: ['sinistros'] })
+   384→      setCdcDialog({ open: false, contratoId: '', contratoTitulo: '', dataInicio: '', diasRestantes: 0 })
+   385→      toast.success('Contrato cancelado por arrependimento CDC', {
+   386→        description: 'Estorno integral realizado. Zero multa aplicada.',
+   387→        duration: 6000,
+   388→      })
+   389→    },
+   390→    onError: (error: Error) => {
+   391→      toast.error('Erro ao cancelar contrato', { description: error.message })
+   392→    },
+   393→  })
+   394→
+   395→  const suspensaoMutation = useMutation({
+   396→    mutationFn: async ({ contratoId, acao, motivo }: { contratoId: string; acao: 'SUSPENDER' | 'REATIVAR'; motivo: string }) => {
+   397→      const res = await fetch(`/api/contratos/${contratoId}/suspensao`, {
+   398→        method: 'POST',
+   399→        headers: getAuthHeaders(user?.id),
+   400→        body: JSON.stringify({ acao, motivo }),
+   401→      })
+   402→      const data = await res.json()
+   403→      if (!res.ok) throw new Error(data.error || 'Erro na operação')
+   404→      return data
+   405→    },
+   406→    onSuccess: (_data, variables) => {
+   407→      queryClient.invalidateQueries({ queryKey: ['contratos-claims'] })
+   408→      queryClient.invalidateQueries({ queryKey: ['sinistros'] })
+   409→      setSuspensionDialog({ open: false, contratoId: '', acao: 'SUSPENDER', contratoTitulo: '' })
+   410→      setSuspensionMotivo('')
+   411→      toast.success(
+   412→        variables.acao === 'SUSPENDER' ? 'Contrato suspenso' : 'Contrato reativado',
+   413→        { description: variables.acao === 'SUSPENDER' ? 'O contrato foi suspenso com sucesso.' : 'Contrato reativado (Récita). EC-08: Carência pode necessitar recálculo.' }
+   414→      )
+   415→    },
+   416→    onError: (error: Error) => {
+   417→      toast.error('Erro na operação', { description: error.message })
+   418→    },
+   419→  })
+   420→
+   421→  const complianceMutation = useMutation({
+   422→    mutationFn: async (tipo: 'maioridade' | 'lgpd' | 'suspensao-auto') => {
+   423→      const res = await fetch(`/api/compliance/${tipo}`, {
+   424→        method: 'POST',
+   425→        headers: getAuthHeaders(user?.id),
+   426→      })
+   427→      const data = await res.json()
+   428→      if (!res.ok) throw new Error(data.error || 'Erro ao executar job')
+   429→      return { tipo, data }
+   430→    },
+   431→    onSuccess: (result) => {
+   432→      queryClient.invalidateQueries({ queryKey: ['contratos-claims'] })
+   433→      queryClient.invalidateQueries({ queryKey: ['sinistros'] })
+   434→      setComplianceDialog({ open: false, tipo: 'maioridade', titulo: '', descricao: '' })
+   435→
+   436→      if (result.tipo === 'maioridade') {
+   437→        toast.success('Job de Maioridade executado', {
+   438→          description: `${result.data.expirados || 0} vínculos expirados, ${result.data.totalVerificados || 0} verificados.`,
+   439→          duration: 6000,
+   440→        })
+   441→      } else if (result.tipo === 'lgpd') {
+   442→        toast.success('Job LGPD executado', {
+   443→          description: `${result.data.anonimizados || 0} anonimizados, ${result.data.skipped || 0} com pendência financeira.`,
+   444→          duration: 6000,
+   445→        })
+   446→      } else {
+   447→        toast.success('Job de Auto-Suspensão executado', {
+   448→          description: `${result.data.contratosSuspensos || 0} contratos suspensos por inadimplência.`,
+   449→          duration: 6000,
+   450→        })
+   451→      }
+   452→    },
+   453→    onError: (error: Error) => {
+   454→      toast.error('Erro ao executar job de compliance', { description: error.message })
+   455→    },
+   456→  })
+   457→
+   458→  // ─── Handlers ───
+   459→
+   460→  const handleSubmit = useCallback((e: React.FormEvent) => {
+   461→    e.preventDefault()
+   462→    setFormError(null)
+   463→    setCarenciaResult(null)
+   464→
+   465→    // Validate data_ocorrencia not in future
+   466→    if (form.dataOcorrencia) {
+   467→      const dataOcc = new Date(form.dataOcorrencia)
+   468→      const today = new Date()
+   469→      today.setHours(23, 59, 59, 999)
+   470→      if (dataOcc > today) {
+   471→        setFormError('Data da ocorrência não pode ser futura.')
+   472→        return
+   473→      }
+   474→    }
+   475→
+   476→    // Validate SHA-256 hash format (64 hex chars)
+   477→    if (form.documentoS3Hash) {
+   478→      const hash = form.documentoS3Hash.trim()
+   479→      if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
+   480→        setFormError('Hash SHA-256 inválido. Deve conter exatamente 64 caracteres hexadecimais.')
+   481→        return
+   482→      }
+   483→    }
+   484→
+   485→    if (!form.contratoId || !form.tipoSinistro || !form.dataOcorrencia) {
+   486→      setFormError('Preencha todos os campos obrigatórios.')
+   487→      return
+   488→    }
+   489→
+   490→    createSinistroMutation.mutate()
+   491→  }, [form, createSinistroMutation])
+   492→
+   493→  // CDC countdown calculation
+   494→  const getCdcInfo = useCallback((dataInicio: string | null) => {
+   495→    if (!dataInicio) return { eligible: false, diasRestantes: 0 }
+   496→    const inicio = new Date(dataInicio)
+   497→    const prazo = new Date(inicio)
+   498→    prazo.setDate(prazo.getDate() + 7)
+   499→    const now = new Date()
+   500→    const diasRestantes = Math.ceil((prazo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+   501→    return { eligible: diasRestantes > 0, diasRestantes: Math.max(0, diasRestantes) }
+   502→  }, [])
+   503→
+   504→  // Filter contracts for CDC eligibility
+   505→  const contratosCdc = (contratosData?.data || []).filter((c) => {
+   506→    if (c.status !== 'APROVADO') return false
+   507→    const info = getCdcInfo(c.dataInicio)
+   508→    return info.eligible
+   509→  })
+   510→
+   511→  // Filter contracts for suspension/reativação
+   512→  const contratosSuspensao = (contratosData?.data || []).filter((c) =>
+   513→    c.status === 'APROVADO' || c.status === 'SUSPENSO'
+   514→  )
+   515→
+   516→  // ─── Rendering ───
+   517→
+   518→  const sinistros = sinistrosData?.data || []
+   519→  const sinistrosPagination = sinistrosData?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }
+   520→
+   521→  return (
+   522→    <div className="animate-fade-up space-y-6">
+   523→      {/* Header */}
+   524→      <div className="flex items-center justify-between">
+   525→        <div>
+   526→          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Sinistros & Compliance</h1>
+   527→          <p className="text-muted-foreground mt-1">Gestão de sinistros, carência e compliance legal</p>
+   528→        </div>
+   529→        {isFinanceiroOrAdmin && (
+   530→          <Button onClick={() => { setShowForm(!showForm); setCarenciaResult(null); setFormError(null) }} className="bg-primary text-primary-foreground hover:bg-primary/90">
+   531→            <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+   532→            Novo Sinistro
+   533→          </Button>
+   534→        )}
+   535→      </div>
+   536→
+   537→      {/* ═══ SECTION 1: Carência Reference ═══ */}
+   538→      <Card className="border-border/50">
+   539→        <CardContent className="py-3">
+   540→          <div className="flex items-center gap-2 text-sm">
+   541→            <Clock className="h-4 w-4 text-amber-500 shrink-0" aria-hidden="true" />
+   542→            <span className="text-muted-foreground">
+   543→              Carência: <strong className="text-foreground">3 dias</strong> (acidental) •{' '}
+   544→              <strong className="text-foreground">6 meses</strong> (natural/invalidez) •{' '}
+   545→              <strong className="text-foreground">24 meses</strong> (suicídio, Art. 798 CC)
+   546→            </span>
+   547→          </div>
+   548→        </CardContent>
+   549→      </Card>
+   550→
+   551→      {/* ═══ SECTION 2: Sinistro Registration Form ═══ */}
+   552→      {showForm && (
+   553→        <Card className="border-border/50">
+   554→          <CardHeader>
+   555→            <CardTitle className="text-base flex items-center gap-2">
+   556→              <Fingerprint className="h-4 w-4" aria-hidden="true" />
+   557→              Registrar Novo Sinistro
+   558→            </CardTitle>
+   559→          </CardHeader>
+   560→          <CardContent>
+   561→            <form onSubmit={handleSubmit} className="space-y-4">
+   562→              {/* Row 1: Contrato + Tipo */}
+   563→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   564→                <div className="space-y-2">
+   565→                  <Label htmlFor="contratoId">Contrato *</Label>
+   566→                  <Select
+   567→                    value={form.contratoId}
+   568→                    onValueChange={(val) => setForm((f) => ({ ...f, contratoId: val, pessoaVinculadaId: '' }))}
+   569→                  >
+   570→                    <SelectTrigger className="w-full">
+   571→                      <SelectValue placeholder="Selecione o contrato..." />
+   572→                    </SelectTrigger>
+   573→                    <SelectContent>
+   574→                      {(contratosData?.data || [])
+   575→                        .filter((c) => c.status === 'APROVADO' || c.status === 'SUSPENSO')
+   576→                        .map((c) => (
+   577→                          <SelectItem key={c.id} value={c.id}>
+   578→                            {c.titular.nomeCompleto} — {c.plano.nome}
+   579→                          </SelectItem>
+   580→                        ))}
+   581→                    </SelectContent>
+   582→                  </Select>
+   583→                </div>
+   584→                <div className="space-y-2">
+   585→                  <Label htmlFor="tipoSinistro">Tipo de Sinistro *</Label>
+   586→                  <Select
+   587→                    value={form.tipoSinistro}
+   588→                    onValueChange={(val) => setForm((f) => ({ ...f, tipoSinistro: val }))}
+   589→                  >
+   590→                    <SelectTrigger className="w-full">
+   591→                      <SelectValue />
+   592→                    </SelectTrigger>
+   593→                    <SelectContent>
+   594→                      {Object.entries(TIPO_SINISTRO_LABELS).map(([value, label]) => (
+   595→                        <SelectItem key={value} value={value}>
+   596→                          {label} (carência: {CARENCIA_INFO[value]})
+   597→                        </SelectItem>
+   598→                      ))}
+   599→                    </SelectContent>
+   600→                  </Select>
+   601→                </div>
+   602→              </div>
+   603→
+   604→              {/* Row 2: Pessoa Vinculada + Data */}
+   605→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   606→                <div className="space-y-2">
+   607→                  <Label htmlFor="pessoaVinculadaId">Pessoa Vinculada (EC-04)</Label>
+   608→                  <Select
+   609→                    value={form.pessoaVinculadaId}
+   610→                    onValueChange={(val) => setForm((f) => ({ ...f, pessoaVinculadaId: val }))}
+   611→                    disabled={!form.contratoId}
+   612→                  >
+   613→                    <SelectTrigger className="w-full">
+   614→                      <SelectValue placeholder={form.contratoId ? 'Titular (padrão)' : 'Selecione contrato primeiro'} />
+   615→                    </SelectTrigger>
+   616→                    <SelectContent>
+   617→                      {/* Titular option */}
+   618→                      {selectedContrato && (
+   619→                        <SelectItem key={selectedContrato.titular.id} value={selectedContrato.titular.id}>
+   620→                          {selectedContrato.titular.nomeCompleto} (Titular)
+   621→                        </SelectItem>
+   622→                      )}
+   623→                      {/* Active vinculos */}
+   624→                      {activeVinculos.map((v) => (
+   625→                        <SelectItem key={v.pessoaVinculada.id} value={v.pessoaVinculada.id}>
+   626→                          {v.pessoaVinculada.nomeCompleto} ({v.tipoVinculo})
+   627→                        </SelectItem>
+   628→                      ))}
+   629→                    </SelectContent>
+   630→                  </Select>
+   631→                  <p className="text-xs text-muted-foreground">
+   632→                    Se não selecionado, o titular do contrato será utilizado.
+   633→                  </p>
+   634→                </div>
+   635→                <div className="space-y-2">
+   636→                  <Label htmlFor="dataOcorrencia">Data da Ocorrência *</Label>
+   637→                  <Input
+   638→                    type="date"
+   639→                    id="dataOcorrencia"
+   640→                    required
+   641→                    value={form.dataOcorrencia}
+   642→                    max={new Date().toISOString().split('T')[0]}
+   643→                    onChange={(e) => setForm((f) => ({ ...f, dataOcorrencia: e.target.value }))}
+   644→                  />
+   645→                </div>
+   646→              </div>
+   647→
+   648→              {/* Row 3: Documento S3 Hash (Air-Gap RN-01) */}
+   649→              <div className="space-y-2">
+   650→                <Label htmlFor="documentoS3Hash" className="flex items-center gap-1">
+   651→                  <Lock className="h-3 w-3" aria-hidden="true" />
+   652→                  Hash SHA-256 do Documento (Air-Gap RN-01)
+   653→                </Label>
+   654→                <Input
+   655→                  id="documentoS3Hash"
+   656→                  placeholder="Hash SHA-256 (64 caracteres hexadecimais)"
+   657→                  value={form.documentoS3Hash}
+   658→                  onChange={(e) => setForm((f) => ({ ...f, documentoS3Hash: e.target.value }))}
+   659→                  maxLength={64}
+   660→                  className="font-mono text-sm"
+   661→                />
+   662→                <p className="text-xs text-muted-foreground">
+   663→                  Apenas o hash é armazenado (Air-Gap). Dados clínicos nunca entram no sistema.
+   664→                </p>
+   665→              </div>
+   666→
+   667→              {/* Row 4: Observações */}
+   668→              <div className="space-y-2">
+   669→                <Label htmlFor="observacoes">Observações</Label>
+   670→                <Textarea
+   671→                  id="observacoes"
+   672→                  value={form.observacoes}
+   673→                  onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))}
+   674→                  placeholder="Detalhes do sinistro..."
+   675→                  className="min-h-[60px]"
+   676→                />
+   677→              </div>
+   678→
+   679→              {/* Error */}
+   680→              {formError && (
+   681→                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-md">
+   682→                  <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+   683→                  {formError}
+   684→                </div>
+   685→              )}
+   686→
+   687→              {/* Carência Result */}
+   688→              {carenciaResult && (
+   689→                <div
+   690→                  className={`flex items-start gap-2 text-sm p-3 rounded-md ${
+   691→                    carenciaResult.negado
+   692→                      ? 'text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-900/20'
+   693→                      : 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/20'
+   694→                  }`}
+   695→                >
+   696→                  {carenciaResult.negado ? (
+   697→                    <XCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+   698→                  ) : (
+   699→                    <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+   700→                  )}
+   701→                  <div>
+   702→                    {carenciaResult.negado ? (
+   703→                      <>
+   704→                        <p className="font-medium">Sinistro Negado por Carência</p>
+   705→                        <p>{carenciaResult.motivoNegacao}</p>
+   706→                        {carenciaResult.carenciaMeses && (
+   707→                          <p className="text-xs mt-1">Período de carência exigido: {carenciaResult.carenciaMeses} meses</p>
+   708→                        )}
+   709→                        {carenciaResult.carenciaDias !== null && carenciaResult.carenciaDias !== undefined && carenciaResult.carenciaDias > 0 && (
+   710→                          <p className="text-xs mt-1">Período de carência exigido: {carenciaResult.carenciaDias} dias</p>
+   711→                        )}
+   712→                        {form.tipoSinistro === 'SUICIDIO' && (
+   713→                          <p className="text-xs mt-1 italic">Art. 798 CC aplicado — carência de 24 meses para suicídio</p>
+   714→                        )}
+   715→                      </>
+   716→                    ) : (
+   717→                      <p className="font-medium">Sinistro registrado com sucesso — Em Análise</p>
+   718→                    )}
+   719→                  </div>
+   720→                </div>
+   721→              )}
+   722→
+   723→              {/* Actions */}
+   724→              <div className="flex gap-3">
+   725→                <Button
+   726→                  type="submit"
+   727→                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+   728→                  disabled={createSinistroMutation.isPending}
+   729→                >
+   730→                  {createSinistroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+   731→                  Registrar Sinistro
+   732→                </Button>
+   733→                <Button type="button" variant="outline" onClick={() => { setShowForm(false); setCarenciaResult(null); setFormError(null) }}>
+   734→                  Cancelar
+   735→                </Button>
+   736→              </div>
+   737→            </form>
+   738→          </CardContent>
+   739→        </Card>
+   740→      )}
+   741→
+   742→      {/* ═══ SECTION 3: Sinistro List ═══ */}
+   743→      <Card className="border-border/50">
+   744→        <CardHeader className="pb-3">
+   745→          <div className="flex items-center justify-between">
+   746→            <CardTitle className="text-base">Sinistros Registrados</CardTitle>
+   747→            <div className="flex items-center gap-2">
+   748→              <Label htmlFor="statusFilter" className="text-xs text-muted-foreground sr-only sm:not-sr-only">
+   749→                Filtrar:
+   750→              </Label>
+   751→              <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setSinistrosPage(1) }}>
+   752→                <SelectTrigger className="w-[160px]" size="sm">
+   753→                  <SelectValue />
+   754→                </SelectTrigger>
+   755→                <SelectContent>
+   756→                  <SelectItem value="ALL">Todos</SelectItem>
+   757→                  <SelectItem value="EM_ANALISE">Em Análise</SelectItem>
+   758→                  <SelectItem value="APROVADO">Aprovado</SelectItem>
+   759→                  <SelectItem value="NEGADO_CARENCIA">Negado - Carência</SelectItem>
+   760→                  <SelectItem value="NEGADO_FRAUDE">Negado - Fraude</SelectItem>
+   761→                  <SelectItem value="NEGADO_EXCLUSAO">Negado - Exclusão</SelectItem>
+   762→                </SelectContent>
+   763→              </Select>
+   764→            </div>
+   765→          </div>
+   766→        </CardHeader>
+   767→        <CardContent>
+   768→          {sinistrosLoading ? (
+   769→            <div className="flex items-center justify-center py-16">
+   770→              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden="true" />
+   771→            </div>
+   772→          ) : sinistros.length === 0 ? (
+   773→            <div className="text-center py-12">
+   774→              <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+   775→              <p className="text-muted-foreground">Nenhum sinistro encontrado</p>
+   776→            </div>
+   777→          ) : (
+   778→            <div className="space-y-2">
+   779→              {sinistros.map((sinistro) => {
+   780→                const StatusIcon = STATUS_ICONS[sinistro.status] || AlertTriangle
+   781→                const isExpanded = expandedSinistro === sinistro.id
+   782→
+   783→                return (
+   784→                  <div key={sinistro.id}>
+   785→                    <button
+   786→                      type="button"
+   787→                      className="w-full text-left"
+   788→                      onClick={() => setExpandedSinistro(isExpanded ? null : sinistro.id)}
+   789→                      aria-expanded={isExpanded}
+   790→                    >
+   791→                      <div className="flex items-center justify-between py-3 px-1 hover:bg-muted/50 rounded-md transition-colors">
+   792→                        <div className="flex items-center gap-3 min-w-0">
+   793→                          <StatusIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+   794→                          <div className="min-w-0">
+   795→                            <p className="font-medium text-foreground text-sm truncate">
+   796→                              {sinistro.pessoaVinculada.nomeCompleto}
+   797→                            </p>
+   798→                            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+   799→                              <span>{TIPO_SINISTRO_LABELS[sinistro.tipoSinistro] || sinistro.tipoSinistro}</span>
+   800→                              <span>•</span>
+   801→                              <span>{formatDate(sinistro.dataOcorrencia)}</span>
+   802→                              {sinistro.documentoS3Hash && (
+   803→                                <>
+   804→                                  <span>•</span>
+   805→                                  <span className="font-mono text-[10px]" title={sinistro.documentoS3Hash}>
+   806→                                    🔒 {sinistro.documentoS3Hash.substring(0, 8)}...
+   807→                                  </span>
+   808→                                </>
+   809→                              )}
+   810→                            </div>
+   811→                          </div>
+   812→                        </div>
+   813→                        <div className="flex items-center gap-2 shrink-0">
+   814→                          <Badge className={STATUS_COLORS[sinistro.status] || 'bg-muted text-muted-foreground'}>
+   815→                            {STATUS_LABELS[sinistro.status] || sinistro.status}
+   816→                          </Badge>
+   817→                          {isExpanded ? (
+   818→                            <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   819→                          ) : (
+   820→                            <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   821→                          )}
+   822→                        </div>
+   823→                      </div>
+   824→                    </button>
+   825→
+   826→                    {/* Expanded detail */}
+   827→                    {isExpanded && (
+   828→                      <div className="ml-8 mb-3 space-y-3">
+   829→                        <div className="bg-muted/30 rounded-lg p-4 space-y-2 text-sm">
+   830→                          {/* Details grid */}
+   831→                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+   832→                            <div>
+   833→                              <span className="text-muted-foreground">Contrato:</span>{' '}
+   834→                              <span className="font-medium">{sinistro.contrato.titular.nomeCompleto}</span>
+   835→                            </div>
+   836→                            <div>
+   837→                              <span className="text-muted-foreground">Plano:</span>{' '}
+   838→                              <span className="font-medium">{sinistro.contrato.plano.nome}</span>
+   839→                            </div>
+   840→                            <div>
+   841→                              <span className="text-muted-foreground">Registro:</span>{' '}
+   842→                              <span className="font-medium">{formatDate(sinistro.createdAt)}</span>
+   843→                            </div>
+   844→                            <div>
+   845→                              <span className="text-muted-foreground">Tipo Registro:</span>{' '}
+   846→                              <span className="font-medium">{sinistro.pessoaVinculada.tipoRegistro}</span>
+   847→                            </div>
+   848→                          </div>
+   849→
+   850→                          {/* Documento S3 Hash */}
+   851→                          {sinistro.documentoS3Hash && (
+   852→                            <div>
+   853→                              <span className="text-muted-foreground flex items-center gap-1">
+   854→                                <Lock className="h-3 w-3" aria-hidden="true" />
+   855→                                Hash SHA-256 (Air-Gap):
+   856→                              </span>{' '}
+   857→                              <code className="font-mono text-xs bg-background px-2 py-0.5 rounded break-all">
+   858→                                {sinistro.documentoS3Hash}
+   859→                              </code>
+   860→                            </div>
+   861→                          )}
+   862→
+   863→                          {/* Motivo Negação */}
+   864→                          {sinistro.motivoNegacao && (
+   865→                            <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded">
+   866→                              <span className="text-red-700 dark:text-red-400 font-medium">Motivo da Negação:</span>{' '}
+   867→                              <span className="text-red-600 dark:text-red-300">{sinistro.motivoNegacao}</span>
+   868→                            </div>
+   869→                          )}
+   870→
+   871→                          {/* Carência Info */}
+   872→                          {(sinistro.carenciaDias !== null || sinistro.carenciaMeses !== null) && (
+   873→                            <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded">
+   874→                              <span className="text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1">
+   875→                                <Hourglass className="h-3 w-3" aria-hidden="true" />
+   876→                                Carência:
+   877→                              </span>{' '}
+   878→                              <span className="text-amber-600 dark:text-amber-300">
+   879→                                {sinistro.carenciaMeses
+   880→                                  ? `${sinistro.carenciaMeses} meses`
+   881→                                  : sinistro.carenciaDias
+   882→                                    ? `${sinistro.carenciaDias} dias`
+   883→                                    : 'N/A'}
+   884→                              </span>
+   885→                            </div>
+   886→                          )}
+   887→
+   888→                          {/* Observações */}
+   889→                          {sinistro.observacoes && (
+   890→                            <div>
+   891→                              <span className="text-muted-foreground">Observações:</span>{' '}
+   892→                              <span>{sinistro.observacoes}</span>
+   893→                            </div>
+   894→                          )}
+   895→
+   896→                          {/* Remissão info for APROVADO OBITO */}
+   897→                          {sinistro.status === 'APROVADO' &&
+   898→                            ['OBITO_NATURAL', 'OBITO_ACIDENTAL', 'SUICIDIO'].includes(sinistro.tipoSinistro) &&
+   899→                            sinistroDetailData?.contrato?.remissao && (
+   900→                              <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded space-y-1">
+   901→                                <p className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+   902→                                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+   903→                                  Remissão Ativa (RN-07)
+   904→                                </p>
+   905→                                <div className="text-xs text-emerald-600 dark:text-emerald-300 space-y-0.5">
+   906→                                  <p>Início: {formatDate(sinistroDetailData.contrato.remissao.dataInicioRemissao)}</p>
+   907→                                  <p>Fim: {formatDate(sinistroDetailData.contrato.remissao.dataFimRemissao)}</p>
+   908→                                  <p>Meses aplicados: {sinistroDetailData.contrato.remissao.mesesAplicados}</p>
+   909→                                  <p>Origem do prazo: {sinistroDetailData.contrato.remissao.origemPrazo}</p>
+   910→                                </div>
+   911→                              </div>
+   912→                            )}
+   913→
+   914→                          {/* Action buttons for EM_ANALISE */}
+   915→                          {sinistro.status === 'EM_ANALISE' && isSuperAdmin && (
+   916→                            <>
+   917→                              <Separator />
+   918→                              <div className="flex flex-wrap gap-2">
+   919→                                <Button
+   920→                                  size="sm"
+   921→                                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+   922→                                  onClick={() => setApproveDialog({ open: true, sinistroId: sinistro.id })}
+   923→                                >
+   924→                                  <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
+   925→                                  Aprovar Sinistro
+   926→                                </Button>
+   927→                                <Button
+   928→                                  size="sm"
+   929→                                  variant="destructive"
+   930→                                  onClick={() => { setDenyFraudDialog({ open: true, sinistroId: sinistro.id }); setDenyMotivo('') }}
+   931→                                >
+   932→                                  <ShieldAlert className="h-3 w-3 mr-1" aria-hidden="true" />
+   933→                                  Negar por Fraude
+   934→                                </Button>
+   935→                                <Button
+   936→                                  size="sm"
+   937→                                  variant="outline"
+   938→                                  className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+   939→                                  onClick={() => { setDenyExclusionDialog({ open: true, sinistroId: sinistro.id }); setDenyMotivo('') }}
+   940→                                >
+   941→                                  <Ban className="h-3 w-3 mr-1" aria-hidden="true" />
+   942→                                  Negar por Exclusão
+   943→                                </Button>
+   944→                              </div>
+   945→                            </>
+   946→                          )}
+   947→                        </div>
+   948→                      </div>
+   949→                    )}
+   950→                  </div>
+   951→                )
+   952→              })}
+   953→
+   954→              {/* Pagination */}
+   955→              {sinistrosPagination.totalPages > 1 && (
+   956→                <div className="flex items-center justify-between pt-4">
+   957→                  <p className="text-xs text-muted-foreground">
+   958→                    {sinistrosPagination.total} sinistro(s) — Página {sinistrosPagination.page} de {sinistrosPagination.totalPages}
+   959→                  </p>
+   960→                  <div className="flex items-center gap-1">
+   961→                    <Button
+   962→                      size="sm"
+   963→                      variant="outline"
+   964→                      disabled={sinistrosPage <= 1}
+   965→                      onClick={() => setSinistrosPage((p) => Math.max(1, p - 1))}
+   966→                    >
+   967→                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+   968→                    </Button>
+   969→                    <Button
+   970→                      size="sm"
+   971→                      variant="outline"
+   972→                      disabled={sinistrosPage >= sinistrosPagination.totalPages}
+   973→                      onClick={() => setSinistrosPage((p) => p + 1)}
+   974→                    >
+   975→                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+   976→                    </Button>
+   977→                  </div>
+   978→                </div>
+   979→              )}
+   980→            </div>
+   981→          )}
+   982→        </CardContent>
+   983→      </Card>
+   984→
+   985→      {/* ═══ SECTION 4: CDC Arrependimento ═══ */}
+   986→      {isSuperAdmin && (
+   987→        <Card className="border-border/50">
+   988→          <CardHeader className="pb-3">
+   989→            <CardTitle className="text-base flex items-center gap-2">
+   990→              <Scale className="h-4 w-4" aria-hidden="true" />
+   991→              Arrependimento CDC (Art. 49)
+   992→            </CardTitle>
+   993→          </CardHeader>
+   994→          <CardContent>
+   995→            {contratosCdc.length === 0 ? (
+   996→              <p className="text-sm text-muted-foreground py-4 text-center">
+   997→                Nenhum contrato elegível para arrependimento CDC no momento.
+   998→              </p>
+   999→            ) : (
+  1000→              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+  1001→                {contratosCdc.map((c) => {
+  1002→                  const cdcInfo = getCdcInfo(c.dataInicio)
+  1003→                  return (
+  1004→                    <div
+  1005→                      key={c.id}
+  1006→                      className="flex items-center justify-between gap-3 p-3 bg-muted/30 rounded-lg"
+  1007→                    >
+  1008→                      <div className="min-w-0">
+  1009→                        <p className="font-medium text-sm text-foreground truncate">{c.titular.nomeCompleto}</p>
+  1010→                        <p className="text-xs text-muted-foreground">
+  1011→                          Início: {formatDate(c.dataInicio!)} • {c.plano.nome}
+  1012→                        </p>
+  1013→                      </div>
+  1014→                      <div className="flex items-center gap-2 shrink-0">
+  1015→                        <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+  1016→                          <CalendarDays className="h-3 w-3 mr-1" aria-hidden="true" />
+  1017→                          {cdcInfo.diasRestantes}d restantes
+  1018→                        </Badge>
+  1019→                        <Button
+  1020→                          size="sm"
+  1021→                          variant="destructive"
+  1022→                          onClick={() =>
+  1023→                            setCdcDialog({
+  1024→                              open: true,
+  1025→                              contratoId: c.id,
+  1026→                              contratoTitulo: c.titular.nomeCompleto,
+  1027→                              dataInicio: c.dataInicio!,
+  1028→                              diasRestantes: cdcInfo.diasRestantes,
+  1029→                            })
+  1030→                          }
+  1031→                        >
+  1032→                          Cancelar CDC
+  1033→                        </Button>
+  1034→                      </div>
+  1035→                    </div>
+  1036→                  )
+  1037→                })}
+  1038→              </div>
+  1039→            )}
+  1040→
+  1041→            {/* Show expired contracts info */}
+  1042→            {(contratosData?.data || [])
+  1043→              .filter((c) => c.status === 'APROVADO' && c.dataInicio && !getCdcInfo(c.dataInicio).eligible)
+  1044→              .slice(0, 3)
+  1045→              .map((c) => (
+  1046→                <div key={`expired-${c.id}`} className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+  1047→                  <Hourglass className="h-3 w-3" aria-hidden="true" />
+  1048→                  <span>
+  1049→                    {c.titular.nomeCompleto}: Prazo de arrependimento expirado
+  1050→                  </span>
+  1051→                </div>
+  1052→              ))}
+  1053→          </CardContent>
+  1054→        </Card>
+  1055→      )}
+  1056→
+  1057→      {/* ═══ SECTION 5: Contract Suspension/Reativação ═══ */}
+  1058→      {isSuperAdmin && (
+  1059→        <Card className="border-border/50">
+  1060→          <CardHeader className="pb-3">
+  1061→            <CardTitle className="text-base flex items-center gap-2">
+  1062→              <Shield className="h-4 w-4" aria-hidden="true" />
+  1063→              Suspensão / Reativação de Contratos (RN-03)
+  1064→            </CardTitle>
+  1065→          </CardHeader>
+  1066→          <CardContent>
+  1067→            {contratosSuspensao.length === 0 ? (
+  1068→              <p className="text-sm text-muted-foreground py-4 text-center">
+  1069→                Nenhum contrato elegível para suspensão/reativação.
+  1070→              </p>
+  1071→            ) : (
+  1072→              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+  1073→                {contratosSuspensao.map((c) => (
+  1074→                  <div
+  1075→                    key={c.id}
+  1076→                    className="flex items-center justify-between gap-3 p-3 bg-muted/30 rounded-lg"
+  1077→                  >
+  1078→                    <div className="min-w-0">
+  1079→                      <p className="font-medium text-sm text-foreground truncate">{c.titular.nomeCompleto}</p>
+  1080→                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+  1081→                        <span>{c.plano.nome}</span>
+  1082→                        <Badge
+  1083→                          className={
+  1084→                            c.status === 'SUSPENSO'
+  1085→                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+  1086→                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+  1087→                          }
+  1088→                        >
+  1089→                          {c.status}
+  1090→                        </Badge>
+  1091→                        {c.dataSuspensao && (
+  1092→                          <span>Desde: {formatDate(c.dataSuspensao)}</span>
+  1093→                        )}
+  1094→                      </div>
+  1095→                    </div>
+  1096→                    <div className="shrink-0">
+  1097→                      {c.status === 'APROVADO' ? (
+  1098→                        <Button
+  1099→                          size="sm"
+  1100→                          variant="outline"
+  1101→                          className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/20"
+  1102→                          onClick={() =>
+  1103→                            setSuspensionDialog({
+  1104→                              open: true,
+  1105→                              contratoId: c.id,
+  1106→                              acao: 'SUSPENDER',
+  1107→                              contratoTitulo: c.titular.nomeCompleto,
+  1108→                            })
+  1109→                          }
+  1110→                        >
+  1111→                          Suspender
+  1112→                        </Button>
+  1113→                      ) : (
+  1114→                        <Button
+  1115→                          size="sm"
+  1116→                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+  1117→                          onClick={() =>
+  1118→                            setSuspensionDialog({
+  1119→                              open: true,
+  1120→                              contratoId: c.id,
+  1121→                              acao: 'REATIVAR',
+  1122→                              contratoTitulo: c.titular.nomeCompleto,
+  1123→                            })
+  1124→                          }
+  1125→                        >
+  1126→                          Reativar (Récita)
+  1127→                        </Button>
+  1128→                      )}
+  1129→                    </div>
+  1130→                  </div>
+  1131→                ))}
+  1132→              </div>
+  1133→            )}
+  1134→          </CardContent>
+  1135→        </Card>
+  1136→      )}
+  1137→
+  1138→      {/* ═══ SECTION 6: Compliance Admin (SuperAdmin only) ═══ */}
+  1139→      {isSuperAdmin && (
+  1140→        <Card className="border-border/50">
+  1141→          <Collapsible open={complianceOpen} onOpenChange={setComplianceOpen}>
+  1142→            <CollapsibleTrigger asChild>
+  1143→              <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg">
+  1144→                <div className="flex items-center justify-between">
+  1145→                  <CardTitle className="text-base flex items-center gap-2">
+  1146→                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+  1147→                    Ferramentas de Compliance
+  1148→                  </CardTitle>
+  1149→                  {complianceOpen ? (
+  1150→                    <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+  1151→                  ) : (
+  1152→                    <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+  1153→                  )}
+  1154→                </div>
+  1155→              </CardHeader>
+  1156→            </CollapsibleTrigger>
+  1157→            <CollapsibleContent>
+  1158→              <CardContent className="space-y-4">
+  1159→                <p className="text-xs text-muted-foreground">
+  1160→                  Jobs de compliance para execução manual. Em produção, estes jobs devem ser agendados automaticamente.
+  1161→                </p>
+  1162→
+  1163→                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1164→                  {/* Maioridade */}
+  1165→                  <div className="border border-border/50 rounded-lg p-4 space-y-3">
+  1166→                    <div className="flex items-center gap-2">
+  1167→                      <UserX className="h-4 w-4 text-amber-500" aria-hidden="true" />
+  1168→                      <h3 className="font-medium text-sm">Job de Maioridade</h3>
+  1169→                    </div>
+  1170→                    <p className="text-xs text-muted-foreground">
+  1171→                      RN-05: Expira dependentes FILHO que completaram 21 anos.
+  1172→                    </p>
+  1173→                    <Button
+  1174→                      size="sm"
+  1175→                      className="w-full"
+  1176→                      variant="outline"
+  1177→                      disabled={complianceMutation.isPending}
+  1178→                      onClick={() =>
+  1179→                        setComplianceDialog({
+  1180→                          open: true,
+  1181→                          tipo: 'maioridade',
+  1182→                          titulo: 'Executar Job de Maioridade',
+  1183→                          descricao: 'Esta ação expirará automaticamente todos os vínculos de dependentes FILHO que completaram 21 anos. Pessoas com tags especiais (inválido/incapaz) serão ignoradas. Deseja continuar?',
+  1184→                        })
+  1185→                      }
+  1186→                    >
+  1187→                      <Play className="h-3 w-3 mr-1" aria-hidden="true" />
+  1188→                      Executar
+  1189→                    </Button>
+  1190→                  </div>
+  1191→
+  1192→                  {/* LGPD */}
+  1193→                  <div className="border border-border/50 rounded-lg p-4 space-y-3">
+  1194→                    <div className="flex items-center gap-2">
+  1195→                      <Lock className="h-4 w-4 text-red-500" aria-hidden="true" />
+  1196→                      <h3 className="font-medium text-sm">Job LGPD</h3>
+  1197→                    </div>
+  1198→                    <p className="text-xs text-muted-foreground">
+  1199→                      RN-06: Anonimiza PII de contratos encerrados há mais de 5 anos.
+  1200→                    </p>
+  1201→                    <Button
+  1202→                      size="sm"
+  1203→                      className="w-full"
+  1204→                      variant="outline"
+  1205→                      disabled={complianceMutation.isPending}
+  1206→                      onClick={() =>
+  1207→                        setComplianceDialog({
+  1208→                          open: true,
+  1209→                          tipo: 'lgpd',
+  1210→                          titulo: 'Executar Job de Anonimização LGPD',
+  1211→                          descricao: 'Esta ação anonimizará permanentemente os dados pessoais (PII) de pessoas cujos contratos foram encerrados há mais de 5 anos. Esta ação é IRREVERSÍVEL. Deseja continuar?',
+  1212→                        })
+  1213→                      }
+  1214→                    >
+  1215→                      <Play className="h-3 w-3 mr-1" aria-hidden="true" />
+  1216→                      Executar
+  1217→                    </Button>
+  1218→                  </div>
+  1219→
+  1220→                  {/* Auto-Suspensão */}
+  1221→                  <div className="border border-border/50 rounded-lg p-4 space-y-3">
+  1222→                    <div className="flex items-center gap-2">
+  1223→                      <RefreshCw className="h-4 w-4 text-amber-500" aria-hidden="true" />
+  1224→                      <h3 className="font-medium text-sm">Auto-Suspensão</h3>
+  1225→                    </div>
+  1226→                    <p className="text-xs text-muted-foreground">
+  1227→                      RN-03: Suspende contratos com contas vencidas além do limite configurado.
+  1228→                    </p>
+  1229→                    <Button
+  1230→                      size="sm"
+  1231→                      className="w-full"
+  1232→                      variant="outline"
+  1233→                      disabled={complianceMutation.isPending}
+  1234→                      onClick={() =>
+  1235→                        setComplianceDialog({
+  1236→                          open: true,
+  1237→                          tipo: 'suspensao-auto',
+  1238→                          titulo: 'Executar Job de Auto-Suspensão',
+  1239→                          descricao: 'Esta ação suspenderá automaticamente os contratos que possuem contas vencidas além do limite de dias configurado (DIAS_SUSPENSAO_INADIMPLENCIA). Deseja continuar?',
+  1240→                        })
+  1241→                      }
+  1242→                    >
+  1243→                      <Play className="h-3 w-3 mr-1" aria-hidden="true" />
+  1244→                      Executar
+  1245→                    </Button>
+  1246→                  </div>
+  1247→                </div>
+  1248→              </CardContent>
+  1249→            </CollapsibleContent>
+  1250→          </Collapsible>
+  1251→        </Card>
+  1252→      )}
+  1253→
+  1254→      {/* ═══ DIALOGS ═══ */}
+  1255→
+  1256→      {/* Approve Sinistro Dialog */}
+  1257→      <Dialog open={approveDialog.open} onOpenChange={(open) => setApproveDialog({ open, sinistroId: '' })}>
+  1258→        <DialogContent>
+  1259→          <DialogHeader>
+  1260→            <DialogTitle className="flex items-center gap-2">
+  1261→              <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+  1262→              Confirmar Aprovação do Sinistro
+  1263→            </DialogTitle>
+  1264→            <DialogDescription>
+  1265→              Esta ação aprovará o sinistro. Se for óbito do titular, a remissão será criada automaticamente (RN-07).
+  1266→              Esta ação não pode ser desfeita.
+  1267→            </DialogDescription>
+  1268→          </DialogHeader>
+  1269→          <DialogFooter>
+  1270→            <Button variant="outline" onClick={() => setApproveDialog({ open: false, sinistroId: '' })}>
+  1271→              Cancelar
+  1272→            </Button>
+  1273→            <Button
+  1274→              className="bg-emerald-600 text-white hover:bg-emerald-700"
+  1275→              disabled={updateSinistroMutation.isPending}
+  1276→              onClick={() =>
+  1277→                updateSinistroMutation.mutate({ id: approveDialog.sinistroId, status: 'APROVADO' })
+  1278→              }
+  1279→            >
+  1280→              {updateSinistroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1281→              Confirmar Aprovação
+  1282→            </Button>
+  1283→          </DialogFooter>
+  1284→        </DialogContent>
+  1285→      </Dialog>
+  1286→
+  1287→      {/* Deny by Fraud Dialog */}
+  1288→      <Dialog open={denyFraudDialog.open} onOpenChange={(open) => setDenyFraudDialog({ open, sinistroId: '' })}>
+  1289→        <DialogContent>
+  1290→          <DialogHeader>
+  1291→            <DialogTitle className="flex items-center gap-2">
+  1292→              <ShieldAlert className="h-5 w-5 text-red-600" aria-hidden="true" />
+  1293→              Negar Sinistro por Fraude
+  1294→            </DialogTitle>
+  1295→            <DialogDescription>
+  1296→              Esta ação negará o sinistro por fraude comprovada. O registro ficará permanentemente marcado.
+  1297→            </DialogDescription>
+  1298→          </DialogHeader>
+  1299→          <div className="space-y-2">
+  1300→            <Label htmlFor="denyFraudMotivo">Motivo da Negação *</Label>
+  1301→            <Textarea
+  1302→              id="denyFraudMotivo"
+  1303→              value={denyMotivo}
+  1304→              onChange={(e) => setDenyMotivo(e.target.value)}
+  1305→              placeholder="Descreva a fraude comprovada..."
+  1306→              className="min-h-[80px]"
+  1307→            />
+  1308→          </div>
+  1309→          <DialogFooter>
+  1310→            <Button variant="outline" onClick={() => { setDenyFraudDialog({ open: false, sinistroId: '' }); setDenyMotivo('') }}>
+  1311→              Cancelar
+  1312→            </Button>
+  1313→            <Button
+  1314→              variant="destructive"
+  1315→              disabled={updateSinistroMutation.isPending || !denyMotivo.trim()}
+  1316→              onClick={() =>
+  1317→                updateSinistroMutation.mutate({
+  1318→                  id: denyFraudDialog.sinistroId,
+  1319→                  status: 'NEGADO_FRAUDE',
+  1320→                  motivoNegacao: denyMotivo.trim(),
+  1321→                })
+  1322→              }
+  1323→            >
+  1324→              {updateSinistroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1325→              Negar por Fraude
+  1326→            </Button>
+  1327→          </DialogFooter>
+  1328→        </DialogContent>
+  1329→      </Dialog>
+  1330→
+  1331→      {/* Deny by Exclusion Dialog */}
+  1332→      <Dialog open={denyExclusionDialog.open} onOpenChange={(open) => setDenyExclusionDialog({ open, sinistroId: '' })}>
+  1333→        <DialogContent>
+  1334→          <DialogHeader>
+  1335→            <DialogTitle className="flex items-center gap-2">
+  1336→              <Ban className="h-5 w-5 text-red-600" aria-hidden="true" />
+  1337→              Negar Sinistro por Exclusão Contratual
+  1338→            </DialogTitle>
+  1339→            <DialogDescription>
+  1340→              Esta ação negará o sinistro por exclusão contratual. O registro ficará permanentemente marcado.
+  1341→            </DialogDescription>
+  1342→          </DialogHeader>
+  1343→          <div className="space-y-2">
+  1344→            <Label htmlFor="denyExclusionMotivo">Motivo da Negação *</Label>
+  1345→            <Textarea
+  1346→              id="denyExclusionMotivo"
+  1347→              value={denyMotivo}
+  1348→              onChange={(e) => setDenyMotivo(e.target.value)}
+  1349→              placeholder="Descreva a cláusula de exclusão aplicável..."
+  1350→              className="min-h-[80px]"
+  1351→            />
+  1352→          </div>
+  1353→          <DialogFooter>
+  1354→            <Button variant="outline" onClick={() => { setDenyExclusionDialog({ open: false, sinistroId: '' }); setDenyMotivo('') }}>
+  1355→              Cancelar
+  1356→            </Button>
+  1357→            <Button
+  1358→              variant="destructive"
+  1359→              disabled={updateSinistroMutation.isPending || !denyMotivo.trim()}
+  1360→              onClick={() =>
+  1361→                updateSinistroMutation.mutate({
+  1362→                  id: denyExclusionDialog.sinistroId,
+  1363→                  status: 'NEGADO_EXCLUSAO',
+  1364→                  motivoNegacao: denyMotivo.trim(),
+  1365→                })
+  1366→              }
+  1367→            >
+  1368→              {updateSinistroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1369→              Negar por Exclusão
+  1370→            </Button>
+  1371→          </DialogFooter>
+  1372→        </DialogContent>
+  1373→      </Dialog>
+  1374→
+  1375→      {/* CDC Cancellation Dialog */}
+  1376→      <Dialog open={cdcDialog.open} onOpenChange={(open) => setCdcDialog({ open: false, contratoId: '', contratoTitulo: '', dataInicio: '', diasRestantes: 0 })}>
+  1377→        <DialogContent>
+  1378→          <DialogHeader>
+  1379→            <DialogTitle className="flex items-center gap-2">
+  1380→              <Scale className="h-5 w-5 text-amber-600" aria-hidden="true" />
+  1381→              Cancelar por Arrependimento (CDC Art. 49)
+  1382→            </DialogTitle>
+  1383→            <DialogDescription>
+  1384→              Esta ação cancelará o contrato por arrependimento dentro do prazo de 7 dias.
+  1385→            </DialogDescription>
+  1386→          </DialogHeader>
+  1387→          <div className="space-y-3 py-2">
+  1388→            <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg text-sm space-y-1">
+  1389→              <p><strong>Contrato:</strong> {cdcDialog.contratoTitulo}</p>
+  1390→              <p><strong>Data de Início:</strong> {formatDate(cdcDialog.dataInicio)}</p>
+  1391→              <p><strong>Dias Restantes:</strong> {cdcDialog.diasRestantes} dia(s)</p>
+  1392→            </div>
+  1393→            <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm text-red-700 dark:text-red-400 space-y-1">
+  1394→              <p className="font-medium">⚠️ Atenção — Esta ação é irreversível:</p>
+  1395→              <ul className="list-disc list-inside space-y-0.5 text-xs">
+  1396→                <li>Estorno integral de todas as bonificações (LIBERADO → ESTORNADO)</li>
+  1397→                <li>Cancelamento de todas as contas pendentes</li>
+  1398→                <li>Zero multa aplicada (Art. 49 CDC)</li>
+  1399→                <li>Contrato passará para status CANCELADO_CDC</li>
+  1400→              </ul>
+  1401→            </div>
+  1402→          </div>
+  1403→          <DialogFooter>
+  1404→            <Button variant="outline" onClick={() => setCdcDialog({ open: false, contratoId: '', contratoTitulo: '', dataInicio: '', diasRestantes: 0 })}>
+  1405→              Cancelar
+  1406→            </Button>
+  1407→            <Button
+  1408→              variant="destructive"
+  1409→              disabled={cancelarCdcMutation.isPending}
+  1410→              onClick={() => cancelarCdcMutation.mutate(cdcDialog.contratoId)}
+  1411→            >
+  1412→              {cancelarCdcMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1413→              Confirmar Cancelamento CDC
+  1414→            </Button>
+  1415→          </DialogFooter>
+  1416→        </DialogContent>
+  1417→      </Dialog>
+  1418→
+  1419→      {/* Suspension/Reativação Dialog */}
+  1420→      <Dialog open={suspensionDialog.open} onOpenChange={(open) => setSuspensionDialog({ open: false, contratoId: '', acao: 'SUSPENDER', contratoTitulo: '' })}>
+  1421→        <DialogContent>
+  1422→          <DialogHeader>
+  1423→            <DialogTitle className="flex items-center gap-2">
+  1424→              {suspensionDialog.acao === 'SUSPENDER' ? (
+  1425→                <Shield className="h-5 w-5 text-amber-600" aria-hidden="true" />
+  1426→              ) : (
+  1427→                <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+  1428→              )}
+  1429→              {suspensionDialog.acao === 'SUSPENDER' ? 'Suspender Contrato' : 'Reativar Contrato (Récita)'}
+  1430→            </DialogTitle>
+  1431→            <DialogDescription>
+  1432→              {suspensionDialog.acao === 'SUSPENDER'
+  1433→                ? 'O contrato será suspenso. O titular perderá acesso aos benefícios até reativação.'
+  1434→                : 'O contrato será reativado. EC-08: A carência pode necessitar recálculo após a reativação.'}
+  1435→            </DialogDescription>
+  1436→          </DialogHeader>
+  1437→          <div className="space-y-3 py-2">
+  1438→            <p className="text-sm"><strong>Contrato:</strong> {suspensionDialog.contratoTitulo}</p>
+  1439→            <div className="space-y-2">
+  1440→              <Label htmlFor="suspensionMotivo">Motivo *</Label>
+  1441→              <Textarea
+  1442→                id="suspensionMotivo"
+  1443→                value={suspensionMotivo}
+  1444→                onChange={(e) => setSuspensionMotivo(e.target.value)}
+  1445→                placeholder={
+  1446→                  suspensionDialog.acao === 'SUSPENDER'
+  1447→                    ? 'Motivo da suspensão...'
+  1448→                    : 'Motivo da reativação...'
+  1449→                }
+  1450→                className="min-h-[80px]"
+  1451→              />
+  1452→            </div>
+  1453→          </div>
+  1454→          <DialogFooter>
+  1455→            <Button variant="outline" onClick={() => { setSuspensionDialog({ open: false, contratoId: '', acao: 'SUSPENDER', contratoTitulo: '' }); setSuspensionMotivo('') }}>
+  1456→              Cancelar
+  1457→            </Button>
+  1458→            <Button
+  1459→              className={
+  1460→                suspensionDialog.acao === 'SUSPENDER'
+  1461→                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+  1462→                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+  1463→              }
+  1464→              disabled={suspensaoMutation.isPending || !suspensionMotivo.trim()}
+  1465→              onClick={() =>
+  1466→                suspensaoMutation.mutate({
+  1467→                  contratoId: suspensionDialog.contratoId,
+  1468→                  acao: suspensionDialog.acao,
+  1469→                  motivo: suspensionMotivo.trim(),
+  1470→                })
+  1471→              }
+  1472→            >
+  1473→              {suspensaoMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1474→              {suspensionDialog.acao === 'SUSPENDER' ? 'Confirmar Suspensão' : 'Confirmar Reativação'}
+  1475→            </Button>
+  1476→          </DialogFooter>
+  1477→        </DialogContent>
+  1478→      </Dialog>
+  1479→
+  1480→      {/* Compliance Confirmation Dialog */}
+  1481→      <Dialog open={complianceDialog.open} onOpenChange={(open) => setComplianceDialog({ open: false, tipo: 'maioridade', titulo: '', descricao: '' })}>
+  1482→        <DialogContent>
+  1483→          <DialogHeader>
+  1484→            <DialogTitle className="flex items-center gap-2">
+  1485→              <ShieldCheck className="h-5 w-5 text-amber-600" aria-hidden="true" />
+  1486→              {complianceDialog.titulo}
+  1487→            </DialogTitle>
+  1488→            <DialogDescription>
+  1489→              {complianceDialog.descricao}
+  1490→            </DialogDescription>
+  1491→          </DialogHeader>
+  1492→          <DialogFooter>
+  1493→            <Button variant="outline" onClick={() => setComplianceDialog({ open: false, tipo: 'maioridade', titulo: '', descricao: '' })}>
+  1494→              Cancelar
+  1495→            </Button>
+  1496→            <Button
+  1497→              className="bg-amber-600 text-white hover:bg-amber-700"
+  1498→              disabled={complianceMutation.isPending}
+  1499→              onClick={() => complianceMutation.mutate(complianceDialog.tipo)}
+  1500→            >
+  1501→              {complianceMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+  1502→              Confirmar Execução
+  1503→            </Button>
+  1504→          </DialogFooter>
+  1505→        </DialogContent>
+  1506→      </Dialog>
+  1507→    </div>
+  1508→  )
+  1509→}
+  1510→

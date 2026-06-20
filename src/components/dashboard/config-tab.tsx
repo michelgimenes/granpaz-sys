@@ -100,10 +100,10 @@ const LABEL_MAP: Record<string, string> = {
 }
 
 const typeColors: Record<string, string> = {
-  INT: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  DECIMAL: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
-  BOOLEAN: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  VARCHAR: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  INT: 'bg-state-warning/10 text-state-warning',
+  DECIMAL: 'bg-state-warning/10 text-state-warning',
+  BOOLEAN: 'bg-state-success/10 text-state-success',
+  VARCHAR: 'bg-state-warning/10 text-state-warning',
 }
 
 // ─────────────────────────────────────────────────────────
@@ -295,10 +295,10 @@ function EditConfigDialog({
 
           {/* Critical key warning */}
           {isCritical && (
-            <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 space-y-3">
+            <div className="rounded-lg border border-state-error/30 bg-state-error/5 p-3 space-y-3">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" aria-hidden="true" />
-                <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                <AlertTriangle className="h-4 w-4 text-state-error mt-0.5 shrink-0" aria-hidden="true" />
+                <p className="text-sm font-medium text-state-error">
                   ⚠️ Esta é uma chave crítica. A alteração exige confirmação dupla.
                 </p>
               </div>
@@ -309,7 +309,7 @@ function EditConfigDialog({
                   onCheckedChange={(checked) => setConfirmed(checked === true)}
                   className="mt-0.5"
                 />
-                <label htmlFor="confirm-critical" className="text-xs text-red-700 dark:text-red-400 cursor-pointer leading-snug">
+                <label htmlFor="confirm-critical" className="text-xs text-state-error cursor-pointer leading-snug">
                   Confirmo que compreendo o impacto desta alteração
                 </label>
               </div>
@@ -319,7 +319,7 @@ function EditConfigDialog({
           {/* Motivo da alteração */}
           <div className="space-y-2">
             <Label htmlFor="motivo">
-              Motivo da Alteração <span className="text-red-500">*</span>
+              Motivo da Alteração <span className="text-state-error">*</span>
             </Label>
             <Textarea
               id="motivo"
@@ -330,10 +330,10 @@ function EditConfigDialog({
               className="resize-none text-sm"
             />
             <div className="flex justify-between text-xs">
-              <span className={motivoValid ? 'text-emerald-600' : motivoLength > 0 ? 'text-red-500' : 'text-muted-foreground'}>
+              <span className={motivoValid ? 'text-state-success' : motivoLength > 0 ? 'text-state-error' : 'text-muted-foreground'}>
                 {motivoLength < 20 ? `Faltam ${20 - motivoLength} caracteres` : motivoLength > 500 ? 'Excedeu o limite de 500 caracteres' : '✓ Tamanho válido'}
               </span>
-              <span className={`${motivoLength > 500 ? 'text-red-500' : 'text-muted-foreground'}`}>
+              <span className={`${motivoLength > 500 ? 'text-state-error' : 'text-muted-foreground'}`}>
                 {motivoLength}/500
               </span>
             </div>
@@ -403,11 +403,11 @@ function IntegrityDialog({
     switch (status) {
       case 'OK':
       case 'LIMPO':
-        return <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+        return <ShieldCheck className="h-4 w-4 text-state-success" aria-hidden="true" />
       case 'ALERTA':
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" aria-hidden="true" />
+        return <AlertTriangle className="h-4 w-4 text-state-warning" aria-hidden="true" />
       case 'CRITICO':
-        return <ShieldAlert className="h-4 w-4 text-red-600" aria-hidden="true" />
+        return <ShieldAlert className="h-4 w-4 text-state-error" aria-hidden="true" />
       default:
         return null
     }
@@ -445,24 +445,24 @@ function IntegrityDialog({
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
           </div>
         ) : integrityQuery.error ? (
-          <div className="text-center py-8 text-sm text-red-600">
+          <div className="text-center py-8 text-sm text-state-error">
             Erro ao executar diagnóstico. Tente novamente.
           </div>
         ) : integrityQuery.data ? (
           <div className="space-y-4">
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-center">
-                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{integrityQuery.data.resumo.ok}</p>
-                <p className="text-xs text-emerald-600 dark:text-emerald-500">OK</p>
+              <div className="rounded-lg border border-state-success/30 bg-state-success/5 p-3 text-center">
+                <p className="text-2xl font-bold text-state-success">{integrityQuery.data.resumo.ok}</p>
+                <p className="text-xs text-state-success/80">OK</p>
               </div>
-              <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 p-3 text-center">
-                <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{integrityQuery.data.resumo.alertas}</p>
-                <p className="text-xs text-yellow-600 dark:text-yellow-500">Alertas</p>
+              <div className="rounded-lg border border-state-warning/30 bg-state-warning/5 p-3 text-center">
+                <p className="text-2xl font-bold text-state-warning">{integrityQuery.data.resumo.alertas}</p>
+                <p className="text-xs text-state-warning/80">Alertas</p>
               </div>
-              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-center">
-                <p className="text-2xl font-bold text-red-700 dark:text-red-400">{integrityQuery.data.resumo.criticos}</p>
-                <p className="text-xs text-red-600 dark:text-red-500">Críticos</p>
+              <div className="rounded-lg border border-state-error/30 bg-state-error/5 p-3 text-center">
+                <p className="text-2xl font-bold text-state-error">{integrityQuery.data.resumo.criticos}</p>
+                <p className="text-xs text-state-error/80">Críticos</p>
               </div>
             </div>
 
@@ -528,10 +528,10 @@ function IntegrityDialog({
               {airgapQuery.data && (
                 <div className={`rounded-lg border p-3 ${
                   airgapQuery.data.status === 'LIMPO'
-                    ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30'
+                    ? 'border-state-success/30 bg-state-success/5'
                     : airgapQuery.data.status === 'ALERTA'
-                    ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30'
-                    : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30'
+                    ? 'border-state-warning/30 bg-state-warning/5'
+                    : 'border-state-error/30 bg-state-error/5'
                 }`}>
                   <div className="flex items-center gap-2 mb-1">
                     {statusIcon(airgapQuery.data.status)}
@@ -548,11 +548,11 @@ function IntegrityDialog({
                     <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
                       {airgapQuery.data.violations.map((v, i) => (
                         <div key={i} className="text-xs bg-background/50 rounded p-2 font-mono">
-                          <span className="text-red-600 dark:text-red-400">{v.entidade}</span>
+                          <span className="text-state-error">{v.entidade}</span>
                           {' · '}
                           <span className="text-muted-foreground">{v.campo}</span>
                           {' · '}
-                          <span className="text-yellow-600 dark:text-yellow-400">&quot;{v.termoEncontrado}&quot;</span>
+                          <span className="text-state-warning">&quot;{v.termoEncontrado}&quot;</span>
                         </div>
                       ))}
                     </div>
@@ -560,7 +560,7 @@ function IntegrityDialog({
                 </div>
               )}
               {airgapQuery.error && (
-                <p className="text-xs text-red-600">Erro ao verificar air-gap CLT.</p>
+                <p className="text-xs text-state-error">Erro ao verificar air-gap CLT.</p>
               )}
             </div>
           </div>
@@ -594,7 +594,7 @@ function ConfigListItem({
             {config.tipoParse}
           </Badge>
           {CRITICAL_KEYS.includes(config.chave) && (
-            <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+            <Badge className="text-[10px] px-1.5 py-0 bg-state-error/10 text-state-error">
               CRÍTICO
             </Badge>
           )}

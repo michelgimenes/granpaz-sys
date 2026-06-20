@@ -29,7 +29,8 @@ export function SolutionSection() {
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Grid 2×2 no desktop, 1 coluna no mobile (§3.1) */}
+        <div className="grid sm:grid-cols-2 gap-6">
           {copy.solution.benefits.map((benefit, i) => {
             const meta = benefitMeta[i]
             const Icon = meta.icon

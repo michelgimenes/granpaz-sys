@@ -45,6 +45,9 @@ interface AppStore {
     marketingPixels: boolean
   }
   setFeatureFlag: (flag: keyof AppStore['featureFlags'], value: boolean) => void
+
+  // Draft de checkout no sessionStorage (§4.3)
+  loadDraft: () => boolean
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -112,4 +115,54 @@ export const useAppStore = create<AppStore>((set) => ({
   setFeatureFlag: (flag, value) => set((state) => ({
     featureFlags: { ...state.featureFlags, [flag]: value }
   })),
+
+  // Restaura draft do sessionStorage (§4.3) — retorna true se restaurou
+  loadDraft: () => {
+    if (typeof window === 'undefined') return false
+    try {
+      const saved = sessionStorage.getItem('granpaz_checkout_draft')
+      if (!saved) return false
+      const draft = JSON.parse(saved) as {
+        checkoutStep?: number
+        selectedPlanId?: string | null
+        checkoutData?: AppStore['checkoutData']
+        timestamp?: number
+      }
+      // Draft expira após 20 minutos (LGPD §4.3)
+      if (!draft.timestamp || Date.now() - draft.timestamp > 20 * 60 * 1000) {
+        sessionStorage.removeItem('granpaz_checkout_draft')
+        return false
+      }
+      set({
+        checkoutStep: draft.checkoutStep ?? 0,
+        selectedPlanId: draft.selectedPlanId ?? null,
+        checkoutData: draft.checkoutData ?? { titular: null, vinculos: [], selectedPlan: null },
+      })
+      return true
+    } catch {
+      return false
+    }
+  },
 }))
+
+// Auto-save checkout draft no sessionStorage via subscribe (§4.3)
+useAppStore.subscribe((state, prevState) => {
+  if (typeof window === 'undefined') return
+  if (
+    state.checkoutStep !== prevState.checkoutStep ||
+    state.selectedPlanId !== prevState.selectedPlanId ||
+    state.checkoutData !== prevState.checkoutData
+  ) {
+    try {
+      const draft = {
+        checkoutStep: state.checkoutStep,
+        selectedPlanId: state.selectedPlanId,
+        checkoutData: state.checkoutData,
+        timestamp: Date.now(),
+      }
+      sessionStorage.setItem('granpaz_checkout_draft', JSON.stringify(draft))
+    } catch {
+      // sessionStorage cheio — falha silenciosa
+    }
+  }
+})

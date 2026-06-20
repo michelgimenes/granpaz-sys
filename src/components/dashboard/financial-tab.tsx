@@ -47,6 +47,7 @@ import {
   Receipt,
   Loader2,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -120,15 +121,15 @@ interface PaginationInfo {
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
-    PENDENTE: { label: 'Pendente', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
-    PENDENTE_APROVACAO: { label: 'Pendente Aprovação', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
-    PARCIALMENTE_PAGO: { label: 'Parcialmente Pago', className: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-800' },
-    PAGO: { label: 'Pago', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
-    CONCLUIDO: { label: 'Concluído', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
-    LIBERADO: { label: 'Liberado', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800' },
-    ESTORNADO: { label: 'Estornado', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
-    CANCELADO: { label: 'Cancelado', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
-    VENCIDO: { label: 'Vencido', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800' },
+    PENDENTE: { label: 'Pendente', className: 'bg-state-warning/10 text-state-warning border-state-warning/30' },
+    PENDENTE_APROVACAO: { label: 'Pendente Aprovação', className: 'bg-state-warning/10 text-state-warning border-state-warning/30' },
+    PARCIALMENTE_PAGO: { label: 'Parcialmente Pago', className: 'bg-state-warning/10 text-state-warning border-state-warning/30' },
+    PAGO: { label: 'Pago', className: 'bg-state-success/10 text-state-success border-state-success/30' },
+    CONCLUIDO: { label: 'Concluído', className: 'bg-state-success/10 text-state-success border-state-success/30' },
+    LIBERADO: { label: 'Liberado', className: 'bg-state-success/10 text-state-success border-state-success/30' },
+    ESTORNADO: { label: 'Estornado', className: 'bg-state-error/10 text-state-error border-state-error/30' },
+    CANCELADO: { label: 'Cancelado', className: 'bg-state-error/10 text-state-error border-state-error/30' },
+    VENCIDO: { label: 'Vencido', className: 'bg-state-error/10 text-state-error border-state-error/30' },
   }
   const c = config[status] || { label: status, className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700' }
   return (
@@ -387,7 +388,7 @@ export function FinancialTab() {
   const saqueInssPreview = calcularINSS(saqueValorNum)
   const saqueLiquidoPreview = saqueValorNum - saqueIrrfPreview - saqueInssPreview
 
-  // ── Wallet cards config ──
+  // ── Wallet cards config (§3.3) ──
   const walletCards = [
     {
       title: 'Saldo Disponível',
@@ -397,19 +398,23 @@ export function FinancialTab() {
       bgColor: 'bg-state-success/10',
     },
     {
-      title: 'Saldo Bloqueado',
+      // §3.3: Label "A Receber" com estilo muted (não warning)
+      title: 'A Receber',
       value: carteira?.saldoBloqueado ?? 0,
       icon: Lock,
-      color: 'text-state-warning',
-      bgColor: 'bg-state-warning/10',
+      color: 'text-muted-foreground',
+      bgColor: 'bg-muted/50',
     },
-    {
-      title: 'Saldo Devedor',
-      value: carteira?.saldoDevedor ?? 0,
-      icon: TrendingDown,
-      color: 'text-state-error',
-      bgColor: 'bg-state-error/10',
-    },
+    // §3.3: "Saldo Devedor" oculto se 0
+    ...((carteira?.saldoDevedor ?? 0) > 0
+      ? [{
+          title: 'Saldo Devedor',
+          value: carteira?.saldoDevedor ?? 0,
+          icon: TrendingDown,
+          color: 'text-state-error',
+          bgColor: 'bg-state-error/10',
+        }]
+      : []),
   ]
 
   // ── Tab value ──
@@ -463,8 +468,8 @@ export function FinancialTab() {
             </Card>
           )}
 
-          {/* Balance Cards */}
-          <div className="grid sm:grid-cols-3 gap-4 mb-4">
+          {/* Balance Cards — grid dinâmico conforme §3.3 */}
+          <div className={`grid gap-4 mb-4 ${walletCards.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
             {walletCards.map((card, i) => {
               const Icon = card.icon
               return (
@@ -491,14 +496,14 @@ export function FinancialTab() {
 
           {/* Saldo Devedor Warning */}
           {!loadingCarteira && carteira && carteira.saldoDevedor > 0 && (
-            <div className="mb-6 p-4 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+            <div className="mb-6 p-4 rounded-lg border border-state-error/30 bg-state-error/5" role="alert">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" aria-hidden="true" />
+                <AlertTriangle className="h-5 w-5 text-state-error mt-0.5 shrink-0" aria-hidden="true" />
                 <div>
-                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                  <p className="text-sm font-semibold text-state-error">
                     Saldo devedor pendente
                   </p>
-                  <p className="text-sm text-red-700 dark:text-red-400 mt-0.5">
+                  <p className="text-sm text-state-error/80 mt-0.5">
                     Regularize seu saldo devedor de{' '}
                     <strong>{formatCurrency(carteira.saldoDevedor)}</strong> antes de realizar novos saques.
                   </p>
@@ -517,17 +522,28 @@ export function FinancialTab() {
             </Card>
           )}
 
-          {/* Actions */}
+          {/* Actions — tooltip quando saldo devedor > 0 (§3.3) */}
           {carteira && (
             <div className="flex gap-3 mb-6">
-              <Button
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={() => setSaqueDialogOpen(true)}
-                disabled={carteira.saldoDisponivel <= 0}
-              >
-                <ArrowUpRight className="h-4 w-4 mr-2" aria-hidden="true" />
-                Solicitar Saque
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={carteira.saldoDevedor > 0 ? 0 : undefined}>
+                    <Button
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={() => setSaqueDialogOpen(true)}
+                      disabled={carteira.saldoDisponivel <= 0 || carteira.saldoDevedor > 0}
+                    >
+                      <ArrowUpRight className="h-4 w-4 mr-2" aria-hidden="true" />
+                      Solicitar Saque
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {carteira.saldoDevedor > 0 && (
+                  <TooltipContent>
+                    <p>Regularize seu saldo devedor antes de sacar</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
             </div>
           )}
 
@@ -661,7 +677,7 @@ export function FinancialTab() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
                               {item.tipo === 'bonificacao' ? (
-                                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-state-success">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Bonificação
                                 </span>
@@ -677,7 +693,7 @@ export function FinancialTab() {
                             <p className="text-xs text-muted-foreground">{formatDate(item.data)}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className={`font-semibold ${item.tipo === 'bonificacao' ? 'text-green-700 dark:text-green-400' : 'text-foreground'}`}>
+                            <p className={`font-semibold ${item.tipo === 'bonificacao' ? 'text-state-success' : 'text-foreground'}`}>
                               {item.tipo === 'bonificacao' ? '+' : '-'}{formatCurrency(item.valor)}
                             </p>
                           </div>
@@ -703,7 +719,7 @@ export function FinancialTab() {
             <Card className="border-border/50">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-amber-600" />
+                  <Clock className="h-4 w-4 text-state-warning" />
                   Saques Pendentes de Aprovação
                 </CardTitle>
               </CardHeader>
@@ -749,7 +765,7 @@ export function FinancialTab() {
                                 </div>
                                 <div>
                                   <span className="block text-[10px] uppercase tracking-wider">Líquido</span>
-                                  <span className="font-medium text-green-700 dark:text-green-400">{formatCurrency(saque.valorLiquido ?? 0)}</span>
+                                  <span className="font-medium text-state-success">{formatCurrency(saque.valorLiquido ?? 0)}</span>
                                 </div>
                               </div>
                               <p className="text-xs text-muted-foreground mt-1.5">
@@ -759,7 +775,7 @@ export function FinancialTab() {
                             <div className="flex gap-2 shrink-0">
                               <Button
                                 size="sm"
-                                className="bg-green-600 hover:bg-green-700 text-white"
+                                className="bg-state-success hover:bg-state-success/90 text-primary-foreground"
                                 disabled={aprovarMutation.isPending}
                                 onClick={() => aprovarMutation.mutate({ transacaoId: saque.id, aprovado: true })}
                               >
@@ -811,10 +827,10 @@ export function FinancialTab() {
             <div className="space-y-4">
               {/* Saldo Devedor Block */}
               {carteira.saldoDevedor > 0 && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+                <div className="p-3 rounded-lg border border-state-error/30 bg-state-error/5" role="alert">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                    <p className="text-sm text-red-700 dark:text-red-400">
+                    <AlertTriangle className="h-4 w-4 text-state-error mt-0.5 shrink-0" />
+                    <p className="text-sm text-state-error/80">
                       Você possui saldo devedor de <strong>{formatCurrency(carteira.saldoDevedor)}</strong>.
                       Regularize antes de realizar abatimentos. (RN-007)
                     </p>
@@ -853,8 +869,8 @@ export function FinancialTab() {
                       <span className="font-bold text-primary">{formatCurrency(valorAbatido)}</span>
                     </div>
                     {isPartial && (
-                      <div className="p-2 rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
-                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                      <div className="p-2 rounded border border-state-warning/30 bg-state-warning/5">
+                        <p className="text-xs text-state-warning">
                           Abatimento parcial — seu saldo disponível não cobre o valor restante da conta.
                           Após o abatimento, restará <strong>{formatCurrency(selectedConta.valorRestante - valorAbatido)}</strong>.
                         </p>
@@ -907,10 +923,10 @@ export function FinancialTab() {
             <div className="space-y-4">
               {/* Saldo Devedor Block */}
               {carteira.saldoDevedor > 0 && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30" role="alert">
+                <div className="p-3 rounded-lg border border-state-error/30 bg-state-error/5" role="alert">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                    <p className="text-sm text-red-700 dark:text-red-400">
+                    <AlertTriangle className="h-4 w-4 text-state-error mt-0.5 shrink-0" />
+                    <p className="text-sm text-state-error/80">
                       Você possui saldo devedor de <strong>{formatCurrency(carteira.saldoDevedor)}</strong>.
                       Regularize antes de solicitar saques. (RN-007)
                     </p>
@@ -960,17 +976,17 @@ export function FinancialTab() {
                   </div>
                   <div className="border-t border-border pt-2 flex justify-between text-sm">
                     <span className="font-semibold text-foreground">Valor Líquido</span>
-                    <span className="font-bold text-green-700 dark:text-green-400">{formatCurrency(saqueLiquidoPreview)}</span>
+                    <span className="font-bold text-state-success">{formatCurrency(saqueLiquidoPreview)}</span>
                   </div>
                 </div>
               )}
 
               {/* Validation messages */}
               {saqueValorNum > 0 && saqueValorNum < 10 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">Valor mínimo para saque é R$ 10,00.</p>
+                <p className="text-xs text-state-warning">Valor mínimo para saque é R$ 10,00.</p>
               )}
               {saqueValorNum > carteira.saldoDisponivel && (
-                <p className="text-xs text-red-600 dark:text-red-400">Valor excede o saldo disponível.</p>
+                <p className="text-xs text-state-error">Valor excede o saldo disponível.</p>
               )}
 
               <DialogFooter>
@@ -1023,7 +1039,7 @@ export function FinancialTab() {
                 rows={4}
               />
               {motivoRejeicao.length > 0 && motivoRejeicao.trim().length < 10 && (
-                <p className="text-xs text-amber-600">Mínimo de 10 caracteres ({motivoRejeicao.trim().length}/10)</p>
+                <p className="text-xs text-state-warning">Mínimo de 10 caracteres ({motivoRejeicao.trim().length}/10)</p>
               )}
             </div>
             <DialogFooter>

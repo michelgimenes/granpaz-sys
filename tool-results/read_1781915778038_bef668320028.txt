@@ -1,0 +1,694 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useCallback } from 'react'
+     4→     4→import { validateCPF, formatCPF, formatPhone, formatCEP } from '@/lib/helpers'
+     5→     5→import { Button } from '@/components/ui/button'
+     6→     6→import { Card, CardContent } from '@/components/ui/card'
+     7→     7→import { AlertCircle, Check, Search, Loader2 } from 'lucide-react'
+     8→     8→
+     9→     9→type SessionType = 'TITULAR' | 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE'
+    10→    10→
+    11→    11→interface PessoaFisicaFormProps {
+    12→    12→  sessionType: SessionType
+    13→    13→  onSubmit: (data: Record<string, unknown>) => void
+    14→    14→  onCancel: () => void
+    15→    15→  initialData?: Record<string, unknown>
+    16→    16→  agregadoPaiId?: string
+    17→    17→  titularData?: Record<string, unknown>
+    18→    18→  onCpfFound?: (data: Record<string, unknown>) => void
+    19→    19→  planTipo?: string
+    20→    20→}
+    21→    21→
+    22→    22→const SESSION_CONFIG: Record<SessionType, {
+    23→    23→  showProfissao: boolean
+    24→    24→  showAddress: boolean
+    25→    25→  showContact: boolean
+    26→    26→  showEstadoCivil: boolean
+    27→    27→  requiredProfissao: boolean
+    28→    28→  parentescoOptions: Array<{ value: string; label: string }>
+    29→    29→  label: string
+    30→    30→}> = {
+    31→    31→  TITULAR: {
+    32→    32→    showProfissao: true,
+    33→    33→    showAddress: true,
+    34→    34→    showContact: true,
+    35→    35→    showEstadoCivil: true,
+    36→    36→    requiredProfissao: true,
+    37→    37→    parentescoOptions: [],
+    38→    38→    label: 'Titular',
+    39→    39→  },
+    40→    40→  DEPENDENTE: {
+    41→    41→    showProfissao: false,
+    42→    42→    showAddress: false,
+    43→    43→    showContact: false,
+    44→    44→    showEstadoCivil: false,
+    45→    45→    requiredProfissao: false,
+    46→    46→    parentescoOptions: [
+    47→    47→      { value: 'CONJUGE', label: 'Cônjuge' },
+    48→    48→      { value: 'FILHO', label: 'Filho(a)' },
+    49→    49→    ],
+    50→    50→    label: 'Dependente',
+    51→    51→  },
+    52→    52→  AGREGADO: {
+    53→    53→    showProfissao: true,
+    54→    54→    showAddress: true,
+    55→    55→    showContact: true,
+    56→    56→    showEstadoCivil: true,
+    57→    57→    requiredProfissao: true,
+    58→    58→    parentescoOptions: [
+    59→    59→      { value: 'CONJUGE', label: 'Cônjuge' },
+    60→    60→      { value: 'FILHO', label: 'Filho(a)' },
+    61→    61→      { value: 'PAI_MAE', label: 'Pai/Mãe' },
+    62→    62→      { value: 'SOGRO', label: 'Sogro(a)' },
+    63→    63→      { value: 'ENTREADO', label: 'Enteado(a)' },
+    64→    64→      { value: 'NETO', label: 'Neto(a)' },
+    65→    65→      { value: 'AVO', label: 'Avô/Avó' },
+    66→    66→      { value: 'IRMAO', label: 'Irmão(ã)' },
+    67→    67→      { value: 'TIO', label: 'Tio(a)' },
+    68→    68→    ],
+    69→    69→    label: 'Agregado',
+    70→    70→  },
+    71→    71→  SUB_DEPENDENTE: {
+    72→    72→    showProfissao: false,
+    73→    73→    showAddress: false,
+    74→    74→    showContact: false,
+    75→    75→    showEstadoCivil: false,
+    76→    76→    requiredProfissao: false,
+    77→    77→    parentescoOptions: [
+    78→    78→      { value: 'CONJUGE', label: 'Cônjuge' },
+    79→    79→      { value: 'FILHO', label: 'Filho(a)' },
+    80→    80→    ],
+    81→    81→    label: 'Sub-dependente',
+    82→    82→  },
+    83→    83→}
+    84→    84→
+    85→    85→export function PessoaFisicaForm({
+    86→    86→  sessionType,
+    87→    87→  onSubmit,
+    88→    88→  onCancel,
+    89→    89→  initialData,
+    90→    90→  agregadoPaiId,
+    91→    91→  titularData,
+    92→    92→  onCpfFound,
+    93→    93→}: PessoaFisicaFormProps) {
+    94→    94→  const config = SESSION_CONFIG[sessionType]
+    95→    95→
+    96→    96→  const [form, setForm] = useState({
+    97→    97→    nomeCompleto: (initialData?.nomeCompleto as string) || '',
+    98→    98→    cpf: (initialData?.cpf as string) || '',
+    99→    99→    dataNascimento: (initialData?.dataNascimento as string) || '',
+   100→   100→    genero: (initialData?.genero as string) || '',
+   101→   101→    estadoCivil: (initialData?.estadoCivil as string) || 'SOLTEIRO',
+   102→   102→    profissao: (initialData?.profissao as string) || '',
+   103→   103→    email: (initialData?.email as string) || '',
+   104→   104→    telefone: (initialData?.telefone as string) || '',
+   105→   105→    cep: (initialData?.cep as string) || '',
+   106→   106→    logradouro: (initialData?.logradouro as string) || '',
+   107→   107→    numero: (initialData?.numero as string) || '',
+   108→   108→    complemento: (initialData?.complemento as string) || '',
+   109→   109→    bairro: (initialData?.bairro as string) || '',
+   110→   110→    cidade: (initialData?.cidade as string) || '',
+   111→   111→    estado: (initialData?.estado as string) || '',
+   112→   112→    parentesco: (initialData?.parentesco as string) || config.parentescoOptions[0]?.value || '',
+   113→   113→    tipoVinculo: sessionType === 'TITULAR' ? '' : sessionType,
+   114→   114→    inheritAddress: true,
+   115→   115→  })
+   116→   116→
+   117→   117→  const [errors, setErrors] = useState<Record<string, string>>({})
+   118→   118→  const [cpfStatus, setCpfStatus] = useState<'idle' | 'checking' | 'found' | 'not_found' | 'blocked'>('idle')
+   119→   119→  const [cpfFoundData, setCpfFoundData] = useState<Record<string, unknown> | null>(null)
+   120→   120→  const [showReuseModal, setShowReuseModal] = useState(false)
+   121→   121→  const [coverageTag, setCoverageTag] = useState(false)
+   122→   122→  const [ageMessage, setAgeMessage] = useState('')
+   123→   123→  const [viacepLoading, setViacepLoading] = useState(false)
+   124→   124→  const [isSubmitting, setIsSubmitting] = useState(false)
+   125→   125→
+   126→   126→  // ─── CPF Identification (blur → API) ───
+   127→   127→  const handleCpfBlur = useCallback(async () => {
+   128→   128→    const cpfDigits = form.cpf.replace(/\D/g, '')
+   129→   129→    if (cpfDigits.length !== 11) return
+   130→   130→
+   131→   131→    if (!validateCPF(cpfDigits)) {
+   132→   132→      setErrors(prev => ({ ...prev, cpf: 'CPF inválido' }))
+   133→   133→      return
+   134→   134→    }
+   135→   135→
+   136→   136→    setCpfStatus('checking')
+   137→   137→    setErrors(prev => ({ ...prev, cpf: '' }))
+   138→   138→
+   139→   139→    try {
+   140→   140→      const res = await fetch(`/api/pessoas-fisicas/buscar-por-cpf?cpf=${cpfDigits}`)
+   141→   141→      if (res.status === 404) {
+   142→   142→        setCpfStatus('not_found')
+   143→   143→        return
+   144→   144→      }
+   145→   145→
+   146→   146→      const data = await res.json()
+   147→   147→      if (data.nomeCompleto) {
+   148→   148→        setCpfFoundData(data)
+   149→   149→
+   150→   150→        if (form.dataNascimento) {
+   151→   151→          const existingBirth = new Date(data.dataNascimento as string).toISOString().split('T')[0]
+   152→   152→          const inputBirth = form.dataNascimento
+   153→   153→
+   154→   154→          if (existingBirth !== inputBirth) {
+   155→   155→            setCpfStatus('blocked')
+   156→   156→            setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado para outra pessoa' }))
+   157→   157→            return
+   158→   158→          }
+   159→   159→        }
+   160→   160→
+   161→   161→        setCpfStatus('found')
+   162→   162→        setShowReuseModal(true)
+   163→   163→      }
+   164→   164→    } catch {
+   165→   165→      setCpfStatus('idle')
+   166→   166→    }
+   167→   167→  }, [form.cpf, form.dataNascimento])
+   168→   168→
+   169→   169→  // ─── Reuse existing data ───
+   170→   170→  const handleReuseData = () => {
+   171→   171→    if (cpfFoundData) {
+   172→   172→      setForm(prev => ({
+   173→   173→        ...prev,
+   174→   174→        nomeCompleto: (cpfFoundData.nomeCompleto as string) || prev.nomeCompleto,
+   175→   175→        dataNascimento: cpfFoundData.dataNascimento ? new Date(cpfFoundData.dataNascimento as string).toISOString().split('T')[0] : prev.dataNascimento,
+   176→   176→        genero: (cpfFoundData.genero as string) || prev.genero,
+   177→   177→        estadoCivil: (cpfFoundData.estadoCivil as string) || prev.estadoCivil,
+   178→   178→        email: (cpfFoundData.email as string) || prev.email,
+   179→   179→        telefone: (cpfFoundData.telefone as string) || prev.telefone,
+   180→   180→        cep: (cpfFoundData.cep as string) || prev.cep,
+   181→   181→        logradouro: (cpfFoundData.logradouro as string) || prev.logradouro,
+   182→   182→        numero: (cpfFoundData.numero as string) || prev.numero,
+   183→   183→        complemento: (cpfFoundData.complemento as string) || prev.complemento,
+   184→   184→        bairro: (cpfFoundData.bairro as string) || prev.bairro,
+   185→   185→        cidade: (cpfFoundData.cidade as string) || prev.cidade,
+   186→   186→        estado: (cpfFoundData.estado as string) || prev.estado,
+   187→   187→        profissao: (cpfFoundData.profissao as string) || prev.profissao,
+   188→   188→      }))
+   189→   189→      if (onCpfFound) onCpfFound(cpfFoundData)
+   190→   190→    }
+   191→   191→    setShowReuseModal(false)
+   192→   192→  }
+   193→   193→
+   194→   194→  const handleDontReuse = () => {
+   195→   195→    setShowReuseModal(false)
+   196→   196→  }
+   197→   197→
+   198→   198→  // ─── ViaCEP auto-fill ───
+   199→   199→  const handleCepBlur = useCallback(async () => {
+   200→   200→    const cepDigits = form.cep.replace(/\D/g, '')
+   201→   201→    if (cepDigits.length !== 8) return
+   202→   202→
+   203→   203→    setViacepLoading(true)
+   204→   204→    try {
+   205→   205→      const res = await fetch(`/api/viacep?cep=${cepDigits}`)
+   206→   206→      if (res.ok) {
+   207→   207→        const data = await res.json()
+   208→   208→        setForm(prev => ({
+   209→   209→          ...prev,
+   210→   210→          logradouro: data.logradouro || prev.logradouro,
+   211→   211→          bairro: data.bairro || prev.bairro,
+   212→   212→          cidade: data.cidade || prev.cidade,
+   213→   213→          estado: data.estado || prev.estado,
+   214→   214→          complemento: data.complemento || prev.complemento,
+   215→   215→        }))
+   216→   216→        setErrors(prev => ({ ...prev, cep: '' }))
+   217→   217→      }
+   218→   218→    } catch {
+   219→   219→      // Network error — don't block
+   220→   220→    } finally {
+   221→   221→      setViacepLoading(false)
+   222→   222→    }
+   223→   223→  }, [form.cep])
+   224→   224→
+   225→   225→  // ─── Age validation on dataNascimento change ───
+   226→   226→  const handleDataNascimentoChange = useCallback(async (value: string) => {
+   227→   227→    setForm(prev => ({ ...prev, dataNascimento: value }))
+   228→   228→    setCoverageTag(false)
+   229→   229→    setAgeMessage('')
+   230→   230→
+   231→   231→    if (!value) return
+   232→   232→
+   233→   233→    if (['DEPENDENTE', 'SUB_DEPENDENTE'].includes(sessionType) && form.parentesco === 'FILHO') {
+   234→   234→      try {
+   235→   235→        const birthDate = new Date(value)
+   236→   236→        const hoje = new Date()
+   237→   237→        const idade = Math.floor((hoje.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+   238→   238→
+   239→   239→        const configRes = await fetch('/api/configuracoes')
+   240→   240→        if (configRes.ok) {
+   241→   241→          const configs: Array<{ chave: string; valor: string }> = await configRes.json()
+   242→   242→          const coverageKey = sessionType === 'SUB_DEPENDENTE' ? 'IDADE_COBERTURA_SUB_FILHO' : 'IDADE_COBERTURA_FILHO'
+   243→   243→          const limitKey = sessionType === 'SUB_DEPENDENTE' ? 'IDADE_LIMITE_SUB_DEPENDENTE' : 'IDADE_LIMITE_DEPENDENTE'
+   244→   244→
+   245→   245→          const coverageAge = parseInt(configs.find(c => c.chave === coverageKey)?.valor || '18', 10)
+   246→   246→          const limitAge = parseInt(configs.find(c => c.chave === limitKey)?.valor || '21', 10)
+   247→   247→
+   248→   248→          if (idade > limitAge) {
+   249→   249→            setErrors(prev => ({ ...prev, dataNascimento: `Idade ${idade} excede o limite de ${limitAge} anos.` }))
+   250→   250→          } else if (idade > coverageAge) {
+   251→   251→            setCoverageTag(true)
+   252→   252→            setAgeMessage(`SEM DIREITO À PROTEÇÃO: Idade ${idade} excede cobertura (${coverageAge} anos), mas dentro do limite de cadastro (${limitAge} anos).`)
+   253→   253→            setErrors(prev => ({ ...prev, dataNascimento: '' }))
+   254→   254→          } else {
+   255→   255→            setErrors(prev => ({ ...prev, dataNascimento: '' }))
+   256→   256→          }
+   257→   257→        }
+   258→   258→      } catch {
+   259→   259→        // Config fetch failed — don't block, backend will validate
+   260→   260→      }
+   261→   261→    }
+   262→   262→  }, [sessionType, form.parentesco])
+   263→   263→
+   264→   264→  // ─── Form validation ───
+   265→   265→  const validate = (): boolean => {
+   266→   266→    const newErrors: Record<string, string> = {}
+   267→   267→
+   268→   268→    if (!form.nomeCompleto.trim()) newErrors.nomeCompleto = 'Nome completo é obrigatório'
+   269→   269→    if (!form.dataNascimento) newErrors.dataNascimento = 'Data de nascimento é obrigatória'
+   270→   270→
+   271→   271→    if (sessionType === 'TITULAR') {
+   272→   272→      const cpfDigits = form.cpf.replace(/\D/g, '')
+   273→   273→      if (cpfDigits.length !== 11) {
+   274→   274→        newErrors.cpf = 'CPF deve ter 11 dígitos'
+   275→   275→      } else if (!validateCPF(cpfDigits)) {
+   276→   276→        newErrors.cpf = 'CPF inválido'
+   277→   277→      }
+   278→   278→      if (cpfStatus === 'blocked') {
+   279→   279→        newErrors.cpf = 'Este CPF já está cadastrado para outra pessoa'
+   280→   280→      }
+   281→   281→    }
+   282→   282→
+   283→   283→    if (sessionType === 'TITULAR' || (sessionType === 'AGREGADO' && form.email)) {
+   284→   284→      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+   285→   285→      if (!form.email.trim()) {
+   286→   286→        newErrors.email = 'E-mail é obrigatório'
+   287→   287→      } else if (!emailRegex.test(form.email)) {
+   288→   288→        newErrors.email = 'Formato de e-mail inválido'
+   289→   289→      }
+   290→   290→    }
+   291→   291→
+   292→   292→    if (sessionType === 'TITULAR' || (sessionType === 'AGREGADO' && form.telefone)) {
+   293→   293→      const phoneDigits = form.telefone.replace(/\D/g, '')
+   294→   294→      if (!form.telefone.trim()) {
+   295→   295→        newErrors.telefone = 'Telefone é obrigatório'
+   296→   296→      } else if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+   297→   297→        newErrors.telefone = 'Telefone deve conter DDD + Número'
+   298→   298→      }
+   299→   299→    }
+   300→   300→
+   301→   301→    if (sessionType === 'TITULAR' && form.cep) {
+   302→   302→      const cepDigits = form.cep.replace(/\D/g, '')
+   303→   303→      if (cepDigits.length !== 8) newErrors.cep = 'CEP inválido'
+   304→   304→    }
+   305→   305→
+   306→   306→    if (config.requiredProfissao && !form.profissao.trim()) {
+   307→   307→      newErrors.profissao = 'Profissão é obrigatória'
+   308→   308→    }
+   309→   309→
+   310→   310→    if (sessionType !== 'TITULAR' && !form.parentesco) {
+   311→   311→      newErrors.parentesco = 'Parentesco é obrigatório'
+   312→   312→    }
+   313→   313→
+   314→   314→    setErrors(newErrors)
+   315→   315→    return Object.keys(newErrors).length === 0
+   316→   316→  }
+   317→   317→
+   318→   318→  const handleSubmit = (e: React.FormEvent) => {
+   319→   319→    e.preventDefault()
+   320→   320→    if (!validate()) return
+   321→   321→
+   322→   322→    setIsSubmitting(true)
+   323→   323→    try {
+   324→   324→      const output: Record<string, unknown> = {
+   325→   325→        ...form,
+   326→   326→        tipoRegistro: sessionType,
+   327→   327→        cpf: form.cpf ? form.cpf.replace(/\D/g, '') : '',
+   328→   328→        telefone: form.telefone ? form.telefone.replace(/\D/g, '') : '',
+   329→   329→        cep: form.cep ? form.cep.replace(/\D/g, '') : '',
+   330→   330→        coverageTag,
+   331→   331→      }
+   332→   332→
+   333→   333→      if (sessionType === 'SUB_DEPENDENTE' && agregadoPaiId) {
+   334→   334→        output.agregadoPaiId = agregadoPaiId
+   335→   335→      }
+   336→   336→
+   337→   337→      if (sessionType === 'AGREGADO' && form.inheritAddress && titularData) {
+   338→   338→        output.cep = titularData.cep || output.cep
+   339→   339→        output.logradouro = titularData.logradouro || output.logradouro
+   340→   340→        output.numero = titularData.numero || output.numero
+   341→   341→        output.complemento = titularData.complemento || output.complemento
+   342→   342→        output.bairro = titularData.bairro || output.bairro
+   343→   343→        output.cidade = titularData.cidade || output.cidade
+   344→   344→        output.estado = titularData.estado || output.estado
+   345→   345→        output.email = titularData.email || output.email
+   346→   346→        output.telefone = titularData.telefone || output.telefone
+   347→   347→      }
+   348→   348→
+   349→   349→      onSubmit(output)
+   350→   350→    } finally {
+   351→   351→      setIsSubmitting(false)
+   352→   352→    }
+   353→   353→  }
+   354→   354→
+   355→   355→  const updateForm = (field: string, value: string | boolean) => {
+   356→   356→    setForm(prev => ({ ...prev, [field]: value }))
+   357→   357→    if (errors[field]) {
+   358→   358→      setErrors(prev => {
+   359→   359→        const next = { ...prev }
+   360→   360→        delete next[field]
+   361→   361→        return next
+   362→   362→      })
+   363→   363→    }
+   364→   364→  }
+   365→   365→
+   366→   366→  const inputClass = (hasError?: string) =>
+   367→   367→    `flex h-10 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${hasError ? 'border-state-error' : 'border-input'}`
+   368→   368→
+   369→   369→  return (
+   370→   370→    <form onSubmit={handleSubmit} className="space-y-4">
+   371→   371→      {/* Reuse Modal */}
+   372→   372→      {showReuseModal && cpfFoundData && (
+   373→   373→        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Cadastro encontrado">
+   374→   374→          <Card className="mx-4 max-w-md w-full border-primary/30 shadow-lg">
+   375→   375→            <CardContent className="pt-6 space-y-4">
+   376→   376→              <h3 className="font-serif text-lg font-bold text-foreground">Cadastro encontrado</h3>
+   377→   377→              <p className="text-sm text-muted-foreground">
+   378→   378→                Encontramos um cadastro para este CPF: <strong className="text-foreground">{cpfFoundData.nomeCompleto as string}</strong>
+   379→   379→              </p>
+   380→   380→              <p className="text-sm text-muted-foreground">Deseja reutilizar os dados existentes?</p>
+   381→   381→              <div className="flex gap-3">
+   382→   382→                <Button type="button" variant="outline" onClick={handleDontReuse} className="flex-1">Não, preencher manualmente</Button>
+   383→   383→                <Button type="button" onClick={handleReuseData} className="flex-1 bg-primary text-primary-foreground">Sim, reutilizar</Button>
+   384→   384→              </div>
+   385→   385→            </CardContent>
+   386→   386→          </Card>
+   387→   387→        </div>
+   388→   388→      )}
+   389→   389→
+   390→   390→      {/* Nome Completo */}
+   391→   391→      <div>
+   392→   392→        <label className="block text-sm font-medium text-foreground mb-1">Nome Completo *</label>
+   393→   393→        <input
+   394→   394→          type="text"
+   395→   395→          required
+   396→   396→          value={form.nomeCompleto}
+   397→   397→          onChange={(e) => updateForm('nomeCompleto', e.target.value)}
+   398→   398→          className={inputClass(errors.nomeCompleto)}
+   399→   399→          aria-required="true"
+   400→   400→          aria-invalid={!!errors.nomeCompleto}
+   401→   401→          aria-describedby={errors.nomeCompleto ? 'err-nome' : undefined}
+   402→   402→          placeholder="Nome completo"
+   403→   403→        />
+   404→   404→        {errors.nomeCompleto && <p id="err-nome" className="text-xs text-state-error mt-1" role="alert">{errors.nomeCompleto}</p>}
+   405→   405→      </div>
+   406→   406→
+   407→   407→      {/* CPF — only for TITULAR and AGREGADO */}
+   408→   408→      {(sessionType === 'TITULAR' || sessionType === 'AGREGADO') && (
+   409→   409→        <div>
+   410→   410→          <label className="block text-sm font-medium text-foreground mb-1">
+   411→   411→            CPF {sessionType === 'TITULAR' ? '*' : ''}
+   412→   412→          </label>
+   413→   413→          <div className="relative">
+   414→   414→            <input
+   415→   415→              type="text"
+   416→   416→              value={form.cpf}
+   417→   417→              onChange={(e) => { updateForm('cpf', formatCPF(e.target.value)); setCpfStatus('idle'); }}
+   418→   418→              onBlur={handleCpfBlur}
+   419→   419→              required={sessionType === 'TITULAR'}
+   420→   420→              className={`${inputClass(errors.cpf)} font-mono pr-10`}
+   421→   421→              placeholder="000.000.000-00"
+   422→   422→              maxLength={14}
+   423→   423→              aria-required={sessionType === 'TITULAR'}
+   424→   424→              aria-invalid={!!errors.cpf}
+   425→   425→            />
+   426→   426→            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+   427→   427→              {cpfStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+   428→   428→              {cpfStatus === 'found' && <Check className="h-4 w-4 text-state-success" />}
+   429→   429→              {cpfStatus === 'not_found' && <Search className="h-4 w-4 text-muted-foreground" />}
+   430→   430→              {cpfStatus === 'blocked' && <AlertCircle className="h-4 w-4 text-state-error" />}
+   431→   431→            </div>
+   432→   432→          </div>
+   433→   433→          {errors.cpf && <p className="text-xs text-state-error mt-1" role="alert">{errors.cpf}</p>}
+   434→   434→          {cpfStatus === 'not_found' && !errors.cpf && <p className="text-xs text-muted-foreground mt-1">CPF não encontrado. Preencha os dados manualmente.</p>}
+   435→   435→        </div>
+   436→   436→      )}
+   437→   437→
+   438→   438→      {/* Data Nascimento */}
+   439→   439→      <div>
+   440→   440→        <label className="block text-sm font-medium text-foreground mb-1">Data de Nascimento *</label>
+   441→   441→        <input
+   442→   442→          type="date"
+   443→   443→          required
+   444→   444→          value={form.dataNascimento}
+   445→   445→          onChange={(e) => handleDataNascimentoChange(e.target.value)}
+   446→   446→          className={inputClass(errors.dataNascimento)}
+   447→   447→          aria-required="true"
+   448→   448→          aria-invalid={!!errors.dataNascimento}
+   449→   449→        />
+   450→   450→        {errors.dataNascimento && <p className="text-xs text-state-error mt-1" role="alert">{errors.dataNascimento}</p>}
+   451→   451→        {/* RN-06: Coverage tag */}
+   452→   452→        {coverageTag && (
+   453→   453→          <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-state-warning/10 border border-state-warning/30">
+   454→   454→            <AlertCircle className="h-4 w-4 text-state-warning flex-shrink-0" />
+   455→   455→            <span className="text-xs font-semibold text-state-warning">SEM DIREITO À PROTEÇÃO</span>
+   456→   456→          </div>
+   457→   457→        )}
+   458→   458→        {ageMessage && !coverageTag && <p className="text-xs text-muted-foreground mt-1">{ageMessage}</p>}
+   459→   459→      </div>
+   460→   460→
+   461→   461→      {/* Gênero */}
+   462→   462→      <div>
+   463→   463→        <label className="block text-sm font-medium text-foreground mb-1">Gênero</label>
+   464→   464→        <select
+   465→   465→          value={form.genero}
+   466→   466→          onChange={(e) => updateForm('genero', e.target.value)}
+   467→   467→          className={inputClass()}
+   468→   468→        >
+   469→   469→          <option value="">Selecione</option>
+   470→   470→          <option value="M">Masculino</option>
+   471→   471→          <option value="F">Feminino</option>
+   472→   472→        </select>
+   473→   473→      </div>
+   474→   474→
+   475→   475→      {/* Estado Civil — for TITULAR and AGREGADO */}
+   476→   476→      {config.showEstadoCivil && (
+   477→   477→        <div>
+   478→   478→          <label className="block text-sm font-medium text-foreground mb-1">Estado Civil *</label>
+   479→   479→          <select
+   480→   480→            value={form.estadoCivil}
+   481→   481→            onChange={(e) => updateForm('estadoCivil', e.target.value)}
+   482→   482→            className={inputClass()}
+   483→   483→          >
+   484→   484→            <option value="SOLTEIRO">Solteiro(a)</option>
+   485→   485→            <option value="CASADO">Casado(a)</option>
+   486→   486→            <option value="DIVORCIADO">Divorciado(a)</option>
+   487→   487→            <option value="VIUVO">Viúvo(a)</option>
+   488→   488→            <option value="UNIAO_ESTAVEL">União Estável</option>
+   489→   489→          </select>
+   490→   490→        </div>
+   491→   491→      )}
+   492→   492→
+   493→   493→      {/* Parentesco — for non-TITULAR */}
+   494→   494→      {sessionType !== 'TITULAR' && config.parentescoOptions.length > 0 && (
+   495→   495→        <div>
+   496→   496→          <label className="block text-sm font-medium text-foreground mb-1">Parentesco *</label>
+   497→   497→          <select
+   498→   498→            value={form.parentesco}
+   499→   499→            onChange={(e) => {
+   500→   500→              updateForm('parentesco', e.target.value)
+   501→   501→              setCoverageTag(false)
+   502→   502→              setAgeMessage('')
+   503→   503→            }}
+   504→   504→            className={inputClass(errors.parentesco)}
+   505→   505→            aria-required="true"
+   506→   506→          >
+   507→   507→            {config.parentescoOptions.map(opt => (
+   508→   508→              <option key={opt.value} value={opt.value}>{opt.label}</option>
+   509→   509→            ))}
+   510→   510→          </select>
+   511→   511→          {errors.parentesco && <p className="text-xs text-state-error mt-1" role="alert">{errors.parentesco}</p>}
+   512→   512→        </div>
+   513→   513→      )}
+   514→   514→
+   515→   515→      {/* Profissão — for TITULAR and AGREGADO */}
+   516→   516→      {config.showProfissao && (
+   517→   517→        <div>
+   518→   518→          <label className="block text-sm font-medium text-foreground mb-1">
+   519→   519→            Profissão {config.requiredProfissao ? '*' : ''}
+   520→   520→          </label>
+   521→   521→          <input
+   522→   522→            type="text"
+   523→   523→            value={form.profissao}
+   524→   524→            onChange={(e) => updateForm('profissao', e.target.value)}
+   525→   525→            required={config.requiredProfissao}
+   526→   526→            className={inputClass(errors.profissao)}
+   527→   527→            placeholder="Sua profissão"
+   528→   528→          />
+   529→   529→          {errors.profissao && <p className="text-xs text-state-error mt-1" role="alert">{errors.profissao}</p>}
+   530→   530→        </div>
+   531→   531→      )}
+   532→   532→
+   533→   533→      {/* Email — for TITULAR and AGREGADO */}
+   534→   534→      {config.showContact && (
+   535→   535→        <div>
+   536→   536→          <label className="block text-sm font-medium text-foreground mb-1">E-mail *</label>
+   537→   537→          <input
+   538→   538→            type="email"
+   539→   539→            value={form.email}
+   540→   540→            onChange={(e) => updateForm('email', e.target.value)}
+   541→   541→            required={sessionType === 'TITULAR'}
+   542→   542→            className={inputClass(errors.email)}
+   543→   543→            placeholder="seu@email.com"
+   544→   544→          />
+   545→   545→          {errors.email && <p className="text-xs text-state-error mt-1" role="alert">{errors.email}</p>}
+   546→   546→        </div>
+   547→   547→      )}
+   548→   548→
+   549→   549→      {/* Telefone — for TITULAR and AGREGADO */}
+   550→   550→      {config.showContact && (
+   551→   551→        <div>
+   552→   552→          <label className="block text-sm font-medium text-foreground mb-1">Telefone *</label>
+   553→   553→          <input
+   554→   554→            type="tel"
+   555→   555→            value={form.telefone}
+   556→   556→            onChange={(e) => updateForm('telefone', formatPhone(e.target.value))}
+   557→   557→            required={sessionType === 'TITULAR'}
+   558→   558→            className={inputClass(errors.telefone)}
+   559→   559→            placeholder="(00) 00000-0000"
+   560→   560→          />
+   561→   561→          {errors.telefone && <p className="text-xs text-state-error mt-1" role="alert">{errors.telefone}</p>}
+   562→   562→        </div>
+   563→   563→      )}
+   564→   564→
+   565→   565→      {/* Address fields — for TITULAR and optionally AGREGADO */}
+   566→   566→      {config.showAddress && (
+   567→   567→        <>
+   568→   568→          {/* For AGREGADO: option to inherit titular's address */}
+   569→   569→          {sessionType === 'AGREGADO' && titularData && (
+   570→   570→            <div className="flex items-center gap-2">
+   571→   571→              <input
+   572→   572→                type="checkbox"
+   573→   573→                id="inheritAddress"
+   574→   574→                checked={form.inheritAddress}
+   575→   575→                onChange={(e) => updateForm('inheritAddress', e.target.checked)}
+   576→   576→                className="rounded border-input"
+   577→   577→              />
+   578→   578→              <label htmlFor="inheritAddress" className="text-sm text-muted-foreground">
+   579→   579→                Usar mesmo endereço e contato do titular
+   580→   580→              </label>
+   581→   581→            </div>
+   582→   582→          )}
+   583→   583→
+   584→   584→          {!(sessionType === 'AGREGADO' && form.inheritAddress && titularData) && (
+   585→   585→            <>
+   586→   586→              {/* CEP with ViaCEP */}
+   587→   587→              <div>
+   588→   588→                <label className="block text-sm font-medium text-foreground mb-1">CEP *</label>
+   589→   589→                <div className="relative">
+   590→   590→                  <input
+   591→   591→                    type="text"
+   592→   592→                    value={form.cep}
+   593→   593→                    onChange={(e) => updateForm('cep', formatCEP(e.target.value))}
+   594→   594→                    onBlur={handleCepBlur}
+   595→   595→                    required={sessionType === 'TITULAR'}
+   596→   596→                    className={`${inputClass(errors.cep)} font-mono pr-10`}
+   597→   597→                    placeholder="00000-000"
+   598→   598→                  />
+   599→   599→                  {viacepLoading && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+   600→   600→                </div>
+   601→   601→                {errors.cep && <p className="text-xs text-state-error mt-1" role="alert">{errors.cep}</p>}
+   602→   602→              </div>
+   603→   603→
+   604→   604→              <div className="grid grid-cols-3 gap-4">
+   605→   605→                <div className="col-span-2">
+   606→   606→                  <label className="block text-sm font-medium text-foreground mb-1">Logradouro *</label>
+   607→   607→                  <input
+   608→   608→                    type="text"
+   609→   609→                    value={form.logradouro}
+   610→   610→                    onChange={(e) => updateForm('logradouro', e.target.value)}
+   611→   611→                    required={sessionType === 'TITULAR'}
+   612→   612→                    className={inputClass()}
+   613→   613→                    placeholder="Rua, Avenida..."
+   614→   614→                  />
+   615→   615→                </div>
+   616→   616→                <div>
+   617→   617→                  <label className="block text-sm font-medium text-foreground mb-1">Número *</label>
+   618→   618→                  <input
+   619→   619→                    type="text"
+   620→   620→                    value={form.numero}
+   621→   621→                    onChange={(e) => updateForm('numero', e.target.value)}
+   622→   622→                    required={sessionType === 'TITULAR'}
+   623→   623→                    className={inputClass()}
+   624→   624→                  />
+   625→   625→                </div>
+   626→   626→              </div>
+   627→   627→
+   628→   628→              <div className="grid grid-cols-2 gap-4">
+   629→   629→                <div>
+   630→   630→                  <label className="block text-sm font-medium text-foreground mb-1">Complemento</label>
+   631→   631→                  <input
+   632→   632→                    type="text"
+   633→   633→                    value={form.complemento}
+   634→   634→                    onChange={(e) => updateForm('complemento', e.target.value)}
+   635→   635→                    className={inputClass()}
+   636→   636→                    placeholder="Apto, Sala..."
+   637→   637→                  />
+   638→   638→                </div>
+   639→   639→                <div>
+   640→   640→                  <label className="block text-sm font-medium text-foreground mb-1">Bairro *</label>
+   641→   641→                  <input
+   642→   642→                    type="text"
+   643→   643→                    value={form.bairro}
+   644→   644→                    onChange={(e) => updateForm('bairro', e.target.value)}
+   645→   645→                    required={sessionType === 'TITULAR'}
+   646→   646→                    className={inputClass()}
+   647→   647→                  />
+   648→   648→                </div>
+   649→   649→              </div>
+   650→   650→
+   651→   651→              <div className="grid grid-cols-2 gap-4">
+   652→   652→                <div>
+   653→   653→                  <label className="block text-sm font-medium text-foreground mb-1">Cidade *</label>
+   654→   654→                  <input
+   655→   655→                    type="text"
+   656→   656→                    value={form.cidade}
+   657→   657→                    onChange={(e) => updateForm('cidade', e.target.value)}
+   658→   658→                    required={sessionType === 'TITULAR'}
+   659→   659→                    className={inputClass()}
+   660→   660→                  />
+   661→   661→                </div>
+   662→   662→                <div>
+   663→   663→                  <label className="block text-sm font-medium text-foreground mb-1">Estado *</label>
+   664→   664→                  <input
+   665→   665→                    type="text"
+   666→   666→                    value={form.estado}
+   667→   667→                    onChange={(e) => updateForm('estado', e.target.value.toUpperCase())}
+   668→   668→                    required={sessionType === 'TITULAR'}
+   669→   669→                    maxLength={2}
+   670→   670→                    className={inputClass()}
+   671→   671→                    placeholder="UF"
+   672→   672→                  />
+   673→   673→                </div>
+   674→   674→              </div>
+   675→   675→            </>
+   676→   676→          )}
+   677→   677→        </>
+   678→   678→      )}
+   679→   679→
+   680→   680→      {/* Action buttons */}
+   681→   681→      <div className="flex gap-3 pt-2">
+   682→   682→        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+   683→   683→        <Button
+   684→   684→          type="submit"
+   685→   685→          disabled={isSubmitting || cpfStatus === 'blocked'}
+   686→   686→          className="bg-primary text-primary-foreground hover:bg-primary/90"
+   687→   687→        >
+   688→   688→          {isSubmitting ? 'Processando...' : 'Confirmar'}
+   689→   689→        </Button>
+   690→   690→      </div>
+   691→   691→    </form>
+   692→   692→  )
+   693→   693→}
+   694→   694→

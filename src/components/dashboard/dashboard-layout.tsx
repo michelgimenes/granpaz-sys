@@ -44,15 +44,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <aside
         className={`${
           collapsed ? 'w-16' : 'w-64'
-        } bg-[var(--gran-sidebar)] text-white flex flex-col transition-all duration-300 shrink-0`}
+        } bg-gran-sidebar text-primary-foreground flex flex-col transition-all duration-300 shrink-0`}
         role="navigation"
         aria-label="Menu principal"
       >
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 h-16 border-b border-white/10">
-          <Shield className="h-6 w-6 text-[var(--gran-accent)] shrink-0" aria-hidden="true" />
+        <div className="flex items-center gap-2 px-4 h-16 border-b border-primary-foreground/10">
+          <Shield className="h-6 w-6 text-gran-accent shrink-0" aria-hidden="true" />
           {!collapsed && (
-            <span className="font-serif text-lg font-bold text-white tracking-tight">Granpaz</span>
+            <span className="font-serif text-lg font-bold text-primary-foreground tracking-tight">Granpaz</span>
           )}
         </div>
 
@@ -68,8 +68,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => setDashboardTab(item.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-[var(--gran-sidebar-active)] text-white sidebar-active-indicator'
-                        : 'text-white/70 hover:bg-[var(--gran-sidebar-hover)] hover:text-white'
+                        ? 'bg-gran-sidebar-active text-primary-foreground sidebar-active-indicator'
+                        : 'text-primary-foreground/70 hover:bg-gran-sidebar-hover hover:text-primary-foreground'
                     }`}
                     aria-current={isActive ? 'page' : undefined}
                     title={collapsed ? item.label : undefined}
@@ -84,10 +84,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Collapse toggle */}
-        <div className="px-2 py-2 border-t border-white/10">
+        <div className="px-2 py-2 border-t border-primary-foreground/10">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-white hover:bg-[var(--gran-sidebar-hover)] transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm text-primary-foreground/50 hover:text-primary-foreground hover:bg-gran-sidebar-hover transition-colors"
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -96,17 +96,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* User info & Logout */}
-        <div className="px-2 py-3 border-t border-white/10">
+        <div className="px-2 py-3 border-t border-primary-foreground/10">
           {!collapsed && user && (
             <div className="px-3 mb-2">
-              <p className="text-sm font-medium text-white truncate">{user.nome}</p>
-              <p className="text-xs text-white/50 truncate">{user.email}</p>
-              <p className="text-xs text-[var(--gran-accent)] mt-0.5">{user.role}</p>
+              <p className="text-sm font-medium text-primary-foreground truncate">{user.nome}</p>
+              <p className="text-xs text-primary-foreground/50 truncate">{user.email}</p>
+              <p className="text-xs text-gran-accent mt-0.5">{user.role}</p>
             </div>
           )}
           <button
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-white/50 hover:text-state-error hover:bg-[var(--gran-sidebar-hover)] transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-primary-foreground/50 hover:text-state-error hover:bg-gran-sidebar-hover transition-colors"
             aria-label="Sair"
           >
             <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />

@@ -425,7 +425,7 @@ export function ApprovalTab() {
                     <div className="flex gap-2 pt-2">
                       <Button
                         onClick={openCpfConfirm}
-                        className="flex-1 bg-state-success text-white hover:bg-state-success/90"
+                        className="flex-1 bg-state-success text-primary-foreground hover:bg-state-success/90"
                         size="sm"
                         disabled={isSubmitting}
                       >
@@ -517,7 +517,7 @@ export function ApprovalTab() {
             </Button>
             <Button
               onClick={handleCpfConfirm}
-              className="bg-state-success text-white hover:bg-state-success/90"
+              className="bg-state-success text-primary-foreground hover:bg-state-success/90"
               disabled={isSubmitting || !cpfInput.trim()}
             >
               {isSubmitting ? (
@@ -607,7 +607,7 @@ export function ApprovalTab() {
       {toast && (
         <div
           className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
-            toast.type === 'success' ? 'bg-state-success text-white' : 'bg-state-error text-white'
+            toast.type === 'success' ? 'bg-state-success text-primary-foreground' : 'bg-state-error text-primary-foreground'
           }`}
           role="alert"
         >

@@ -136,11 +136,11 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  EM_ANALISE: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  APROVADO: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
-  NEGADO_CARENCIA: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  NEGADO_FRAUDE: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  NEGADO_EXCLUSAO: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  EM_ANALISE: 'bg-state-warning/10 text-state-warning',
+  APROVADO: 'bg-state-success/10 text-state-success',
+  NEGADO_CARENCIA: 'bg-state-error/10 text-state-error',
+  NEGADO_FRAUDE: 'bg-state-error/10 text-state-error',
+  NEGADO_EXCLUSAO: 'bg-state-error/10 text-state-error',
 }
 
 const STATUS_ICONS: Record<string, React.ElementType> = {
@@ -538,7 +538,7 @@ export function ClaimsTab() {
       <Card className="border-border/50">
         <CardContent className="py-3">
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="h-4 w-4 text-amber-500 shrink-0" aria-hidden="true" />
+            <Clock className="h-4 w-4 text-state-warning shrink-0" aria-hidden="true" />
             <span className="text-muted-foreground">
               Carência: <strong className="text-foreground">3 dias</strong> (acidental) •{' '}
               <strong className="text-foreground">6 meses</strong> (natural/invalidez) •{' '}
@@ -678,7 +678,7 @@ export function ClaimsTab() {
 
               {/* Error */}
               {formError && (
-                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-md">
+                <div className="flex items-center gap-2 text-sm text-state-error bg-state-error/5 p-3 rounded-md">
                   <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {formError}
                 </div>
@@ -689,8 +689,8 @@ export function ClaimsTab() {
                 <div
                   className={`flex items-start gap-2 text-sm p-3 rounded-md ${
                     carenciaResult.negado
-                      ? 'text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-900/20'
-                      : 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/20'
+                      ? 'text-state-error bg-state-error/5'
+                      : 'text-state-success bg-state-success/5'
                   }`}
                 >
                   {carenciaResult.negado ? (
@@ -862,20 +862,20 @@ export function ClaimsTab() {
 
                           {/* Motivo Negação */}
                           {sinistro.motivoNegacao && (
-                            <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded">
-                              <span className="text-red-700 dark:text-red-400 font-medium">Motivo da Negação:</span>{' '}
-                              <span className="text-red-600 dark:text-red-300">{sinistro.motivoNegacao}</span>
+                            <div className="bg-state-error/5 p-2 rounded">
+                              <span className="text-state-error font-medium">Motivo da Negação:</span>{' '}
+                              <span className="text-state-error/80">{sinistro.motivoNegacao}</span>
                             </div>
                           )}
 
                           {/* Carência Info */}
                           {(sinistro.carenciaDias !== null || sinistro.carenciaMeses !== null) && (
-                            <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded">
-                              <span className="text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1">
+                            <div className="bg-state-warning/5 p-2 rounded">
+                              <span className="text-state-warning font-medium flex items-center gap-1">
                                 <Hourglass className="h-3 w-3" aria-hidden="true" />
                                 Carência:
                               </span>{' '}
-                              <span className="text-amber-600 dark:text-amber-300">
+                              <span className="text-state-warning/80">
                                 {sinistro.carenciaMeses
                                   ? `${sinistro.carenciaMeses} meses`
                                   : sinistro.carenciaDias
@@ -897,12 +897,12 @@ export function ClaimsTab() {
                           {sinistro.status === 'APROVADO' &&
                             ['OBITO_NATURAL', 'OBITO_ACIDENTAL', 'SUICIDIO'].includes(sinistro.tipoSinistro) &&
                             sinistroDetailData?.contrato?.remissao && (
-                              <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded space-y-1">
-                                <p className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                              <div className="bg-state-success/5 p-3 rounded space-y-1">
+                                <p className="text-state-success font-medium flex items-center gap-1">
                                   <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                                   Remissão Ativa (RN-07)
                                 </p>
-                                <div className="text-xs text-emerald-600 dark:text-emerald-300 space-y-0.5">
+                                <div className="text-xs text-state-success/80 space-y-0.5">
                                   <p>Início: {formatDate(sinistroDetailData.contrato.remissao.dataInicioRemissao)}</p>
                                   <p>Fim: {formatDate(sinistroDetailData.contrato.remissao.dataFimRemissao)}</p>
                                   <p>Meses aplicados: {sinistroDetailData.contrato.remissao.mesesAplicados}</p>
@@ -918,7 +918,7 @@ export function ClaimsTab() {
                               <div className="flex flex-wrap gap-2">
                                 <Button
                                   size="sm"
-                                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                  className="bg-state-success text-primary-foreground hover:bg-state-success/90"
                                   onClick={() => setApproveDialog({ open: true, sinistroId: sinistro.id })}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
@@ -935,7 +935,7 @@ export function ClaimsTab() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                                  className="border-state-error/30 text-state-error hover:bg-state-error/5"
                                   onClick={() => { setDenyExclusionDialog({ open: true, sinistroId: sinistro.id }); setDenyMotivo('') }}
                                 >
                                   <Ban className="h-3 w-3 mr-1" aria-hidden="true" />
@@ -1012,7 +1012,7 @@ export function ClaimsTab() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                        <Badge className="bg-state-warning/10 text-state-warning">
                           <CalendarDays className="h-3 w-3 mr-1" aria-hidden="true" />
                           {cdcInfo.diasRestantes}d restantes
                         </Badge>
@@ -1082,8 +1082,8 @@ export function ClaimsTab() {
                         <Badge
                           className={
                             c.status === 'SUSPENSO'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              ? 'bg-state-warning/10 text-state-warning'
+                              : 'bg-state-success/10 text-state-success'
                           }
                         >
                           {c.status}
@@ -1098,7 +1098,7 @@ export function ClaimsTab() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                          className="border-state-warning/30 text-state-warning hover:bg-state-warning/5"
                           onClick={() =>
                             setSuspensionDialog({
                               open: true,
@@ -1113,7 +1113,7 @@ export function ClaimsTab() {
                       ) : (
                         <Button
                           size="sm"
-                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          className="bg-state-success text-primary-foreground hover:bg-state-success/90"
                           onClick={() =>
                             setSuspensionDialog({
                               open: true,
@@ -1164,7 +1164,7 @@ export function ClaimsTab() {
                   {/* Maioridade */}
                   <div className="border border-border/50 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
-                      <UserX className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                      <UserX className="h-4 w-4 text-state-warning" aria-hidden="true" />
                       <h3 className="font-medium text-sm">Job de Maioridade</h3>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -1192,7 +1192,7 @@ export function ClaimsTab() {
                   {/* LGPD */}
                   <div className="border border-border/50 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-red-500" aria-hidden="true" />
+                      <Lock className="h-4 w-4 text-state-error" aria-hidden="true" />
                       <h3 className="font-medium text-sm">Job LGPD</h3>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -1220,7 +1220,7 @@ export function ClaimsTab() {
                   {/* Auto-Suspensão */}
                   <div className="border border-border/50 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
-                      <RefreshCw className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                      <RefreshCw className="h-4 w-4 text-state-warning" aria-hidden="true" />
                       <h3 className="font-medium text-sm">Auto-Suspensão</h3>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -1258,7 +1258,7 @@ export function ClaimsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+              <CheckCircle2 className="h-5 w-5 text-state-success" aria-hidden="true" />
               Confirmar Aprovação do Sinistro
             </DialogTitle>
             <DialogDescription>
@@ -1271,7 +1271,7 @@ export function ClaimsTab() {
               Cancelar
             </Button>
             <Button
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="bg-state-success text-primary-foreground hover:bg-state-success/90"
               disabled={updateSinistroMutation.isPending}
               onClick={() =>
                 updateSinistroMutation.mutate({ id: approveDialog.sinistroId, status: 'APROVADO' })
@@ -1289,7 +1289,7 @@ export function ClaimsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-red-600" aria-hidden="true" />
+              <ShieldAlert className="h-5 w-5 text-state-error" aria-hidden="true" />
               Negar Sinistro por Fraude
             </DialogTitle>
             <DialogDescription>
@@ -1333,7 +1333,7 @@ export function ClaimsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Ban className="h-5 w-5 text-red-600" aria-hidden="true" />
+              <Ban className="h-5 w-5 text-state-error" aria-hidden="true" />
               Negar Sinistro por Exclusão Contratual
             </DialogTitle>
             <DialogDescription>
@@ -1377,7 +1377,7 @@ export function ClaimsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Scale className="h-5 w-5 text-amber-600" aria-hidden="true" />
+              <Scale className="h-5 w-5 text-state-warning" aria-hidden="true" />
               Cancelar por Arrependimento (CDC Art. 49)
             </DialogTitle>
             <DialogDescription>
@@ -1385,12 +1385,12 @@ export function ClaimsTab() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg text-sm space-y-1">
+            <div className="bg-state-warning/5 p-3 rounded-lg text-sm space-y-1">
               <p><strong>Contrato:</strong> {cdcDialog.contratoTitulo}</p>
               <p><strong>Data de Início:</strong> {formatDate(cdcDialog.dataInicio)}</p>
               <p><strong>Dias Restantes:</strong> {cdcDialog.diasRestantes} dia(s)</p>
             </div>
-            <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm text-red-700 dark:text-red-400 space-y-1">
+            <div className="bg-state-error/5 p-3 rounded-lg text-sm text-state-error space-y-1">
               <p className="font-medium">⚠️ Atenção — Esta ação é irreversível:</p>
               <ul className="list-disc list-inside space-y-0.5 text-xs">
                 <li>Estorno integral de todas as bonificações (LIBERADO → ESTORNADO)</li>
@@ -1422,9 +1422,9 @@ export function ClaimsTab() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {suspensionDialog.acao === 'SUSPENDER' ? (
-                <Shield className="h-5 w-5 text-amber-600" aria-hidden="true" />
+                <Shield className="h-5 w-5 text-state-warning" aria-hidden="true" />
               ) : (
-                <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+                <ShieldCheck className="h-5 w-5 text-state-success" aria-hidden="true" />
               )}
               {suspensionDialog.acao === 'SUSPENDER' ? 'Suspender Contrato' : 'Reativar Contrato (Récita)'}
             </DialogTitle>
@@ -1458,8 +1458,8 @@ export function ClaimsTab() {
             <Button
               className={
                 suspensionDialog.acao === 'SUSPENDER'
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  ? 'bg-state-warning text-primary-foreground hover:bg-state-warning/90'
+                  : 'bg-state-success text-primary-foreground hover:bg-state-success/90'
               }
               disabled={suspensaoMutation.isPending || !suspensionMotivo.trim()}
               onClick={() =>
@@ -1482,7 +1482,7 @@ export function ClaimsTab() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-amber-600" aria-hidden="true" />
+              <ShieldCheck className="h-5 w-5 text-state-warning" aria-hidden="true" />
               {complianceDialog.titulo}
             </DialogTitle>
             <DialogDescription>
@@ -1494,7 +1494,7 @@ export function ClaimsTab() {
               Cancelar
             </Button>
             <Button
-              className="bg-amber-600 text-white hover:bg-amber-700"
+              className="bg-state-warning text-primary-foreground hover:bg-state-warning/90"
               disabled={complianceMutation.isPending}
               onClick={() => complianceMutation.mutate(complianceDialog.tipo)}
             >

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { formatCPF, formatCurrency, formatDate } from '@/lib/helpers'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { startInactivityTimer, stopInactivityTimer } from '@/lib/inactivity'
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -104,7 +105,31 @@ function ComplianceBanner() {
 // Main CheckoutFlow Component
 // ─────────────────────────────────────────────────────────
 export function CheckoutFlow() {
-  const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView, checkoutData, setCheckoutData, resetCheckout } = useAppStore()
+  const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView, checkoutData, setCheckoutData, resetCheckout, loadDraft } = useAppStore()
+
+  // Restaura draft do sessionStorage na montagem (§4.3)
+  const draftLoaded = useRef(false)
+  if (!draftLoaded.current && typeof window !== 'undefined') {
+    draftLoaded.current = true
+    const restored = loadDraft()
+    if (restored) {
+      toast.info('Seus dados anteriores foram restaurados.', { duration: 4000 })
+    }
+  }
+
+  // Monitoramento de inatividade (§4.3) — 15 min aviso, 20 min limpa dados (LGPD)
+  const inactivityStarted = useRef(false)
+  if (!inactivityStarted.current && typeof window !== 'undefined') {
+    inactivityStarted.current = true
+    startInactivityTimer(
+      () => toast.warning('Você está inativo há 15 minutos. Seus dados serão limpos em 5 minutos por segurança.'),
+      () => {
+        toast.error('Sessão expirada por inatividade. Dados limpos por segurança (LGPD).')
+        resetCheckout()
+        sessionStorage.removeItem('granpaz_checkout_draft')
+      }
+    )
+  }
 
   // Captura de parâmetros UTM na montagem (SPEC-07 §4.5 / RN-05)
   useEffect(() => {
@@ -286,6 +311,7 @@ export function CheckoutFlow() {
   const handleBack = () => {
     if (checkoutStep === 0) {
       resetCheckout() // RN-05: Limpar dados sensíveis ao sair do checkout
+      stopInactivityTimer() // Para monitoramento de inatividade
       setView('landing')
     } else {
       setCheckoutStep(checkoutStep - 1)
@@ -294,6 +320,7 @@ export function CheckoutFlow() {
 
   const handleRestart = () => {
     resetCheckout()
+    stopInactivityTimer() // Para monitoramento de inatividade
     setTitularData(null)
     setVinculos([])
     setSelectedPlan(null)
@@ -405,7 +432,7 @@ export function CheckoutFlow() {
                   href="https://wa.me/5511999999999"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-state-success text-white px-6 py-3 rounded-lg font-semibold hover:bg-state-success/90 transition-colors"
+                  className="inline-flex items-center gap-2 bg-state-success text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-state-success/90 transition-colors"
                 >
                   <Phone className="h-4 w-4" />
                   Falar com Suporte via WhatsApp

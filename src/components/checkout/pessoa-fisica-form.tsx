@@ -401,7 +401,7 @@ export function PessoaFisicaForm({
           aria-describedby={errors.nomeCompleto ? 'err-nome' : undefined}
           placeholder="Nome completo"
         />
-        {errors.nomeCompleto && <p id="err-nome" className="text-xs text-state-error mt-1" role="alert">{errors.nomeCompleto}</p>}
+        {errors.nomeCompleto && <p id="err-nome" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.nomeCompleto}</p>}
       </div>
 
       {/* CPF — only for TITULAR and AGREGADO */}
@@ -422,6 +422,7 @@ export function PessoaFisicaForm({
               maxLength={14}
               aria-required={sessionType === 'TITULAR'}
               aria-invalid={!!errors.cpf}
+              aria-describedby={errors.cpf ? 'cpf-error' : undefined}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
               {cpfStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -430,7 +431,7 @@ export function PessoaFisicaForm({
               {cpfStatus === 'blocked' && <AlertCircle className="h-4 w-4 text-state-error" />}
             </div>
           </div>
-          {errors.cpf && <p className="text-xs text-state-error mt-1" role="alert">{errors.cpf}</p>}
+          {errors.cpf && <p id="cpf-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.cpf}</p>}
           {cpfStatus === 'not_found' && !errors.cpf && <p className="text-xs text-muted-foreground mt-1">CPF não encontrado. Preencha os dados manualmente.</p>}
         </div>
       )}
@@ -446,8 +447,9 @@ export function PessoaFisicaForm({
           className={inputClass(errors.dataNascimento)}
           aria-required="true"
           aria-invalid={!!errors.dataNascimento}
+          aria-describedby={errors.dataNascimento ? 'dataNascimento-error' : undefined}
         />
-        {errors.dataNascimento && <p className="text-xs text-state-error mt-1" role="alert">{errors.dataNascimento}</p>}
+        {errors.dataNascimento && <p id="dataNascimento-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.dataNascimento}</p>}
         {/* RN-06: Coverage tag */}
         {coverageTag && (
           <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-state-warning/10 border border-state-warning/30">
@@ -503,12 +505,14 @@ export function PessoaFisicaForm({
             }}
             className={inputClass(errors.parentesco)}
             aria-required="true"
+            aria-invalid={!!errors.parentesco}
+            aria-describedby={errors.parentesco ? 'parentesco-error' : undefined}
           >
             {config.parentescoOptions.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          {errors.parentesco && <p className="text-xs text-state-error mt-1" role="alert">{errors.parentesco}</p>}
+          {errors.parentesco && <p id="parentesco-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.parentesco}</p>}
         </div>
       )}
 
@@ -525,8 +529,10 @@ export function PessoaFisicaForm({
             required={config.requiredProfissao}
             className={inputClass(errors.profissao)}
             placeholder="Sua profissão"
+            aria-invalid={!!errors.profissao}
+            aria-describedby={errors.profissao ? 'profissao-error' : undefined}
           />
-          {errors.profissao && <p className="text-xs text-state-error mt-1" role="alert">{errors.profissao}</p>}
+          {errors.profissao && <p id="profissao-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.profissao}</p>}
         </div>
       )}
 
@@ -541,8 +547,10 @@ export function PessoaFisicaForm({
             required={sessionType === 'TITULAR'}
             className={inputClass(errors.email)}
             placeholder="seu@email.com"
+            aria-invalid={!!errors.email}
+            aria-describedby={errors.email ? 'email-error' : undefined}
           />
-          {errors.email && <p className="text-xs text-state-error mt-1" role="alert">{errors.email}</p>}
+          {errors.email && <p id="email-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.email}</p>}
         </div>
       )}
 
@@ -557,8 +565,10 @@ export function PessoaFisicaForm({
             required={sessionType === 'TITULAR'}
             className={inputClass(errors.telefone)}
             placeholder="(00) 00000-0000"
+            aria-invalid={!!errors.telefone}
+            aria-describedby={errors.telefone ? 'telefone-error' : undefined}
           />
-          {errors.telefone && <p className="text-xs text-state-error mt-1" role="alert">{errors.telefone}</p>}
+          {errors.telefone && <p id="telefone-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.telefone}</p>}
         </div>
       )}
 
@@ -595,10 +605,12 @@ export function PessoaFisicaForm({
                     required={sessionType === 'TITULAR'}
                     className={`${inputClass(errors.cep)} font-mono pr-10`}
                     placeholder="00000-000"
+                    aria-invalid={!!errors.cep}
+                    aria-describedby={errors.cep ? 'cep-error' : undefined}
                   />
                   {viacepLoading && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
                 </div>
-                {errors.cep && <p className="text-xs text-state-error mt-1" role="alert">{errors.cep}</p>}
+                {errors.cep && <p id="cep-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.cep}</p>}
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -609,8 +621,10 @@ export function PessoaFisicaForm({
                     value={form.logradouro}
                     onChange={(e) => updateForm('logradouro', e.target.value)}
                     required={sessionType === 'TITULAR'}
-                    className={inputClass()}
+                    className={inputClass(errors.logradouro)}
                     placeholder="Rua, Avenida..."
+                    aria-invalid={!!errors.logradouro}
+                    aria-describedby={errors.logradouro ? 'logradouro-error' : undefined}
                   />
                 </div>
                 <div>
@@ -620,7 +634,9 @@ export function PessoaFisicaForm({
                     value={form.numero}
                     onChange={(e) => updateForm('numero', e.target.value)}
                     required={sessionType === 'TITULAR'}
-                    className={inputClass()}
+                    className={inputClass(errors.numero)}
+                    aria-invalid={!!errors.numero}
+                    aria-describedby={errors.numero ? 'numero-error' : undefined}
                   />
                 </div>
               </div>
@@ -643,7 +659,9 @@ export function PessoaFisicaForm({
                     value={form.bairro}
                     onChange={(e) => updateForm('bairro', e.target.value)}
                     required={sessionType === 'TITULAR'}
-                    className={inputClass()}
+                    className={inputClass(errors.bairro)}
+                    aria-invalid={!!errors.bairro}
+                    aria-describedby={errors.bairro ? 'bairro-error' : undefined}
                   />
                 </div>
               </div>
@@ -656,7 +674,9 @@ export function PessoaFisicaForm({
                     value={form.cidade}
                     onChange={(e) => updateForm('cidade', e.target.value)}
                     required={sessionType === 'TITULAR'}
-                    className={inputClass()}
+                    className={inputClass(errors.cidade)}
+                    aria-invalid={!!errors.cidade}
+                    aria-describedby={errors.cidade ? 'cidade-error' : undefined}
                   />
                 </div>
                 <div>
@@ -667,8 +687,10 @@ export function PessoaFisicaForm({
                     onChange={(e) => updateForm('estado', e.target.value.toUpperCase())}
                     required={sessionType === 'TITULAR'}
                     maxLength={2}
-                    className={inputClass()}
+                    className={inputClass(errors.estado)}
                     placeholder="UF"
+                    aria-invalid={!!errors.estado}
+                    aria-describedby={errors.estado ? 'estado-error' : undefined}
                   />
                 </div>
               </div>

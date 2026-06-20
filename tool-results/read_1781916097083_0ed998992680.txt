@@ -1,0 +1,620 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useCallback } from 'react'
+     4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { useQuery, useQueryClient } from '@tanstack/react-query'
+    10→import { Check, X, Eye, ArrowRight, Loader2, AlertTriangle, Users } from 'lucide-react'
+    11→import { formatCurrency, formatDate, formatCPF } from '@/lib/helpers'
+    12→import { useAppStore } from '@/lib/store'
+    13→
+    14→interface Vinculo {
+    15→  id: string
+    16→  tipoVinculo: string
+    17→  parentesco: string
+    18→  pessoaVinculada: {
+    19→    id: string
+    20→    nomeCompleto: string
+    21→    cpf: string | null
+    22→  }
+    23→}
+    24→
+    25→interface Contrato {
+    26→  id: string
+    27→  status: string
+    28→  valorParcelaBase: number
+    29→  valorTaxaAdesao: number
+    30→  createdAt: string
+    31→  titular: {
+    32→    id: string
+    33→    nomeCompleto: string
+    34→    cpf: string | null
+    35→  }
+    36→  plano: {
+    37→    nome: string
+    38→    tipo: string
+    39→  }
+    40→  vinculos?: Vinculo[]
+    41→  dadosAprovacao?: {
+    42→    capitalSeguradoInformado: number | null
+    43→    codigoSeguradoraInformado: string | null
+    44→    dataAprovacao: string | null
+    45→    observacoesGestor: string | null
+    46→  }
+    47→}
+    48→
+    49→function getTodayString() {
+    50→  const d = new Date()
+    51→  return d.toISOString().split('T')[0]
+    52→}
+    53→
+    54→export function ApprovalTab() {
+    55→  const queryClient = useQueryClient()
+    56→  const [selectedId, setSelectedId] = useState<string | null>(null)
+    57→  const [approveForm, setApproveForm] = useState({
+    58→    capitalSegurado: '',
+    59→    codigoSeguradora: '',
+    60→    seguradoraId: '',
+    61→    observacoes: '',
+    62→    dataInicio: getTodayString(),
+    63→  })
+    64→
+    65→  // L22: CPF confirmation dialog
+    66→  const [cpfConfirmOpen, setCpfConfirmOpen] = useState(false)
+    67→  const [cpfInput, setCpfInput] = useState('')
+    68→  const [cpfError, setCpfError] = useState('')
+    69→
+    70→  // L23: Rejection dialog
+    71→  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+    72→  const [rejectMotivo, setRejectMotivo] = useState('')
+    73→  const [rejectError, setRejectError] = useState('')
+    74→
+    75→  // L24: Submitting & toast states
+    76→  const [isSubmitting, setIsSubmitting] = useState(false)
+    77→  const [submitError, setSubmitError] = useState('')
+    78→  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+    79→
+    80→  // Auto-dismiss toast
+    81→  useEffect(() => {
+    82→    if (toast) {
+    83→      const timer = setTimeout(() => setToast(null), 3500)
+    84→      return () => clearTimeout(timer)
+    85→    }
+    86→  }, [toast])
+    87→
+    88→  const { data: contratos = [], isLoading } = useQuery<Contrato[]>({
+    89→    queryKey: ['approval-contratos'],
+    90→    queryFn: async () => {
+    91→      const res = await fetch('/api/contratos?status=AGUARDANDO_APROVACAO')
+    92→      if (!res.ok) throw new Error('Erro ao carregar contratos')
+    93→      const json = await res.json()
+    94→      // Handle paginated response format
+    95→      if (json.data && Array.isArray(json.data)) return json.data
+    96→      if (Array.isArray(json)) return json
+    97→      return []
+    98→    },
+    99→  })
+   100→
+   101→  const { data: seguradoras = [] } = useQuery({
+   102→    queryKey: ['seguradoras'],
+   103→    queryFn: async () => {
+   104→      const res = await fetch('/api/seguradoras')
+   105→      if (!res.ok) throw new Error('Erro')
+   106→      return res.json()
+   107→    },
+   108→  })
+   109→
+   110→  // L25: Fetch full contract details (with vínculos) when selected
+   111→  const { data: selectedContratoDetail } = useQuery<Contrato>({
+   112→    queryKey: ['contrato-detail', selectedId],
+   113→    queryFn: async () => {
+   114→      if (!selectedId) return null
+   115→      const res = await fetch(`/api/contratos/${selectedId}`)
+   116→      if (!res.ok) throw new Error('Erro ao carregar detalhes')
+   117→      return res.json()
+   118→    },
+   119→    enabled: !!selectedId,
+   120→  })
+   121→
+   122→  const selectedContrato = contratos.find(c => c.id === selectedId)
+   123→  const displayContrato = selectedContratoDetail || selectedContrato
+   124→
+   125→  // L22: Open CPF confirmation dialog
+   126→  const openCpfConfirm = useCallback(() => {
+   127→    setCpfInput('')
+   128→    setCpfError('')
+   129→    setCpfConfirmOpen(true)
+   130→  }, [])
+   131→
+   132→  // L22: Handle CPF confirmation
+   133→  const handleCpfConfirm = useCallback(() => {
+   134→    if (!selectedContrato?.titular?.cpf) {
+   135→      setCpfError('Titular não possui CPF cadastrado.')
+   136→      return
+   137→    }
+   138→    const cleanInput = cpfInput.replace(/\D/g, '')
+   139→    const cleanOriginal = selectedContrato.titular.cpf.replace(/\D/g, '')
+   140→    if (cleanInput !== cleanOriginal) {
+   141→      setCpfError('CPF não confere. Digite o CPF do titular para confirmar.')
+   142→      return
+   143→    }
+   144→    setCpfConfirmOpen(false)
+   145→    handleApprove()
+   146→  }, [cpfInput, selectedContrato])
+   147→
+   148→  // L21+L22: Approve with dataInicio and adminAprovadorId
+   149→  const handleApprove = useCallback(async () => {
+   150→    if (!selectedId) return
+   151→    const user = useAppStore.getState().user
+   152→    setIsSubmitting(true)
+   153→    setSubmitError('')
+   154→    try {
+   155→      const res = await fetch(`/api/contratos/${selectedId}/aprovar`, {
+   156→        method: 'POST',
+   157→        headers: { 'Content-Type': 'application/json' },
+   158→        body: JSON.stringify({
+   159→          capitalSegurado: parseFloat(approveForm.capitalSegurado) || 0,
+   160→          codigoSeguradora: approveForm.codigoSeguradora,
+   161→          seguradoraId: approveForm.seguradoraId,
+   162→          observacoes: approveForm.observacoes,
+   163→          dataInicio: approveForm.dataInicio,
+   164→          adminAprovadorId: user?.id || null,
+   165→        }),
+   166→      })
+   167→      if (res.ok) {
+   168→        queryClient.invalidateQueries({ queryKey: ['approval-contratos'] })
+   169→        setSelectedId(null)
+   170→        setApproveForm({
+   171→          capitalSegurado: '',
+   172→          codigoSeguradora: '',
+   173→          seguradoraId: '',
+   174→          observacoes: '',
+   175→          dataInicio: getTodayString(),
+   176→        })
+   177→        setToast({ message: 'Contrato aprovado com sucesso!', type: 'success' })
+   178→      } else {
+   179→        const errData = await res.json().catch(() => ({ error: 'Erro ao aprovar contrato' }))
+   180→        setSubmitError(errData.error || 'Erro ao aprovar contrato')
+   181→        setToast({ message: errData.error || 'Erro ao aprovar contrato', type: 'error' })
+   182→      }
+   183→    } catch {
+   184→      setSubmitError('Erro de conexão ao aprovar contrato')
+   185→      setToast({ message: 'Erro de conexão ao aprovar contrato', type: 'error' })
+   186→    } finally {
+   187→      setIsSubmitting(false)
+   188→    }
+   189→  }, [selectedId, approveForm, queryClient])
+   190→
+   191→  // L23: Open rejection dialog
+   192→  const openRejectDialog = useCallback(() => {
+   193→    setRejectMotivo('')
+   194→    setRejectError('')
+   195→    setRejectDialogOpen(true)
+   196→  }, [])
+   197→
+   198→  // L23: Handle rejection with motivo
+   199→  const handleReject = useCallback(async () => {
+   200→    if (!selectedId) return
+   201→    if (rejectMotivo.trim().length < 10) {
+   202→      setRejectError('Motivo deve ter pelo menos 10 caracteres.')
+   203→      return
+   204→    }
+   205→    if (rejectMotivo.trim().length > 1000) {
+   206→      setRejectError('Motivo deve ter no máximo 1000 caracteres.')
+   207→      return
+   208→    }
+   209→    setIsSubmitting(true)
+   210→    setSubmitError('')
+   211→    try {
+   212→      const res = await fetch(`/api/contratos/${selectedId}/rejeitar`, {
+   213→        method: 'POST',
+   214→        headers: { 'Content-Type': 'application/json' },
+   215→        body: JSON.stringify({ motivo: rejectMotivo.trim() }),
+   216→      })
+   217→      if (res.ok) {
+   218→        queryClient.invalidateQueries({ queryKey: ['approval-contratos'] })
+   219→        setSelectedId(null)
+   220→        setRejectDialogOpen(false)
+   221→        setToast({ message: 'Contrato rejeitado.', type: 'success' })
+   222→      } else {
+   223→        const errData = await res.json().catch(() => ({ error: 'Erro ao rejeitar contrato' }))
+   224→        setSubmitError(errData.error || 'Erro ao rejeitar contrato')
+   225→        setToast({ message: errData.error || 'Erro ao rejeitar contrato', type: 'error' })
+   226→      }
+   227→    } catch {
+   228→      setSubmitError('Erro de conexão ao rejeitar contrato')
+   229→      setToast({ message: 'Erro de conexão ao rejeitar contrato', type: 'error' })
+   230→    } finally {
+   231→      setIsSubmitting(false)
+   232→    }
+   233→  }, [selectedId, rejectMotivo, queryClient])
+   234→
+   235→  const statusColors: Record<string, string> = {
+   236→    AGUARDANDO_APROVACAO: 'bg-state-warning/10 text-state-warning',
+   237→    APROVADO: 'bg-state-success/10 text-state-success',
+   238→    REJEITADO: 'bg-state-error/10 text-state-error',
+   239→  }
+   240→
+   241→  const tipoVinculoLabels: Record<string, string> = {
+   242→    DEPENDENTE: 'Dependente',
+   243→    AGREGADO: 'Agregado',
+   244→    SUB_DEPENDENTE: 'Sub-dependente',
+   245→  }
+   246→
+   247→  return (
+   248→    <div className="animate-fade-up">
+   249→      <div className="mb-6">
+   250→        <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Fila de Aprovação</h1>
+   251→        <p className="text-muted-foreground mt-1">Contratos aguardando aprovação</p>
+   252→      </div>
+   253→
+   254→      {isLoading ? (
+   255→        <div className="flex items-center justify-center py-20">
+   256→          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+   257→        </div>
+   258→      ) : contratos.length === 0 ? (
+   259→        <Card className="border-border/50">
+   260→          <CardContent className="py-12 text-center">
+   261→            <p className="text-muted-foreground">Nenhum contrato aguardando aprovação</p>
+   262→          </CardContent>
+   263→        </Card>
+   264→      ) : (
+   265→        <div className="grid lg:grid-cols-3 gap-6">
+   266→          {/* List */}
+   267→          <div className="lg:col-span-2 space-y-3">
+   268→            {contratos.map((contrato) => (
+   269→              <Card
+   270→                key={contrato.id}
+   271→                className={`cursor-pointer transition-all hover:shadow-md border-border/50 ${
+   272→                  selectedId === contrato.id ? 'border-primary border-2' : ''
+   273→                }`}
+   274→                onClick={() => setSelectedId(contrato.id)}
+   275→              >
+   276→                <CardContent className="py-4 flex items-center justify-between">
+   277→                  <div>
+   278→                    <p className="font-medium text-foreground text-sm">{contrato.titular.nomeCompleto}</p>
+   279→                    <p className="text-xs text-muted-foreground mt-0.5">
+   280→                      {contrato.plano.nome} • {formatCurrency(contrato.valorParcelaBase)}/mês
+   281→                    </p>
+   282→                  </div>
+   283→                  <div className="flex items-center gap-3">
+   284→                    <Badge className={statusColors[contrato.status] || 'bg-muted text-muted-foreground'}>
+   285→                      Pendente
+   286→                    </Badge>
+   287→                    <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   288→                  </div>
+   289→                </CardContent>
+   290→              </Card>
+   291→            ))}
+   292→          </div>
+   293→
+   294→          {/* Detail panel */}
+   295→          <div>
+   296→            {displayContrato ? (
+   297→              <Card className="border-border/50 sticky top-24">
+   298→                <CardHeader>
+   299→                  <CardTitle className="text-base">Detalhes do Contrato</CardTitle>
+   300→                </CardHeader>
+   301→                <CardContent className="space-y-4">
+   302→                  <div className="space-y-2 text-sm">
+   303→                    <div className="flex justify-between">
+   304→                      <span className="text-muted-foreground">Titular:</span>
+   305→                      <span className="font-medium text-foreground">{displayContrato.titular.nomeCompleto}</span>
+   306→                    </div>
+   307→                    <div className="flex justify-between">
+   308→                      <span className="text-muted-foreground">CPF:</span>
+   309→                      <span className="font-mono text-foreground">
+   310→                        {displayContrato.titular.cpf ? formatCPF(displayContrato.titular.cpf) : '—'}
+   311→                      </span>
+   312→                    </div>
+   313→                    <div className="flex justify-between">
+   314→                      <span className="text-muted-foreground">Plano:</span>
+   315→                      <span className="text-foreground">{displayContrato.plano.nome}</span>
+   316→                    </div>
+   317→                    <div className="flex justify-between">
+   318→                      <span className="text-muted-foreground">Parcela:</span>
+   319→                      <span className="text-foreground">{formatCurrency(displayContrato.valorParcelaBase)}</span>
+   320→                    </div>
+   321→                    <div className="flex justify-between">
+   322→                      <span className="text-muted-foreground">Taxa Adesão:</span>
+   323→                      <span className="text-foreground">{formatCurrency(displayContrato.valorTaxaAdesao)}</span>
+   324→                    </div>
+   325→                    <div className="flex justify-between">
+   326→                      <span className="text-muted-foreground">Data:</span>
+   327→                      <span className="text-foreground">{formatDate(displayContrato.createdAt)}</span>
+   328→                    </div>
+   329→                  </div>
+   330→
+   331→                  {/* L25: Vínculos tree display */}
+   332→                  {displayContrato.vinculos && displayContrato.vinculos.length > 0 && (
+   333→                    <div className="border-t border-border/50 pt-3">
+   334→                      <div className="flex items-center gap-2 mb-2">
+   335→                        <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   336→                        <p className="text-xs font-semibold text-muted-foreground">
+   337→                          Vínculos ({displayContrato.vinculos.length})
+   338→                        </p>
+   339→                      </div>
+   340→                      <div className="space-y-1 ml-4 border-l-2 border-primary/20 pl-3 max-h-48 overflow-y-auto custom-scrollbar">
+   341→                        {displayContrato.vinculos.map((v) => (
+   342→                          <div key={v.id} className="text-xs py-1">
+   343→                            <span className="text-foreground font-medium">{v.pessoaVinculada.nomeCompleto}</span>
+   344→                            <span className="text-muted-foreground ml-2">
+   345→                              {tipoVinculoLabels[v.tipoVinculo] || v.tipoVinculo} • {v.parentesco}
+   346→                            </span>
+   347→                            {v.pessoaVinculada.cpf && (
+   348→                              <span className="text-muted-foreground ml-2 font-mono">
+   349→                                ({formatCPF(v.pessoaVinculada.cpf)})
+   350→                              </span>
+   351→                            )}
+   352→                          </div>
+   353→                        ))}
+   354→                      </div>
+   355→                    </div>
+   356→                  )}
+   357→
+   358→                  {/* Approval form */}
+   359→                  <div className="border-t border-border/50 pt-4 space-y-3">
+   360→                    <h4 className="text-sm font-semibold text-foreground">Dados de Aprovação</h4>
+   361→
+   362→                    {/* L21: Data de Início field */}
+   363→                    <div>
+   364→                      <label className="block text-xs text-muted-foreground mb-1">Data de Início</label>
+   365→                      <input
+   366→                        type="date"
+   367→                        value={approveForm.dataInicio}
+   368→                        onChange={(e) => setApproveForm(f => ({ ...f, dataInicio: e.target.value }))}
+   369→                        className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   370→                      />
+   371→                    </div>
+   372→
+   373→                    <div>
+   374→                      <label className="block text-xs text-muted-foreground mb-1">Capital Segurado</label>
+   375→                      <input
+   376→                        type="number"
+   377→                        value={approveForm.capitalSegurado}
+   378→                        onChange={(e) => setApproveForm(f => ({ ...f, capitalSegurado: e.target.value }))}
+   379→                        className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   380→                        placeholder="0,00"
+   381→                      />
+   382→                    </div>
+   383→                    <div>
+   384→                      <label className="block text-xs text-muted-foreground mb-1">Código Seguradora</label>
+   385→                      <input
+   386→                        type="text"
+   387→                        value={approveForm.codigoSeguradora}
+   388→                        onChange={(e) => setApproveForm(f => ({ ...f, codigoSeguradora: e.target.value }))}
+   389→                        className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono"
+   390→                        placeholder="COD-001"
+   391→                      />
+   392→                    </div>
+   393→                    <div>
+   394→                      <label className="block text-xs text-muted-foreground mb-1">Seguradora</label>
+   395→                      <select
+   396→                        value={approveForm.seguradoraId}
+   397→                        onChange={(e) => setApproveForm(f => ({ ...f, seguradoraId: e.target.value }))}
+   398→                        className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   399→                      >
+   400→                        <option value="">Selecione...</option>
+   401→                        {seguradoras.map((s: { id: string; nome: string }) => (
+   402→                          <option key={s.id} value={s.id}>{s.nome}</option>
+   403→                        ))}
+   404→                      </select>
+   405→                    </div>
+   406→                    <div>
+   407→                      <label className="block text-xs text-muted-foreground mb-1">Observações</label>
+   408→                      <textarea
+   409→                        value={approveForm.observacoes}
+   410→                        onChange={(e) => setApproveForm(f => ({ ...f, observacoes: e.target.value }))}
+   411→                        className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[60px]"
+   412→                        placeholder="Observações do gestor..."
+   413→                      />
+   414→                    </div>
+   415→
+   416→                    {/* L24: Error display */}
+   417→                    {submitError && (
+   418→                      <div className="flex items-center gap-2 text-sm text-state-error bg-state-error/10 p-2 rounded">
+   419→                        <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+   420→                        <span>{submitError}</span>
+   421→                      </div>
+   422→                    )}
+   423→
+   424→                    {/* L24: Buttons with loading states */}
+   425→                    <div className="flex gap-2 pt-2">
+   426→                      <Button
+   427→                        onClick={openCpfConfirm}
+   428→                        className="flex-1 bg-state-success text-white hover:bg-state-success/90"
+   429→                        size="sm"
+   430→                        disabled={isSubmitting}
+   431→                      >
+   432→                        {isSubmitting ? (
+   433→                          <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" />
+   434→                        ) : (
+   435→                          <Check className="h-4 w-4 mr-1" aria-hidden="true" />
+   436→                        )}
+   437→                        Aprovar
+   438→                      </Button>
+   439→                      <Button
+   440→                        onClick={openRejectDialog}
+   441→                        variant="destructive"
+   442→                        className="flex-1"
+   443→                        size="sm"
+   444→                        disabled={isSubmitting}
+   445→                      >
+   446→                        {isSubmitting ? (
+   447→                          <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" />
+   448→                        ) : (
+   449→                          <X className="h-4 w-4 mr-1" aria-hidden="true" />
+   450→                        )}
+   451→                        Rejeitar
+   452→                      </Button>
+   453→                    </div>
+   454→                  </div>
+   455→                </CardContent>
+   456→              </Card>
+   457→            ) : (
+   458→              <Card className="border-border/50">
+   459→                <CardContent className="py-12 text-center">
+   460→                  <Eye className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+   461→                  <p className="text-sm text-muted-foreground">Selecione um contrato para ver detalhes</p>
+   462→                </CardContent>
+   463→              </Card>
+   464→            )}
+   465→          </div>
+   466→        </div>
+   467→      )}
+   468→
+   469→      {/* L22: CPF Confirmation Dialog */}
+   470→      <Dialog open={cpfConfirmOpen} onOpenChange={setCpfConfirmOpen}>
+   471→        <DialogContent>
+   472→          <DialogHeader>
+   473→            <DialogTitle>Confirmar Aprovação</DialogTitle>
+   474→            <DialogDescription>
+   475→              Confirme a aprovação digitando o CPF do titular
+   476→            </DialogDescription>
+   477→          </DialogHeader>
+   478→          <div className="space-y-3 py-2">
+   479→            <p className="text-sm text-muted-foreground">
+   480→              Titular: <span className="font-medium text-foreground">{selectedContrato?.titular?.nomeCompleto}</span>
+   481→            </p>
+   482→            <p className="text-sm text-muted-foreground">
+   483→              CPF (referência): <span className="font-mono text-foreground">
+   484→                {selectedContrato?.titular?.cpf
+   485→                  ? formatCPF(selectedContrato.titular.cpf).replace(/\d(?=.*-)/g, '*')
+   486→                  : '—'}
+   487→              </span>
+   488→            </p>
+   489→            <div>
+   490→              <label className="block text-xs text-muted-foreground mb-1">Digite o CPF do titular</label>
+   491→              <input
+   492→                type="text"
+   493→                value={cpfInput}
+   494→                onChange={(e) => {
+   495→                  setCpfInput(e.target.value)
+   496→                  setCpfError('')
+   497→                }}
+   498→                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+   499→                placeholder="000.000.000-00"
+   500→                autoFocus
+   501→              />
+   502→            </div>
+   503→            {cpfError && (
+   504→              <p className="text-sm text-state-error flex items-center gap-1">
+   505→                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+   506→                {cpfError}
+   507→              </p>
+   508→            )}
+   509→          </div>
+   510→          <DialogFooter>
+   511→            <Button
+   512→              variant="outline"
+   513→              onClick={() => setCpfConfirmOpen(false)}
+   514→              disabled={isSubmitting}
+   515→            >
+   516→              Cancelar
+   517→            </Button>
+   518→            <Button
+   519→              onClick={handleCpfConfirm}
+   520→              className="bg-state-success text-white hover:bg-state-success/90"
+   521→              disabled={isSubmitting || !cpfInput.trim()}
+   522→            >
+   523→              {isSubmitting ? (
+   524→                <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" />
+   525→              ) : (
+   526→                <Check className="h-4 w-4 mr-1" aria-hidden="true" />
+   527→              )}
+   528→              Confirmar Aprovação
+   529→            </Button>
+   530→          </DialogFooter>
+   531→        </DialogContent>
+   532→      </Dialog>
+   533→
+   534→      {/* L23: Rejection Dialog */}
+   535→      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+   536→        <DialogContent>
+   537→          <DialogHeader>
+   538→            <DialogTitle>Rejeitar Contrato</DialogTitle>
+   539→            <DialogDescription>
+   540→              Informe o motivo da rejeição do contrato de {selectedContrato?.titular?.nomeCompleto || '...'}
+   541→            </DialogDescription>
+   542→          </DialogHeader>
+   543→          <div className="space-y-3 py-2">
+   544→            <div>
+   545→              <label className="block text-xs text-muted-foreground mb-1">Motivo da Rejeição</label>
+   546→              <Textarea
+   547→                value={rejectMotivo}
+   548→                onChange={(e) => {
+   549→                  setRejectMotivo(e.target.value)
+   550→                  setRejectError('')
+   551→                }}
+   552→                placeholder="Descreva o motivo da rejeição..."
+   553→                className="min-h-[100px]"
+   554→                maxLength={1000}
+   555→              />
+   556→              <div className="flex justify-between mt-1">
+   557→                <span className={`text-xs ${
+   558→                  rejectMotivo.trim().length > 0 && rejectMotivo.trim().length < 10
+   559→                    ? 'text-state-error'
+   560→                    : 'text-muted-foreground'
+   561→                }`}>
+   562→                  Mínimo 10 caracteres
+   563→                </span>
+   564→                <span className={`text-xs ${
+   565→                  rejectMotivo.length > 1000 ? 'text-state-error' : 'text-muted-foreground'
+   566→                }`}>
+   567→                  {rejectMotivo.length}/1000
+   568→                </span>
+   569→              </div>
+   570→            </div>
+   571→            {rejectError && (
+   572→              <p className="text-sm text-state-error flex items-center gap-1">
+   573→                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+   574→                {rejectError}
+   575→              </p>
+   576→            )}
+   577→          </div>
+   578→          <DialogFooter>
+   579→            <Button
+   580→              variant="outline"
+   581→              onClick={() => setRejectDialogOpen(false)}
+   582→              disabled={isSubmitting}
+   583→            >
+   584→              Cancelar
+   585→            </Button>
+   586→            <Button
+   587→              variant="destructive"
+   588→              onClick={handleReject}
+   589→              disabled={
+   590→                isSubmitting ||
+   591→                rejectMotivo.trim().length < 10 ||
+   592→                rejectMotivo.trim().length > 1000
+   593→              }
+   594→            >
+   595→              {isSubmitting ? (
+   596→                <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" />
+   597→              ) : (
+   598→                <X className="h-4 w-4 mr-1" aria-hidden="true" />
+   599→              )}
+   600→              Confirmar Rejeição
+   601→            </Button>
+   602→          </DialogFooter>
+   603→        </DialogContent>
+   604→      </Dialog>
+   605→
+   606→      {/* L24: Toast notification */}
+   607→      {toast && (
+   608→        <div
+   609→          className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+   610→            toast.type === 'success' ? 'bg-state-success text-white' : 'bg-state-error text-white'
+   611→          }`}
+   612→          role="alert"
+   613→        >
+   614→          {toast.message}
+   615→        </div>
+   616→      )}
+   617→    </div>
+   618→  )
+   619→}
+   620→

@@ -78,14 +78,14 @@ const ACTION_OPTIONS = [
 ]
 
 const acaoColors: Record<string, string> = {
-  CREATE: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  UPDATE: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  DELETE: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  ESTORNO: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  APROVACAO: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
-  REJEICAO: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
-  CANCELAMENTO: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  SUSPENSAO: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  CREATE: 'bg-state-success/10 text-state-success',
+  UPDATE: 'bg-state-warning/10 text-state-warning',
+  DELETE: 'bg-state-error/10 text-state-error',
+  ESTORNO: 'bg-state-warning/10 text-state-warning',
+  APROVACAO: 'bg-state-success/10 text-state-success',
+  REJEICAO: 'bg-state-error/10 text-state-error',
+  CANCELAMENTO: 'bg-state-error/10 text-state-error',
+  SUSPENSAO: 'bg-state-warning/10 text-state-warning',
 }
 
 const ITEMS_PER_PAGE = 20
@@ -111,12 +111,12 @@ function JsonDiffViewer({ oldVal, newVal }: { oldVal: string | null; newVal: str
     return (
       <div className="flex flex-col sm:flex-row gap-2 text-xs font-mono">
         {oldVal && (
-          <div className="bg-red-50 dark:bg-red-950/30 px-2 py-1 rounded text-red-700 dark:text-red-300 line-through">
+          <div className="bg-state-error/5 px-2 py-1 rounded text-state-error line-through">
             {oldVal}
           </div>
         )}
         {newVal && (
-          <div className="bg-emerald-50 dark:bg-emerald-950/30 px-2 py-1 rounded text-emerald-700 dark:text-emerald-300">
+          <div className="bg-state-success/5 px-2 py-1 rounded text-state-success">
             {newVal}
           </div>
         )}
@@ -141,12 +141,12 @@ function JsonDiffViewer({ oldVal, newVal }: { oldVal: string | null; newVal: str
           <div key={key} className="flex flex-col sm:flex-row gap-1 sm:gap-2">
             <span className="text-muted-foreground w-28 shrink-0 text-xs">{key}:</span>
             {oldV !== undefined && (
-              <span className="bg-red-50 dark:bg-red-950/30 px-1.5 py-0.5 rounded text-red-700 dark:text-red-300 line-through">
+              <span className="bg-state-error/5 px-1.5 py-0.5 rounded text-state-error line-through">
                 {JSON.stringify(oldV)}
               </span>
             )}
             {newV !== undefined && (
-              <span className="bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300">
+              <span className="bg-state-success/5 px-1.5 py-0.5 rounded text-state-success">
                 {JSON.stringify(newV)}
               </span>
             )}

@@ -1,0 +1,811 @@
+     1→'use client'
+     2→
+     3→import { useState } from 'react'
+     4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+     8→import { Input } from '@/components/ui/input'
+     9→import { Label } from '@/components/ui/label'
+    10→import { Textarea } from '@/components/ui/textarea'
+    11→import { Switch } from '@/components/ui/switch'
+    12→import { Checkbox } from '@/components/ui/checkbox'
+    13→import { Separator } from '@/components/ui/separator'
+    14→import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+    15→import { Skeleton } from '@/components/ui/skeleton'
+    16→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+    17→import { Settings, Pencil, ShieldCheck, ShieldAlert, AlertTriangle, FileSearch, Plane, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+    18→import { formatDate } from '@/lib/helpers'
+    19→import { useAppStore } from '@/lib/store'
+    20→import { toast } from 'sonner'
+    21→
+    22→// ─────────────────────────────────────────────────────────
+    23→// Types
+    24→// ─────────────────────────────────────────────────────────
+    25→
+    26→interface ConfigItem {
+    27→  id: string
+    28→  chave: string
+    29→  valor: string
+    30→  tipoParse: string
+    31→  descricao: string
+    32→  updatedAt: string
+    33→}
+    34→
+    35→interface IntegrityResult {
+    36→  timestamp: string
+    37→  resumo: { total: number; ok: number; alertas: number; criticos: number }
+    38→  checks: Array<{
+    39→    nome: string
+    40→    status: 'OK' | 'ALERTA' | 'CRITICO'
+    41→    mensagem: string
+    42→    detalhes: unknown
+    43→  }>
+    44→}
+    45→
+    46→interface AirGapResult {
+    47→  timestamp: string
+    48→  status: 'LIMPO' | 'ALERTA' | 'CRITICO'
+    49→  totalTermosVerificados: number
+    50→  totalViolacoes: number
+    51→  violations: Array<{
+    52→    entidade: string
+    53→    campo: string
+    54→    registroId: string
+    55→    termoEncontrado: string
+    56→    valor: string
+    57→  }>
+    58→}
+    59→
+    60→// ─────────────────────────────────────────────────────────
+    61→// Constants
+    62→// ─────────────────────────────────────────────────────────
+    63→
+    64→const CONFIG_CATEGORIES: Record<string, string[]> = {
+    65→  '🧠 Idades': [
+    66→    'IDADE_LIMITE_TITULAR', 'IDADE_LIMITE_CONJUGE', 'IDADE_LIMITE_DEPENDENTE',
+    67→    'IDADE_COBERTURA_FILHO', 'IDADE_LIMITE_AGREGADO', 'IDADE_LIMITE_SUB_DEPENDENTE',
+    68→    'IDADE_COBERTURA_SUB_FILHO',
+    69→  ],
+    70→  '⏳ Carências': [
+    71→    'DIAS_CARENCIA_ACIDENTAL', 'MESES_CARENCIA_NATURAL', 'MESES_CARENCIA_SUICIDIO',
+    72→  ],
+    73→  '💰 Financeiro': [
+    74→    'MESES_REMISSAO_OBITO_PADRAO', 'DIAS_SUSPENSAO_INADIMPLENCIA', 'SAQUE_PF_ATIVO', 'LIMITE_SAQUE_DIARIO',
+    75→  ],
+    76→  '🔒 Segurança': [
+    77→    'HASH_ASSINATURA_PDF_SALT', 'PREVALENCIA_APIOLICE_SOBRE_CONFIG',
+    78→  ],
+    79→}
+    80→
+    81→const CRITICAL_KEYS = ['PREVALENCIA_APIOLICE_SOBRE_CONFIG', 'HASH_ASSINATURA_PDF_SALT']
+    82→
+    83→const LABEL_MAP: Record<string, string> = {
+    84→  IDADE_LIMITE_TITULAR: 'Idade Máxima do Titular',
+    85→  IDADE_LIMITE_CONJUGE: 'Idade Máxima do Cônjuge',
+    86→  IDADE_LIMITE_DEPENDENTE: 'Idade Máxima do Dependente',
+    87→  IDADE_COBERTURA_FILHO: 'Idade Limite Cobertura Filho',
+    88→  IDADE_LIMITE_AGREGADO: 'Idade Máxima do Agregado',
+    89→  IDADE_LIMITE_SUB_DEPENDENTE: 'Idade Máxima do Sub-Dependente',
+    90→  IDADE_COBERTURA_SUB_FILHO: 'Idade Limite Cobertura Sub-Filho',
+    91→  DIAS_CARENCIA_ACIDENTAL: 'Dias Carência Acidental',
+    92→  MESES_CARENCIA_NATURAL: 'Meses Carência Natural',
+    93→  MESES_CARENCIA_SUICIDIO: 'Meses Carência Suicídio',
+    94→  MESES_REMISSAO_OBITO_PADRAO: 'Meses Remissão Óbito (Padrão)',
+    95→  DIAS_SUSPENSAO_INADIMPLENCIA: 'Dias Suspensão Inadimplência',
+    96→  SAQUE_PF_ATIVO: 'Saque PF Ativo',
+    97→  LIMITE_SAQUE_DIARIO: 'Limite Saque Diário',
+    98→  HASH_ASSINATURA_PDF_SALT: 'Hash Assinatura PDF Salt',
+    99→  PREVALENCIA_APIOLICE_SOBRE_CONFIG: 'Prevalência Apólice sobre Config',
+   100→}
+   101→
+   102→const typeColors: Record<string, string> = {
+   103→  INT: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+   104→  DECIMAL: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
+   105→  BOOLEAN: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+   106→  VARCHAR: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+   107→}
+   108→
+   109→// ─────────────────────────────────────────────────────────
+   110→// Helper: format display value
+   111→// ─────────────────────────────────────────────────────────
+   112→
+   113→function formatDisplayValue(valor: string, tipoParse: string, chave: string): string {
+   114→  if (tipoParse === 'BOOLEAN') {
+   115→    return valor.toLowerCase() === 'true' ? 'Sim' : 'Não'
+   116→  }
+   117→  if (tipoParse === 'INT') {
+   118→    const num = parseInt(valor, 10)
+   119→    if (chave.includes('IDADE') || chave.includes('DIAS') || chave.includes('MESES')) {
+   120→      return `${num}`
+   121→    }
+   122→    return `${num}`
+   123→  }
+   124→  if (tipoParse === 'DECIMAL') {
+   125→    const num = parseFloat(valor)
+   126→    if (chave.includes('LIMITE') || chave.includes('SAQUE')) {
+   127→      return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num)
+   128→    }
+   129→    return `${num}`
+   130→  }
+   131→  return valor
+   132→}
+   133→
+   134→// ─────────────────────────────────────────────────────────
+   135→// Edit Config Dialog
+   136→// ─────────────────────────────────────────────────────────
+   137→
+   138→function EditConfigDialog({
+   139→  config,
+   140→  open,
+   141→  onOpenChange,
+   142→}: {
+   143→  config: ConfigItem | null
+   144→  open: boolean
+   145→  onOpenChange: (open: boolean) => void
+   146→}) {
+   147→  const queryClient = useQueryClient()
+   148→  const [editValue, setEditValue] = useState('')
+   149→  const [motivo, setMotivo] = useState('')
+   150→  const [confirmed, setConfirmed] = useState(false)
+   151→
+   152→  const isCritical = config ? CRITICAL_KEYS.includes(config.chave) : false
+   153→
+   154→  // Reset state when dialog opens
+   155→  const handleOpenChange = (nextOpen: boolean) => {
+   156→    if (nextOpen && config) {
+   157→      setEditValue(config.valor)
+   158→      setMotivo('')
+   159→      setConfirmed(false)
+   160→    }
+   161→    onOpenChange(nextOpen)
+   162→  }
+   163→
+   164→  const updateMutation = useMutation({
+   165→    mutationFn: async () => {
+   166→      if (!config) throw new Error('No config selected')
+   167→
+   168→      const body: Record<string, unknown> = {
+   169→        valor: config.tipoParse === 'BOOLEAN' ? editValue.toLowerCase() : editValue,
+   170→        motivo_alteracao: motivo,
+   171→      }
+   172→      if (isCritical) {
+   173→        body.confirmado = confirmed
+   174→      }
+   175→
+   176→      const res = await fetch(`/api/configuracoes/${encodeURIComponent(config.chave)}`, {
+   177→        method: 'PUT',
+   178→        headers: { 'Content-Type': 'application/json' },
+   179→        body: JSON.stringify(body),
+   180→      })
+   181→
+   182→      if (res.status === 409) {
+   183→        throw new Error('CONFLICT')
+   184→      }
+   185→      if (res.status === 400) {
+   186→        const data = await res.json()
+   187→        throw new Error(data.error || 'VALIDATION_ERROR')
+   188→      }
+   189→      if (!res.ok) {
+   190→        throw new Error('Erro ao atualizar configuração')
+   191→      }
+   192→      return res.json()
+   193→    },
+   194→    onSuccess: () => {
+   195→      queryClient.invalidateQueries({ queryKey: ['configuracoes'] })
+   196→      queryClient.invalidateQueries({ queryKey: ['audit-config'] })
+   197→      toast.success('Configuração atualizada com sucesso')
+   198→      onOpenChange(false)
+   199→    },
+   200→    onError: (error: Error) => {
+   201→      if (error.message === 'CONFLICT') {
+   202→        toast.error('Conflito: configuração foi alterada por outro usuário. Recarregue.')
+   203→        queryClient.invalidateQueries({ queryKey: ['configuracoes'] })
+   204→      } else if (error.message === 'VALIDATION_ERROR') {
+   205→        toast.error(error.message)
+   206→      } else {
+   207→        toast.error(error.message)
+   208→      }
+   209→    },
+   210→  })
+   211→
+   212→  const motivoLength = motivo.length
+   213→  const motivoValid = motivoLength >= 20 && motivoLength <= 500
+   214→  const valueChanged = config ? editValue !== config.valor : false
+   215→  const canSubmit = valueChanged && motivoValid && (!isCritical || confirmed)
+   216→
+   217→  if (!config) return null
+   218→
+   219→  return (
+   220→    <Dialog open={open} onOpenChange={handleOpenChange}>
+   221→      <DialogContent className="sm:max-w-md">
+   222→        <DialogHeader>
+   223→          <DialogTitle className="flex items-center gap-2">
+   224→            <Pencil className="h-4 w-4" aria-hidden="true" />
+   225→            Editar Configuração
+   226→          </DialogTitle>
+   227→          <DialogDescription>
+   228→            Altere o valor da configuração. Todos os cambios são registrados no log de auditoria.
+   229→          </DialogDescription>
+   230→        </DialogHeader>
+   231→
+   232→        <div className="space-y-4 py-2">
+   233→          {/* Config info */}
+   234→          <div className="space-y-2">
+   235→            <div className="flex items-center gap-2">
+   236→              <code className="text-sm font-mono font-semibold text-foreground">{config.chave}</code>
+   237→              <Badge className={typeColors[config.tipoParse] || 'bg-muted text-muted-foreground'}>
+   238→                {config.tipoParse}
+   239→              </Badge>
+   240→            </div>
+   241→            <p className="text-xs text-muted-foreground">{config.descricao}</p>
+   242→          </div>
+   243→
+   244→          <Separator />
+   245→
+   246→          {/* Value input */}
+   247→          <div className="space-y-2">
+   248→            <Label>Valor</Label>
+   249→            {config.tipoParse === 'BOOLEAN' ? (
+   250→              <div className="flex items-center gap-3">
+   251→                <Switch
+   252→                  checked={editValue.toLowerCase() === 'true'}
+   253→                  onCheckedChange={(checked) => setEditValue(checked ? 'true' : 'false')}
+   254→                />
+   255→                <span className="text-sm text-foreground">
+   256→                  {editValue.toLowerCase() === 'true' ? 'Sim' : 'Não'}
+   257→                </span>
+   258→              </div>
+   259→            ) : config.tipoParse === 'INT' || config.tipoParse === 'DECIMAL' ? (
+   260→              <Input
+   261→                type="number"
+   262→                step={config.tipoParse === 'DECIMAL' ? '0.01' : '1'}
+   263→                value={editValue}
+   264→                onChange={(e) => setEditValue(e.target.value)}
+   265→                className="font-mono"
+   266→              />
+   267→            ) : (
+   268→              <Input
+   269→                type="text"
+   270→                value={editValue}
+   271→                onChange={(e) => setEditValue(e.target.value)}
+   272→                className="font-mono"
+   273→              />
+   274→            )}
+   275→          </div>
+   276→
+   277→          {/* Old vs New preview */}
+   278→          {valueChanged && (
+   279→            <div className="rounded-lg border border-border/60 p-3 space-y-1 text-sm">
+   280→              <p className="text-xs font-medium text-muted-foreground mb-2">Prévia da alteração</p>
+   281→              <div className="flex items-center gap-2">
+   282→                <span className="text-xs text-muted-foreground w-14 shrink-0">Antes:</span>
+   283→                <code className="font-mono text-state-error line-through bg-state-error/5 px-1.5 py-0.5 rounded">
+   284→                  {formatDisplayValue(config.valor, config.tipoParse, config.chave)}
+   285→                </code>
+   286→              </div>
+   287→              <div className="flex items-center gap-2">
+   288→                <span className="text-xs text-muted-foreground w-14 shrink-0">Depois:</span>
+   289→                <code className="font-mono text-state-success bg-state-success/5 px-1.5 py-0.5 rounded">
+   290→                  {formatDisplayValue(editValue, config.tipoParse, config.chave)}
+   291→                </code>
+   292→              </div>
+   293→            </div>
+   294→          )}
+   295→
+   296→          {/* Critical key warning */}
+   297→          {isCritical && (
+   298→            <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 space-y-3">
+   299→              <div className="flex items-start gap-2">
+   300→                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" aria-hidden="true" />
+   301→                <p className="text-sm font-medium text-red-800 dark:text-red-300">
+   302→                  ⚠️ Esta é uma chave crítica. A alteração exige confirmação dupla.
+   303→                </p>
+   304→              </div>
+   305→              <div className="flex items-start gap-2">
+   306→                <Checkbox
+   307→                  id="confirm-critical"
+   308→                  checked={confirmed}
+   309→                  onCheckedChange={(checked) => setConfirmed(checked === true)}
+   310→                  className="mt-0.5"
+   311→                />
+   312→                <label htmlFor="confirm-critical" className="text-xs text-red-700 dark:text-red-400 cursor-pointer leading-snug">
+   313→                  Confirmo que compreendo o impacto desta alteração
+   314→                </label>
+   315→              </div>
+   316→            </div>
+   317→          )}
+   318→
+   319→          {/* Motivo da alteração */}
+   320→          <div className="space-y-2">
+   321→            <Label htmlFor="motivo">
+   322→              Motivo da Alteração <span className="text-red-500">*</span>
+   323→            </Label>
+   324→            <Textarea
+   325→              id="motivo"
+   326→              value={motivo}
+   327→              onChange={(e) => setMotivo(e.target.value)}
+   328→              placeholder="Descreva o motivo da alteração (mín. 20 caracteres)..."
+   329→              rows={3}
+   330→              className="resize-none text-sm"
+   331→            />
+   332→            <div className="flex justify-between text-xs">
+   333→              <span className={motivoValid ? 'text-emerald-600' : motivoLength > 0 ? 'text-red-500' : 'text-muted-foreground'}>
+   334→                {motivoLength < 20 ? `Faltam ${20 - motivoLength} caracteres` : motivoLength > 500 ? 'Excedeu o limite de 500 caracteres' : '✓ Tamanho válido'}
+   335→              </span>
+   336→              <span className={`${motivoLength > 500 ? 'text-red-500' : 'text-muted-foreground'}`}>
+   337→                {motivoLength}/500
+   338→              </span>
+   339→            </div>
+   340→          </div>
+   341→        </div>
+   342→
+   343→        <DialogFooter>
+   344→          <Button variant="outline" onClick={() => onOpenChange(false)}>
+   345→            Cancelar
+   346→          </Button>
+   347→          <Button
+   348→            onClick={() => updateMutation.mutate()}
+   349→            disabled={!canSubmit || updateMutation.isPending}
+   350→          >
+   351→            {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+   352→            Salvar Alteração
+   353→          </Button>
+   354→        </DialogFooter>
+   355→      </DialogContent>
+   356→    </Dialog>
+   357→  )
+   358→}
+   359→
+   360→// ─────────────────────────────────────────────────────────
+   361→// Integrity Diagnostics Dialog
+   362→// ─────────────────────────────────────────────────────────
+   363→
+   364→function IntegrityDialog({
+   365→  open,
+   366→  onOpenChange,
+   367→}: {
+   368→  open: boolean
+   369→  onOpenChange: (open: boolean) => void
+   370→}) {
+   371→  const [expandedChecks, setExpandedChecks] = useState<Set<string>>(new Set())
+   372→
+   373→  const integrityQuery = useQuery<IntegrityResult>({
+   374→    queryKey: ['diagnostico-integridade'],
+   375→    queryFn: async () => {
+   376→      const res = await fetch('/api/diagnostico/integridade', { method: 'POST' })
+   377→      if (!res.ok) throw new Error('Erro ao executar diagnóstico')
+   378→      return res.json()
+   379→    },
+   380→    enabled: open,
+   381→  })
+   382→
+   383→  const airgapQuery = useQuery<AirGapResult>({
+   384→    queryKey: ['diagnostico-airgap-clt'],
+   385→    queryFn: async () => {
+   386→      const res = await fetch('/api/diagnostico/airgap-clt', { method: 'POST' })
+   387→      if (!res.ok) throw new Error('Erro ao verificar air-gap CLT')
+   388→      return res.json()
+   389→    },
+   390→    enabled: false, // manually triggered
+   391→  })
+   392→
+   393→  const toggleCheck = (nome: string) => {
+   394→    setExpandedChecks((prev) => {
+   395→      const next = new Set(prev)
+   396→      if (next.has(nome)) next.delete(nome)
+   397→      else next.add(nome)
+   398→      return next
+   399→    })
+   400→  }
+   401→
+   402→  const statusIcon = (status: string) => {
+   403→    switch (status) {
+   404→      case 'OK':
+   405→      case 'LIMPO':
+   406→        return <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+   407→      case 'ALERTA':
+   408→        return <AlertTriangle className="h-4 w-4 text-yellow-600" aria-hidden="true" />
+   409→      case 'CRITICO':
+   410→        return <ShieldAlert className="h-4 w-4 text-red-600" aria-hidden="true" />
+   411→      default:
+   412→        return null
+   413→    }
+   414→  }
+   415→
+   416→  const statusLabel = (status: string) => {
+   417→    switch (status) {
+   418→      case 'OK':
+   419→      case 'LIMPO':
+   420→        return '✅ OK'
+   421→      case 'ALERTA':
+   422→        return '⚠️ ALERTA'
+   423→      case 'CRITICO':
+   424→        return '🔴 CRÍTICO'
+   425→      default:
+   426→        return status
+   427→    }
+   428→  }
+   429→
+   430→  return (
+   431→    <Dialog open={open} onOpenChange={onOpenChange}>
+   432→      <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+   433→        <DialogHeader>
+   434→          <DialogTitle className="flex items-center gap-2">
+   435→            <FileSearch className="h-4 w-4" aria-hidden="true" />
+   436→            Diagnóstico de Integridade
+   437→          </DialogTitle>
+   438→          <DialogDescription>
+   439→            Verificações de integridade do sistema Granpaz
+   440→          </DialogDescription>
+   441→        </DialogHeader>
+   442→
+   443→        {integrityQuery.isLoading ? (
+   444→          <div className="flex items-center justify-center py-12">
+   445→            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+   446→          </div>
+   447→        ) : integrityQuery.error ? (
+   448→          <div className="text-center py-8 text-sm text-red-600">
+   449→            Erro ao executar diagnóstico. Tente novamente.
+   450→          </div>
+   451→        ) : integrityQuery.data ? (
+   452→          <div className="space-y-4">
+   453→            {/* Summary */}
+   454→            <div className="grid grid-cols-3 gap-3">
+   455→              <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-center">
+   456→                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{integrityQuery.data.resumo.ok}</p>
+   457→                <p className="text-xs text-emerald-600 dark:text-emerald-500">OK</p>
+   458→              </div>
+   459→              <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 p-3 text-center">
+   460→                <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{integrityQuery.data.resumo.alertas}</p>
+   461→                <p className="text-xs text-yellow-600 dark:text-yellow-500">Alertas</p>
+   462→              </div>
+   463→              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-center">
+   464→                <p className="text-2xl font-bold text-red-700 dark:text-red-400">{integrityQuery.data.resumo.criticos}</p>
+   465→                <p className="text-xs text-red-600 dark:text-red-500">Críticos</p>
+   466→              </div>
+   467→            </div>
+   468→
+   469→            {/* Checks */}
+   470→            <div className="space-y-2">
+   471→              {integrityQuery.data.checks.map((check) => (
+   472→                <div key={check.nome} className="rounded-lg border border-border/60">
+   473→                  <button
+   474→                    type="button"
+   475→                    className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors"
+   476→                    onClick={() => toggleCheck(check.nome)}
+   477→                    aria-expanded={expandedChecks.has(check.nome)}
+   478→                  >
+   479→                    <div className="flex items-center gap-2 min-w-0">
+   480→                      {statusIcon(check.status)}
+   481→                      <span className="text-sm font-medium text-foreground truncate">{check.nome}</span>
+   482→                    </div>
+   483→                    <div className="flex items-center gap-2 shrink-0 ml-2">
+   484→                      <Badge variant="outline" className="text-xs">
+   485→                        {statusLabel(check.status)}
+   486→                      </Badge>
+   487→                      {expandedChecks.has(check.nome) ? (
+   488→                        <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   489→                      ) : (
+   490→                        <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   491→                      )}
+   492→                    </div>
+   493→                  </button>
+   494→                  <div className={`px-3 pb-3 ${expandedChecks.has(check.nome) ? 'block' : 'hidden'}`}>
+   495→                    <p className="text-xs text-muted-foreground mb-2">{check.mensagem}</p>
+   496→                    {check.detalhes && (
+   497→                      <pre className="text-xs bg-muted/50 rounded p-2 overflow-x-auto font-mono">
+   498→                        {JSON.stringify(check.detalhes, null, 2)}
+   499→                      </pre>
+   500→                    )}
+   501→                  </div>
+   502→                </div>
+   503→              ))}
+   504→            </div>
+   505→
+   506→            <Separator />
+   507→
+   508→            {/* Air-Gap CLT */}
+   509→            <div className="space-y-3">
+   510→              <div className="flex items-center justify-between">
+   511→                <div className="flex items-center gap-2">
+   512→                  <Plane className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   513→                  <span className="text-sm font-medium">Verificação Air-Gap CLT</span>
+   514→                </div>
+   515→                <Button
+   516→                  size="sm"
+   517→                  variant="outline"
+   518→                  onClick={() => airgapQuery.refetch()}
+   519→                  disabled={airgapQuery.isFetching}
+   520→                >
+   521→                  {airgapQuery.isFetching ? (
+   522→                    <Loader2 className="h-3 w-3 animate-spin mr-1" aria-hidden="true" />
+   523→                  ) : null}
+   524→                  Verificar Air-Gap CLT
+   525→                </Button>
+   526→              </div>
+   527→
+   528→              {airgapQuery.data && (
+   529→                <div className={`rounded-lg border p-3 ${
+   530→                  airgapQuery.data.status === 'LIMPO'
+   531→                    ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30'
+   532→                    : airgapQuery.data.status === 'ALERTA'
+   533→                    ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30'
+   534→                    : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30'
+   535→                }`}>
+   536→                  <div className="flex items-center gap-2 mb-1">
+   537→                    {statusIcon(airgapQuery.data.status)}
+   538→                    <span className="text-sm font-medium">
+   539→                      {statusLabel(airgapQuery.data.status)}
+   540→                    </span>
+   541→                  </div>
+   542→                  <p className="text-xs text-muted-foreground">
+   543→                    {airgapQuery.data.totalViolacoes === 0
+   544→                      ? 'Nenhum termo CLT proibido encontrado nos dados do sistema.'
+   545→                      : `${airgapQuery.data.totalViolacoes} violação(ões) encontrada(s) em ${airgapQuery.data.totalTermosVerificados} termos verificados.`}
+   546→                  </p>
+   547→                  {airgapQuery.data.violations.length > 0 && (
+   548→                    <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+   549→                      {airgapQuery.data.violations.map((v, i) => (
+   550→                        <div key={i} className="text-xs bg-background/50 rounded p-2 font-mono">
+   551→                          <span className="text-red-600 dark:text-red-400">{v.entidade}</span>
+   552→                          {' · '}
+   553→                          <span className="text-muted-foreground">{v.campo}</span>
+   554→                          {' · '}
+   555→                          <span className="text-yellow-600 dark:text-yellow-400">&quot;{v.termoEncontrado}&quot;</span>
+   556→                        </div>
+   557→                      ))}
+   558→                    </div>
+   559→                  )}
+   560→                </div>
+   561→              )}
+   562→              {airgapQuery.error && (
+   563→                <p className="text-xs text-red-600">Erro ao verificar air-gap CLT.</p>
+   564→              )}
+   565→            </div>
+   566→          </div>
+   567→        ) : null}
+   568→      </DialogContent>
+   569→    </Dialog>
+   570→  )
+   571→}
+   572→
+   573→// ─────────────────────────────────────────────────────────
+   574→// Config List Item
+   575→// ─────────────────────────────────────────────────────────
+   576→
+   577→function ConfigListItem({
+   578→  config,
+   579→  isSuperAdmin,
+   580→  onEdit,
+   581→}: {
+   582→  config: ConfigItem
+   583→  isSuperAdmin: boolean
+   584→  onEdit: (config: ConfigItem) => void
+   585→}) {
+   586→  return (
+   587→    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/30 gap-2">
+   588→      <div className="flex-1 min-w-0 space-y-1">
+   589→        <div className="flex items-center gap-2 flex-wrap">
+   590→          <span className="text-sm font-semibold text-foreground">
+   591→            {LABEL_MAP[config.chave] || config.chave}
+   592→          </span>
+   593→          <Badge className={`text-[10px] px-1.5 py-0 ${typeColors[config.tipoParse] || 'bg-muted text-muted-foreground'}`}>
+   594→            {config.tipoParse}
+   595→          </Badge>
+   596→          {CRITICAL_KEYS.includes(config.chave) && (
+   597→            <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+   598→              CRÍTICO
+   599→            </Badge>
+   600→          )}
+   601→        </div>
+   602→        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   603→          <code className="font-mono">{config.chave}</code>
+   604→          <span>·</span>
+   605→          <span>{config.descricao}</span>
+   606→        </div>
+   607→        <p className="text-xs text-muted-foreground">
+   608→          Atualizado em {formatDate(config.updatedAt)}
+   609→        </p>
+   610→      </div>
+   611→      <div className="flex items-center gap-3 sm:ml-4">
+   612→        <div className="flex items-center gap-2">
+   613→          {config.tipoParse === 'BOOLEAN' ? (
+   614→            <Badge variant="outline" className="font-mono text-xs">
+   615→              {config.valor.toLowerCase() === 'true' ? '✓ Sim' : '✗ Não'}
+   616→            </Badge>
+   617→          ) : (
+   618→            <code className="text-sm font-mono font-medium text-foreground bg-background/60 px-2 py-0.5 rounded">
+   619→              {formatDisplayValue(config.valor, config.tipoParse, config.chave)}
+   620→            </code>
+   621→          )}
+   622→          {isSuperAdmin && (
+   623→            <Button size="sm" variant="ghost" onClick={() => onEdit(config)} className="h-8 w-8 p-0" aria-label={`Editar ${config.chave}`}>
+   624→              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+   625→            </Button>
+   626→          )}
+   627→        </div>
+   628→      </div>
+   629→    </div>
+   630→  )
+   631→}
+   632→
+   633→// ─────────────────────────────────────────────────────────
+   634→// Main ConfigTab Component
+   635→// ─────────────────────────────────────────────────────────
+   636→
+   637→export function ConfigTab() {
+   638→  const user = useAppStore((s) => s.user)
+   639→  const isSuperAdmin = user?.role === 'SUPERADMIN'
+   640→  const [editConfig, setEditConfig] = useState<ConfigItem | null>(null)
+   641→  const [editDialogOpen, setEditDialogOpen] = useState(false)
+   642→  const [integrityDialogOpen, setIntegrityDialogOpen] = useState(false)
+   643→
+   644→  const { data: configs = [], isLoading } = useQuery<ConfigItem[]>({
+   645→    queryKey: ['configuracoes'],
+   646→    queryFn: async () => {
+   647→      const res = await fetch('/api/configuracoes')
+   648→      if (!res.ok) throw new Error('Erro ao carregar configurações')
+   649→      return res.json()
+   650→    },
+   651→  })
+   652→
+   653→  const handleEdit = (config: ConfigItem) => {
+   654→    setEditConfig(config)
+   655→    setEditDialogOpen(true)
+   656→  }
+   657→
+   658→  // Group configs by category
+   659→  const categorizeConfigs = () => {
+   660→    const categorized: Record<string, ConfigItem[]> = {}
+   661→    const uncategorized: ConfigItem[] = []
+   662→    const assignedKeys: Set<string> = new Set()
+   663→
+   664→    for (const [category, keys] of Object.entries(CONFIG_CATEGORIES)) {
+   665→      categorized[category] = []
+   666→      for (const key of keys) {
+   667→        const config = configs.find((c) => c.chave === key)
+   668→        if (config) {
+   669→          categorized[category].push(config)
+   670→          assignedKeys.add(key)
+   671→        }
+   672→      }
+   673→    }
+   674→
+   675→    // Any configs not assigned to a category
+   676→    for (const config of configs) {
+   677→      if (!assignedKeys.has(config.chave)) {
+   678→        uncategorized.push(config)
+   679→      }
+   680→    }
+   681→
+   682→    return { categorized, uncategorized }
+   683→  }
+   684→
+   685→  const { categorized, uncategorized } = categorizeConfigs()
+   686→
+   687→  return (
+   688→    <div className="animate-fade-up">
+   689→      {/* Header */}
+   690→      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   691→        <div>
+   692→          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-foreground">Configurações</h1>
+   693→          <p className="text-muted-foreground mt-1">Regras de negócio da plataforma</p>
+   694→        </div>
+   695→        {isSuperAdmin && (
+   696→          <Button
+   697→            onClick={() => setIntegrityDialogOpen(true)}
+   698→            variant="outline"
+   699→            className="shrink-0"
+   700→          >
+   701→            <FileSearch className="h-4 w-4 mr-2" aria-hidden="true" />
+   702→            Diagnóstico de Integridade
+   703→          </Button>
+   704→        )}
+   705→      </div>
+   706→
+   707→      {/* Loading */}
+   708→      {isLoading ? (
+   709→        <div className="space-y-4">
+   710→          {Array.from({ length: 4 }).map((_, i) => (
+   711→            <Card key={i} className="border-border/50">
+   712→              <CardHeader>
+   713→                <Skeleton className="h-5 w-32" />
+   714→              </CardHeader>
+   715→              <CardContent className="space-y-3">
+   716→                {Array.from({ length: 3 }).map((_, j) => (
+   717→                  <Skeleton key={j} className="h-16 w-full rounded-lg" />
+   718→                ))}
+   719→              </CardContent>
+   720→            </Card>
+   721→          ))}
+   722→        </div>
+   723→      ) : (
+   724→        <div className="space-y-4">
+   725→          {/* Categorized configs */}
+   726→          <Accordion type="multiple" defaultValue={Object.keys(CONFIG_CATEGORIES)} className="space-y-3">
+   727→            {Object.entries(categorized).map(([category, categoryConfigs]) => {
+   728→              if (categoryConfigs.length === 0) return null
+   729→              return (
+   730→                <AccordionItem key={category} value={category} className="border rounded-lg border-border/50 bg-card">
+   731→                  <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/30 transition-colors">
+   732→                    <div className="flex items-center gap-2">
+   733→                      <Settings className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+   734→                      <CardTitle className="text-base">{category}</CardTitle>
+   735→                      <Badge variant="outline" className="text-xs ml-1">
+   736→                        {categoryConfigs.length}
+   737→                      </Badge>
+   738→                    </div>
+   739→                  </AccordionTrigger>
+   740→                  <AccordionContent className="px-4 pb-4">
+   741→                    <div className="space-y-2">
+   742→                      {categoryConfigs.map((config) => (
+   743→                        <ConfigListItem
+   744→                          key={config.id}
+   745→                          config={config}
+   746→                          isSuperAdmin={isSuperAdmin}
+   747→                          onEdit={handleEdit}
+   748→                        />
+   749→                      ))}
+   750→                    </div>
+   751→                  </AccordionContent>
+   752→                </AccordionItem>
+   753→              )
+   754→            })}
+   755→          </Accordion>
+   756→
+   757→          {/* Uncategorized */}
+   758→          {uncategorized.length > 0 && (
+   759→            <Card className="border-border/50">
+   760→              <CardHeader>
+   761→                <CardTitle className="text-base flex items-center gap-2">
+   762→                  <Settings className="h-4 w-4" aria-hidden="true" />
+   763→                  Outras Configurações ({uncategorized.length})
+   764→                </CardTitle>
+   765→              </CardHeader>
+   766→              <CardContent>
+   767→                <div className="space-y-2">
+   768→                  {uncategorized.map((config) => (
+   769→                    <ConfigListItem
+   770→                      key={config.id}
+   771→                      config={config}
+   772→                      isSuperAdmin={isSuperAdmin}
+   773→                      onEdit={handleEdit}
+   774→                    />
+   775→                  ))}
+   776→                </div>
+   777→              </CardContent>
+   778→            </Card>
+   779→          )}
+   780→
+   781→          {/* Empty state */}
+   782→          {configs.length === 0 && (
+   783→            <Card className="border-border/50">
+   784→              <CardContent className="py-12 text-center">
+   785→                <Settings className="h-8 w-8 text-muted-foreground mx-auto mb-2" aria-hidden="true" />
+   786→                <p className="text-muted-foreground">Nenhuma configuração encontrada</p>
+   787→              </CardContent>
+   788→            </Card>
+   789→          )}
+   790→
+   791→          {/* LGPD compliance note */}
+   792→          <p className="text-xs text-muted-foreground text-center mt-6 px-4">
+   793→            📋 Logs de auditoria são imutáveis e retidos conforme LGPD Art. 37 e SUSEP Circular 666/2022.
+   794→          </p>
+   795→        </div>
+   796→      )}
+   797→
+   798→      {/* Dialogs */}
+   799→      <EditConfigDialog
+   800→        config={editConfig}
+   801→        open={editDialogOpen}
+   802→        onOpenChange={setEditDialogOpen}
+   803→      />
+   804→      <IntegrityDialog
+   805→        open={integrityDialogOpen}
+   806→        onOpenChange={setIntegrityDialogOpen}
+   807→      />
+   808→    </div>
+   809→  )
+   810→}
+   811→
