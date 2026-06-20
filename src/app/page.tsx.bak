@@ -1,0 +1,181 @@
+'use client'
+
+import { useAppStore } from '@/lib/store'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+
+import dynamic from 'next/dynamic'
+
+// Landing (leves — carregamento estático)
+import { Header } from '@/components/landing/header'
+import { HeroSection } from '@/components/landing/hero-section'
+import { StorytellingSection } from '@/components/landing/storytelling-section'
+import { SolutionSection } from '@/components/landing/solution-section'
+import { FaqSection } from '@/components/landing/faq-section'
+import { UrgencySection } from '@/components/landing/urgency-section'
+import { ComplianceFooter } from '@/components/landing/compliance-footer'
+
+// CookieConsent carregado sem SSR para evitar hydration mismatch (localStorage)
+const CookieConsent = dynamic(
+  () => import('@/components/landing/cookie-consent').then(mod => ({ default: mod.CookieConsent })),
+  { ssr: false }
+)
+
+// Checkout — lazy loaded (~1700 linhas)
+const CheckoutFlow = dynamic(
+  () => import('@/components/checkout/checkout-flow').then(mod => ({ default: mod.CheckoutFlow })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const PessoaFisicaForm = dynamic(
+  () => import('@/components/checkout/pessoa-fisica-form').then(mod => ({ default: mod.PessoaFisicaForm })),
+  { ssr: false }
+)
+
+// Auth — lazy loaded
+const LoginModal = dynamic(
+  () => import('@/components/auth/login-modal').then(mod => ({ default: mod.LoginModal })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+
+// Dashboard — lazy loaded (~7200 linhas)
+const DashboardLayout = dynamic(
+  () => import('@/components/dashboard/dashboard-layout').then(mod => ({ default: mod.DashboardLayout })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const OverviewTab = dynamic(
+  () => import('@/components/dashboard/overview-tab').then(mod => ({ default: mod.OverviewTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const ApprovalTab = dynamic(
+  () => import('@/components/dashboard/approval-tab').then(mod => ({ default: mod.ApprovalTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const ContractsTab = dynamic(
+  () => import('@/components/dashboard/contracts-tab').then(mod => ({ default: mod.ContractsTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const FinancialTab = dynamic(
+  () => import('@/components/dashboard/financial-tab').then(mod => ({ default: mod.FinancialTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const NetworkTab = dynamic(
+  () => import('@/components/dashboard/network-tab').then(mod => ({ default: mod.NetworkTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const ClaimsTab = dynamic(
+  () => import('@/components/dashboard/claims-tab').then(mod => ({ default: mod.ClaimsTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const ConfigTab = dynamic(
+  () => import('@/components/dashboard/config-tab').then(mod => ({ default: mod.ConfigTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const AuditTab = dynamic(
+  () => import('@/components/dashboard/audit-tab').then(mod => ({ default: mod.AuditTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+const SeguradorasTab = dynamic(
+  () => import('@/components/dashboard/seguradoras-tab').then(mod => ({ default: mod.SeguradorasTab })),
+  { ssr: false, loading: () => <LoadingSkeleton /> }
+)
+
+function LoadingSkeleton() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="animate-pulse space-y-4 w-full max-w-3xl mx-auto p-6">
+        <div className="h-8 bg-muted rounded w-1/3" />
+        <div className="h-4 bg-muted rounded w-2/3" />
+        <div className="h-4 bg-muted rounded w-1/2" />
+        <div className="h-64 bg-muted rounded" />
+      </div>
+    </div>
+  )
+}
+
+function LandingPage() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* Link para pular para o conteúdo principal (acessibilidade) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md"
+      >
+        Pular para o conteúdo principal
+      </a>
+      <Header />
+      <main id="main-content" className="flex-1">
+        <noscript>
+          <div className="bg-state-warning/10 border border-state-warning/30 text-foreground p-4 text-center text-sm">
+            Habilite o JavaScript para contratar o Plano Granpaz.
+          </div>
+        </noscript>
+        <HeroSection />
+        <StorytellingSection />
+        <SolutionSection />
+        <FaqSection />
+        <UrgencySection />
+      </main>
+      <ComplianceFooter />
+    </div>
+  )
+}
+
+function DashboardContent() {
+  const { currentDashboardTab } = useAppStore()
+
+  // Renderiza apenas a tab ativa — evita carregar todas as tabs de uma vez
+  const renderTab = () => {
+    switch (currentDashboardTab) {
+      case 'approval': return <ApprovalTab />
+      case 'contracts': return <ContractsTab />
+      case 'financial': return <FinancialTab />
+      case 'network': return <NetworkTab />
+      case 'claims': return <ClaimsTab />
+      case 'config': return <ConfigTab />
+      case 'seguradoras': return <SeguradorasTab />
+      case 'audit': return <AuditTab />
+      default: return <OverviewTab />
+    }
+  }
+
+  return (
+    <DashboardLayout>
+      {renderTab()}
+    </DashboardLayout>
+  )
+}
+
+function AppContent() {
+  const { currentView } = useAppStore()
+
+  switch (currentView) {
+    case 'landing':
+      return <LandingPage />
+    case 'checkout':
+      return <CheckoutFlow />
+    case 'login':
+      return <LoginModal />
+    case 'dashboard':
+      return <DashboardContent />
+    default:
+      return <LandingPage />
+  }
+}
+
+export default function Home() {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000,
+        retry: 1,
+      },
+    },
+  }))
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+      <CookieConsent />
+    </QueryClientProvider>
+  )
+}

@@ -146,6 +146,8 @@ export const useAppStore = create<AppStore>((set) => ({
 }))
 
 // Auto-save checkout draft no sessionStorage via subscribe (§4.3)
+// Debounced para evitar escritas excessivas e consumo de memória
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
 useAppStore.subscribe((state, prevState) => {
   if (typeof window === 'undefined') return
   if (
@@ -153,16 +155,19 @@ useAppStore.subscribe((state, prevState) => {
     state.selectedPlanId !== prevState.selectedPlanId ||
     state.checkoutData !== prevState.checkoutData
   ) {
-    try {
-      const draft = {
-        checkoutStep: state.checkoutStep,
-        selectedPlanId: state.selectedPlanId,
-        checkoutData: state.checkoutData,
-        timestamp: Date.now(),
+    if (draftSaveTimer) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      try {
+        const draft = {
+          checkoutStep: state.checkoutStep,
+          selectedPlanId: state.selectedPlanId,
+          checkoutData: state.checkoutData,
+          timestamp: Date.now(),
+        }
+        sessionStorage.setItem('granpaz_checkout_draft', JSON.stringify(draft))
+      } catch {
+        // sessionStorage cheio — falha silenciosa
       }
-      sessionStorage.setItem('granpaz_checkout_draft', JSON.stringify(draft))
-    } catch {
-      // sessionStorage cheio — falha silenciosa
-    }
+    }, 1000) // Debounce de 1 segundo
   }
 })
