@@ -107,15 +107,13 @@ function ComplianceBanner() {
 export function CheckoutFlow() {
   const { checkoutStep, setCheckoutStep, selectedPlanId, setSelectedPlanId, setView, checkoutData, setCheckoutData, resetCheckout, loadDraft } = useAppStore()
 
-  // Restaura draft do sessionStorage na montagem (§4.3)
-  const draftLoaded = useRef(false)
-  if (!draftLoaded.current && typeof window !== 'undefined') {
-    draftLoaded.current = true
+  // Restaura draft do sessionStorage na montagem via useEffect (§4.3)
+  useEffect(() => {
     const restored = loadDraft()
     if (restored) {
       toast.info('Seus dados anteriores foram restaurados.', { duration: 4000 })
     }
-  }
+  }, [loadDraft])
 
   // Monitoramento de inatividade (§4.3) — 15 min aviso, 20 min limpa dados (LGPD)
   const inactivityStarted = useRef(false)
@@ -153,8 +151,9 @@ export function CheckoutFlow() {
   )
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
 
-  // Sheet state for adding vinculos
+  // Sheet state for adding/editing vinculos
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [editingVinculoIndex, setEditingVinculoIndex] = useState<number | null>(null)
   const [addingVinculoType, setAddingVinculoType] = useState<'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE'>('DEPENDENTE')
   const [selectedAgregadoPai, setSelectedAgregadoPai] = useState<string>('')
 
@@ -224,10 +223,22 @@ export function CheckoutFlow() {
       vincData.agregadoPaiNome = paiAgregado?.nomeCompleto || ''
     }
 
-    setVinculos(prev => [...prev, vincData])
-    setCheckoutData({ vinculos: [...vinculos, vincData] })
-    setSheetOpen(false)
-    toast.success(`${VINCULO_LABELS[addingVinculoType]} adicionado com sucesso`)
+    if (editingVinculoIndex !== null) {
+      setVinculos(prev => {
+        const next = [...prev]
+        next[editingVinculoIndex] = vincData
+        setCheckoutData({ vinculos: next })
+        return next
+      })
+      setEditingVinculoIndex(null)
+      setSheetOpen(false)
+      toast.success(`${VINCULO_LABELS[addingVinculoType]} atualizado com sucesso`)
+    } else {
+      setVinculos(prev => [...prev, vincData])
+      setCheckoutData({ vinculos: [...vinculos, vincData] })
+      setSheetOpen(false)
+      toast.success(`${VINCULO_LABELS[addingVinculoType]} adicionado com sucesso`)
+    }
   }
 
   const handleRemoveVinculo = (index: number) => {
@@ -542,6 +553,7 @@ export function CheckoutFlow() {
               <CardContent className="pt-6">
                 <PessoaFisicaForm
                   sessionType="TITULAR"
+                  mode="create"
                   onSubmit={handleTitularSubmit}
                   onCancel={() => setCheckoutStep(0)}
                   initialData={titularData || undefined}
@@ -582,7 +594,30 @@ export function CheckoutFlow() {
             {vinculos.length > 0 && (
               <div className="space-y-3">
                 {vinculos.map((vinc, index) => (
-                  <Card key={index} className="overflow-hidden">
+                  <Card
+                    key={index}
+                    className="overflow-hidden cursor-pointer transition-all hover:border-primary/50 hover:shadow-sm"
+                    onClick={() => {
+                      setAddingVinculoType(vinc.tipoVinculo as 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE')
+                      setEditingVinculoIndex(index)
+                      if (vinc.tipoVinculo === 'SUB_DEPENDENTE' && vinc.agregadoPaiNome) {
+                        setSelectedAgregadoPai(vinc.agregadoPaiNome)
+                      }
+                      setSheetOpen(true)
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setAddingVinculoType(vinc.tipoVinculo as 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE')
+                        setEditingVinculoIndex(index)
+                        if (vinc.tipoVinculo === 'SUB_DEPENDENTE' && vinc.agregadoPaiNome) {
+                          setSelectedAgregadoPai(vinc.agregadoPaiNome)
+                        }
+                        setSheetOpen(true)
+                      }
+                    }}
+                  >
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
@@ -606,7 +641,6 @@ export function CheckoutFlow() {
                             <span>{formatDate(vinc.dataNascimento)}</span>
                             {vinc.cpf && <span className="font-mono">{formatCPF(vinc.cpf)}</span>}
                           </div>
-                          {/* Show sub-dependente info */}
                           {vinc.tipoVinculo === 'SUB_DEPENDENTE' && vinc.agregadoPaiNome && (
                             <p className="text-xs text-muted-foreground mt-1">
                               Sub-dependente de: {vinc.agregadoPaiNome}
@@ -616,7 +650,7 @@ export function CheckoutFlow() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleRemoveVinculo(index)}
+                          onClick={(e) => { e.stopPropagation(); handleRemoveVinculo(index) }}
                           className="text-muted-foreground hover:text-state-error shrink-0"
                           aria-label={`Remover ${vinc.nomeCompleto}`}
                         >
@@ -638,12 +672,12 @@ export function CheckoutFlow() {
                   <span>Agregados: {agregadoCount}/{selectedPlan.maxAgregados}</span>
                 </div>
 
-                <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                <Sheet open={sheetOpen} onOpenChange={(v) => { setSheetOpen(v); if (!v) { setEditingVinculoIndex(null); } }}>
                   <div className="flex flex-wrap gap-3">
                     {/* Add Dependente */}
                     <Button
                       variant="outline"
-                      onClick={() => { setAddingVinculoType('DEPENDENTE'); setSheetOpen(true); }}
+                      onClick={() => { setAddingVinculoType('DEPENDENTE'); setEditingVinculoIndex(null); setSheetOpen(true); }}
                       disabled={dependenteCount >= (selectedPlan.maxDependentes || 8)}
                       className="gap-2"
                     >
@@ -657,7 +691,7 @@ export function CheckoutFlow() {
                     {/* Add Agregado */}
                     <Button
                       variant="outline"
-                      onClick={() => { setAddingVinculoType('AGREGADO'); setSheetOpen(true); }}
+                      onClick={() => { setAddingVinculoType('AGREGADO'); setEditingVinculoIndex(null); setSheetOpen(true); }}
                       disabled={agregadoCount >= (selectedPlan.maxAgregados || 4)}
                       className="gap-2"
                     >
@@ -674,6 +708,7 @@ export function CheckoutFlow() {
                         variant="outline"
                         onClick={() => {
                           setAddingVinculoType('SUB_DEPENDENTE')
+                          setEditingVinculoIndex(null)
                           setSelectedAgregadoPai(eligibleAgregadosForSub[0].nomeCompleto)
                           setSheetOpen(true)
                         }}
@@ -688,13 +723,13 @@ export function CheckoutFlow() {
                   <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
                     <SheetHeader>
                       <SheetTitle className="font-serif">
-                        Adicionar {VINCULO_LABELS[addingVinculoType]}
+                        {editingVinculoIndex !== null ? 'Editar' : 'Adicionar'} {VINCULO_LABELS[addingVinculoType]}
                       </SheetTitle>
                     </SheetHeader>
 
                     <div className="px-4 pb-6 space-y-4">
-                      {/* Sub-dependente: select parent agregado */}
-                      {addingVinculoType === 'SUB_DEPENDENTE' && (
+                      {/* Sub-dependente: select parent agregado (only for add mode) */}
+                      {addingVinculoType === 'SUB_DEPENDENTE' && editingVinculoIndex === null && (
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-1">
                             Agregado responsável *
@@ -718,11 +753,17 @@ export function CheckoutFlow() {
 
                       <PessoaFisicaForm
                         sessionType={addingVinculoType}
+                        mode="create"
                         onSubmit={handleVinculoSubmit}
-                        onCancel={() => setSheetOpen(false)}
+                        onCancel={() => { setSheetOpen(false); setEditingVinculoIndex(null); }}
+                        initialData={editingVinculoIndex !== null ? vinculos[editingVinculoIndex] as unknown as Record<string, unknown> : undefined}
                         agregadoPaiId={addingVinculoType === 'SUB_DEPENDENTE' ? selectedAgregadoPai : undefined}
                         titularData={titularData || undefined}
                         planTipo={selectedPlan?.tipo}
+                        existingCpfs={vinculos
+                          .filter((_, i) => i !== editingVinculoIndex)
+                          .map(v => v.cpf?.replace(/\D/g, ''))
+                          .filter(Boolean) as string[]}
                       />
                     </div>
                   </SheetContent>
@@ -921,6 +962,22 @@ export function CheckoutFlow() {
                 Declaro que compreendo que o Granpaz é um <strong className="text-foreground">Clube de Benefícios</strong> e que a{' '}
                 <strong className="text-foreground">Proteção Funeral é um benefício intrínseco</strong>, não caracterizando venda casada (CDC Art. 39).
               </label>
+            </div>
+
+            {/* Termos de Adesão do Plano de Proteção */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-muted/30 border border-border/30">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Declaro que li e aceito os{' '}
+                <a
+                  href="/termos-de-adesao"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline hover:text-primary/80 font-medium"
+                >
+                  Termos de Adesão do Plano de Proteção
+                </a>
+                .
+              </p>
             </div>
 
             {/* Navigation buttons */}

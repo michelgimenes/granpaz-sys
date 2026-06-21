@@ -33,6 +33,15 @@ export function validateCPF(cpf: string): boolean {
 }
 
 /**
+ * Calculate age from date of birth
+ */
+export function calculateAge(dataNascimento: string | Date): number {
+  const birthDate = new Date(dataNascimento)
+  const hoje = new Date()
+  return Math.floor((hoje.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+}
+
+/**
  * Format currency to BRL
  */
 export function formatCurrency(value: number): string {

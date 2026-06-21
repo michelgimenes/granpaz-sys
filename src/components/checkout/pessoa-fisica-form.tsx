@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { validateCPF, formatCPF, formatPhone, formatCEP } from '@/lib/helpers'
+import { useState, useCallback, useRef } from 'react'
+import { validateCPF, formatCPF, formatPhone, formatCEP, calculateAge } from '@/lib/helpers'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle, Check, Search, Loader2 } from 'lucide-react'
@@ -17,6 +17,8 @@ interface PessoaFisicaFormProps {
   titularData?: Record<string, unknown>
   onCpfFound?: (data: Record<string, unknown>) => void
   planTipo?: string
+  existingCpfs?: string[]
+  mode?: 'create' | 'edit'
 }
 
 const SESSION_CONFIG: Record<SessionType, {
@@ -90,8 +92,11 @@ export function PessoaFisicaForm({
   agregadoPaiId,
   titularData,
   onCpfFound,
+  existingCpfs,
+  mode = 'create',
 }: PessoaFisicaFormProps) {
   const config = SESSION_CONFIG[sessionType]
+  const isEdit = mode === 'edit'
 
   const [form, setForm] = useState({
     nomeCompleto: (initialData?.nomeCompleto as string) || '',
@@ -114,10 +119,13 @@ export function PessoaFisicaForm({
     inheritAddress: true,
   })
 
+  const initialBirthRef = useRef(initialData?.dataNascimento as string || '')
+
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [cpfStatus, setCpfStatus] = useState<'idle' | 'checking' | 'found' | 'not_found' | 'blocked'>('idle')
   const [cpfFoundData, setCpfFoundData] = useState<Record<string, unknown> | null>(null)
   const [showReuseModal, setShowReuseModal] = useState(false)
+  const [idade, setIdade] = useState<number | null>(null)
   const [coverageTag, setCoverageTag] = useState(false)
   const [ageMessage, setAgeMessage] = useState('')
   const [viacepLoading, setViacepLoading] = useState(false)
@@ -130,6 +138,13 @@ export function PessoaFisicaForm({
 
     if (!validateCPF(cpfDigits)) {
       setErrors(prev => ({ ...prev, cpf: 'CPF inválido' }))
+      return
+    }
+
+    // Check against CPFs already used in the current session
+    if (existingCpfs?.includes(cpfDigits)) {
+      setCpfStatus('blocked')
+      setErrors(prev => ({ ...prev, cpf: 'Este CPF já foi cadastrado para outro dependente/agregado nesta contratação' }))
       return
     }
 
@@ -228,14 +243,22 @@ export function PessoaFisicaForm({
     setCoverageTag(false)
     setAgeMessage('')
 
-    if (!value) return
+    if (!value) {
+      setIdade(null)
+      return
+    }
+
+    const calculatedAge = calculateAge(value)
+    setIdade(calculatedAge)
+
+    // RN-02: In edit mode, validate age only if dataNascimento changed from initial
+    if (isEdit && value === initialBirthRef.current) {
+      setErrors(prev => ({ ...prev, dataNascimento: '' }))
+      return
+    }
 
     if (['DEPENDENTE', 'SUB_DEPENDENTE'].includes(sessionType) && form.parentesco === 'FILHO') {
       try {
-        const birthDate = new Date(value)
-        const hoje = new Date()
-        const idade = Math.floor((hoje.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-
         const configRes = await fetch('/api/configuracoes')
         if (configRes.ok) {
           const configs: Array<{ chave: string; valor: string }> = await configRes.json()
@@ -245,11 +268,11 @@ export function PessoaFisicaForm({
           const coverageAge = parseInt(configs.find(c => c.chave === coverageKey)?.valor || '18', 10)
           const limitAge = parseInt(configs.find(c => c.chave === limitKey)?.valor || '21', 10)
 
-          if (idade > limitAge) {
-            setErrors(prev => ({ ...prev, dataNascimento: `Idade ${idade} excede o limite de ${limitAge} anos.` }))
-          } else if (idade > coverageAge) {
+          if (calculatedAge > limitAge) {
+            setErrors(prev => ({ ...prev, dataNascimento: `Idade ${calculatedAge} excede o limite de ${limitAge} anos.` }))
+          } else if (calculatedAge > coverageAge) {
             setCoverageTag(true)
-            setAgeMessage(`SEM DIREITO À PROTEÇÃO: Idade ${idade} excede cobertura (${coverageAge} anos), mas dentro do limite de cadastro (${limitAge} anos).`)
+            setAgeMessage(`SEM DIREITO À PROTEÇÃO: Idade ${calculatedAge} excede cobertura (${coverageAge} anos), mas dentro do limite de cadastro (${limitAge} anos).`)
             setErrors(prev => ({ ...prev, dataNascimento: '' }))
           } else {
             setErrors(prev => ({ ...prev, dataNascimento: '' }))
@@ -259,7 +282,7 @@ export function PessoaFisicaForm({
         // Config fetch failed — don't block, backend will validate
       }
     }
-  }, [sessionType, form.parentesco])
+  }, [sessionType, form.parentesco, isEdit])
 
   // ─── Form validation ───
   const validate = (): boolean => {
@@ -268,9 +291,11 @@ export function PessoaFisicaForm({
     if (!form.nomeCompleto.trim()) newErrors.nomeCompleto = 'Nome completo é obrigatório'
     if (!form.dataNascimento) newErrors.dataNascimento = 'Data de nascimento é obrigatória'
 
-    if (sessionType === 'TITULAR') {
+    if (!isEdit) {
       const cpfDigits = form.cpf.replace(/\D/g, '')
-      if (cpfDigits.length !== 11) {
+      if (cpfDigits.length === 0) {
+        newErrors.cpf = 'CPF é obrigatório'
+      } else if (cpfDigits.length !== 11) {
         newErrors.cpf = 'CPF deve ter 11 dígitos'
       } else if (!validateCPF(cpfDigits)) {
         newErrors.cpf = 'CPF inválido'
@@ -404,51 +429,59 @@ export function PessoaFisicaForm({
         {errors.nomeCompleto && <p id="err-nome" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.nomeCompleto}</p>}
       </div>
 
-      {/* CPF — only for TITULAR and AGREGADO */}
-      {(sessionType === 'TITULAR' || sessionType === 'AGREGADO') && (
+      {/* CPF — obrigatório para todos os tipos */}
+      {(sessionType === 'TITULAR' || sessionType === 'AGREGADO' || sessionType === 'DEPENDENTE' || sessionType === 'SUB_DEPENDENTE') && (
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">
-            CPF {sessionType === 'TITULAR' ? '*' : ''}
+            CPF *
           </label>
           <div className="relative">
             <input
               type="text"
               value={form.cpf}
               onChange={(e) => { updateForm('cpf', formatCPF(e.target.value)); setCpfStatus('idle'); }}
-              onBlur={handleCpfBlur}
-              required={sessionType === 'TITULAR'}
-              className={`${inputClass(errors.cpf)} font-mono pr-10`}
+              onBlur={isEdit ? undefined : handleCpfBlur}
+              disabled={isEdit}
+              required
+              className={`${inputClass(errors.cpf)} font-mono pr-10 ${isEdit ? 'opacity-60 cursor-not-allowed' : ''}`}
               placeholder="000.000.000-00"
               maxLength={14}
-              aria-required={sessionType === 'TITULAR'}
+              aria-required="true"
               aria-invalid={!!errors.cpf}
               aria-describedby={errors.cpf ? 'cpf-error' : undefined}
             />
+            {!isEdit && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
               {cpfStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               {cpfStatus === 'found' && <Check className="h-4 w-4 text-state-success" />}
               {cpfStatus === 'not_found' && <Search className="h-4 w-4 text-muted-foreground" />}
               {cpfStatus === 'blocked' && <AlertCircle className="h-4 w-4 text-state-error" />}
             </div>
+            )}
           </div>
           {errors.cpf && <p id="cpf-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.cpf}</p>}
           {cpfStatus === 'not_found' && !errors.cpf && <p className="text-xs text-muted-foreground mt-1">CPF não encontrado. Preencha os dados manualmente.</p>}
         </div>
       )}
 
-      {/* Data Nascimento */}
+      {/* Data Nascimento + Idade */}
       <div>
         <label className="block text-sm font-medium text-foreground mb-1">Data de Nascimento *</label>
-        <input
-          type="date"
-          required
-          value={form.dataNascimento}
-          onChange={(e) => handleDataNascimentoChange(e.target.value)}
-          className={inputClass(errors.dataNascimento)}
-          aria-required="true"
-          aria-invalid={!!errors.dataNascimento}
-          aria-describedby={errors.dataNascimento ? 'dataNascimento-error' : undefined}
-        />
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            type="date"
+            required
+            value={form.dataNascimento}
+            onChange={(e) => handleDataNascimentoChange(e.target.value)}
+            className={inputClass(errors.dataNascimento)}
+            aria-required="true"
+            aria-invalid={!!errors.dataNascimento}
+            aria-describedby={errors.dataNascimento ? 'dataNascimento-error' : undefined}
+          />
+          <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            {idade !== null ? `${idade} anos` : '—'}
+          </div>
+        </div>
         {errors.dataNascimento && <p id="dataNascimento-error" className="text-xs text-state-error mt-1" role="alert" aria-live="polite">{errors.dataNascimento}</p>}
         {/* RN-06: Coverage tag */}
         {coverageTag && (
@@ -704,10 +737,10 @@ export function PessoaFisicaForm({
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         <Button
           type="submit"
-          disabled={isSubmitting || cpfStatus === 'blocked'}
+          disabled={isSubmitting || (!isEdit && cpfStatus === 'blocked')}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
-          {isSubmitting ? 'Processando...' : 'Confirmar'}
+          {isSubmitting ? 'Processando...' : isEdit ? 'Salvar' : 'Confirmar'}
         </Button>
       </div>
     </form>

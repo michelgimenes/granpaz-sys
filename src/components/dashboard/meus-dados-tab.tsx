@@ -1,14 +1,12 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import {
   Dialog,
   DialogContent,
@@ -35,6 +33,8 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { formatCPF, formatDate, formatPhone, formatCEP } from '@/lib/helpers'
+import { PessoaFisicaForm } from '@/components/checkout/pessoa-fisica-form'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   UserCircle,
   Users,
@@ -149,9 +149,9 @@ const parentescoPorTipo: Record<string, Array<{ value: string; label: string }>>
   ],
 }
 
-// ─── Dialog: Editar Dados Pessoais ───
+// ─── Dialog: Editar Pessoa (Titular/Agregado) com formulário completo ───
 
-function EditDadosDialog({
+function EditPessoaDialog({
   open,
   onOpenChange,
   pessoa,
@@ -162,21 +162,28 @@ function EditDadosDialog({
   pessoa: PessoaFisica
   onSuccess: () => void
 }) {
-  const [form, setForm] = useState({
-    email: pessoa.email ?? '',
-    telefone: pessoa.telefone ?? '',
-    profissao: pessoa.profissao ?? '',
-    genero: pessoa.genero ?? '',
-  })
   const [saving, setSaving] = useState(false)
 
-  const handleSave = async () => {
+  const handleSave = async (data: Record<string, unknown>) => {
     setSaving(true)
     try {
+      const payload: Record<string, string | undefined> = {}
+      const allowedFields = [
+        'nomeCompleto', 'dataNascimento', 'genero', 'estadoCivil', 'profissao',
+        'email', 'telefone',
+        'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+      ]
+      allowedFields.forEach((field) => {
+        const val = data[field]
+        if (val && typeof val === 'string' && val.trim()) {
+          payload[field] = val
+        }
+      })
+
       const res = await fetch(`/api/pessoas-fisicas/${pessoa.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -193,228 +200,27 @@ function EditDadosDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Editar Dados Pessoais</DialogTitle>
-          <DialogDescription>Altere apenas os campos necessários.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="seu@email.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="telefone">Telefone</Label>
-              <Input
-                id="telefone"
-                value={form.telefone}
-                onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-                placeholder="(11) 99999-9999"
-                maxLength={15}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="genero">Gênero</Label>
-              <Select
-                value={form.genero}
-                onValueChange={(v) => setForm({ ...form, genero: v })}
-              >
-                <SelectTrigger id="genero">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {generoOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="profissao">Profissão</Label>
-              <Input
-                id="profissao"
-                value={form.profissao}
-                onChange={(e) => setForm({ ...form, profissao: e.target.value })}
-                placeholder="Sua profissão"
-              />
-            </div>
-          </div>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-serif">Editar Dados Pessoais</SheetTitle>
+        </SheetHeader>
+
+        <div className="px-4 pb-6 space-y-4 mt-4">
+          <PessoaFisicaForm
+            sessionType="TITULAR"
+            mode="edit"
+            onSubmit={handleSave}
+            onCancel={() => onOpenChange(false)}
+            initialData={pessoa as unknown as Record<string, unknown>}
+          />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Salvar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
 
-// ─── Dialog: Editar Endereço ───
 
-function EditEnderecoDialog({
-  open,
-  onOpenChange,
-  pessoa,
-  onSuccess,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  pessoa: PessoaFisica
-  onSuccess: () => void
-}) {
-  const [form, setForm] = useState({
-    cep: pessoa.cep ?? '',
-    logradouro: pessoa.logradouro ?? '',
-    numero: pessoa.numero ?? '',
-    complemento: pessoa.complemento ?? '',
-    bairro: pessoa.bairro ?? '',
-    cidade: pessoa.cidade ?? '',
-    estado: pessoa.estado ?? '',
-  })
-  const [saving, setSaving] = useState(false)
-
-  const handleCepBlur = async () => {
-    const digits = form.cep.replace(/\D/g, '')
-    if (digits.length !== 8) return
-    try {
-      const res = await fetch(`/api/viacep?cep=${digits}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (!data.erro) {
-          setForm((prev) => ({
-            ...prev,
-            logradouro: data.logradouro || prev.logradouro,
-            bairro: data.bairro || prev.bairro,
-            cidade: data.cidade || prev.cidade,
-            estado: data.uf || prev.estado,
-          }))
-        }
-      }
-    } catch {
-      // Silêncio em falha de CEP
-    }
-  }
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/pessoas-fisicas/${pessoa.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Erro ao salvar')
-      }
-      toast.success('Endereço atualizado com sucesso!')
-      onSuccess()
-      onOpenChange(false)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Editar Endereço</DialogTitle>
-          <DialogDescription>Preencha os campos de endereço abaixo.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="edit-cep">CEP</Label>
-            <Input
-              id="edit-cep"
-              value={form.cep}
-              onChange={(e) => setForm({ ...form, cep: e.target.value })}
-              onBlur={handleCepBlur}
-              placeholder="00000-000"
-              maxLength={9}
-            />
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2 space-y-2">
-              <Label htmlFor="edit-logradouro">Logradouro</Label>
-              <Input
-                id="edit-logradouro"
-                value={form.logradouro}
-                onChange={(e) => setForm({ ...form, logradouro: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-numero">Número</Label>
-              <Input
-                id="edit-numero"
-                value={form.numero}
-                onChange={(e) => setForm({ ...form, numero: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-complemento">Complemento</Label>
-              <Input
-                id="edit-complemento"
-                value={form.complemento}
-                onChange={(e) => setForm({ ...form, complemento: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-bairro">Bairro</Label>
-              <Input
-                id="edit-bairro"
-                value={form.bairro}
-                onChange={(e) => setForm({ ...form, bairro: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-cidade">Cidade</Label>
-              <Input
-                id="edit-cidade"
-                value={form.cidade}
-                onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-estado">UF</Label>
-              <Input
-                id="edit-estado"
-                value={form.estado}
-                onChange={(e) => setForm({ ...form, estado: e.target.value })}
-                maxLength={2}
-                className="uppercase"
-              />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Salvar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // ─── Dialog: Alterar Estado Civil ───
 
@@ -501,25 +307,22 @@ function EstadoCivilDialog({
   )
 }
 
-// ─── Dialog: Editar Vínculo ───
+// ─── Dialog: Editar Vínculo (via PessoaFisicaForm) ───
 
 function EditVinculoDialog({
   open,
   onOpenChange,
   vinculo,
   onSuccess,
+  titularData,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   vinculo: Vinculo | null
   onSuccess: () => void
+  titularData?: Record<string, unknown>
 }) {
-  const [form, setForm] = useState<Record<string, string>>({
-    email: '', telefone: '', genero: '', profissao: '', estadoCivil: '',
-    cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
-  })
   const [saving, setSaving] = useState(false)
-  const [loaded, setLoaded] = useState(false)
 
   const { data: pessoaData, isLoading } = useQuery({
     queryKey: ['edit-vinculo-pessoa', vinculo?.pessoaVinculada.id],
@@ -532,74 +335,20 @@ function EditVinculoDialog({
     enabled: !!vinculo && open,
   })
 
-  const resetForm = useCallback(() => {
-    setForm({
-      email: '', telefone: '', genero: '', profissao: '', estadoCivil: '',
-      cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
-    })
-    setLoaded(false)
-  }, [])
-
-  useEffect(() => {
-    if (pessoaData && !loaded) {
-      setForm({
-        email: pessoaData.email ?? '',
-        telefone: pessoaData.telefone ?? '',
-        genero: pessoaData.genero ?? '',
-        profissao: pessoaData.profissao ?? '',
-        estadoCivil: pessoaData.estadoCivil ?? '',
-        cep: pessoaData.cep ?? '',
-        logradouro: pessoaData.logradouro ?? '',
-        numero: pessoaData.numero ?? '',
-        complemento: pessoaData.complemento ?? '',
-        bairro: pessoaData.bairro ?? '',
-        cidade: pessoaData.cidade ?? '',
-        estado: pessoaData.estado ?? '',
-      })
-      setLoaded(true)
-    }
-  }, [pessoaData, loaded])
-
-  const handleCepBlur = async () => {
-    const digits = form.cep.replace(/\D/g, '')
-    if (digits.length !== 8) return
-    try {
-      const res = await fetch(`/api/viacep?cep=${digits}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (!data.erro) {
-          setForm((prev) => ({
-            ...prev,
-            logradouro: data.logradouro || prev.logradouro,
-            bairro: data.bairro || prev.bairro,
-            cidade: data.cidade || prev.cidade,
-            estado: data.uf || prev.estado,
-          }))
-        }
-      }
-    } catch { /* Silêncio */ }
-  }
-
-  const handleSave = async () => {
+  const handleSave = async (data: Record<string, unknown>) => {
     if (!vinculo) return
     setSaving(true)
     try {
-      const payload: Record<string, string | undefined> = {
-        email: form.email || undefined,
-        telefone: form.telefone || undefined,
-        genero: form.genero || undefined,
-        profissao: form.profissao || undefined,
-        estadoCivil: form.estadoCivil || undefined,
-        cep: form.cep || undefined,
-        logradouro: form.logradouro || undefined,
-        numero: form.numero || undefined,
-        complemento: form.complemento || undefined,
-        bairro: form.bairro || undefined,
-        cidade: form.cidade || undefined,
-        estado: form.estado || undefined,
-      }
-      Object.keys(payload).forEach((k) => {
-        if (!payload[k]) delete payload[k]
+      const payload: Record<string, string | undefined> = {}
+      const allowedFields = [
+        'email', 'telefone', 'genero', 'profissao', 'estadoCivil',
+        'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+      ]
+      allowedFields.forEach((field) => {
+        const val = data[field]
+        if (val && typeof val === 'string' && val.trim()) {
+          payload[field] = val
+        }
       })
 
       const res = await fetch(`/api/pessoas-fisicas/${vinculo.pessoaVinculada.id}`, {
@@ -621,114 +370,40 @@ function EditVinculoDialog({
     }
   }
 
-  const isAgregado = vinculo?.tipoVinculo === 'AGREGADO'
+  const tipoVinculo = vinculo?.tipoVinculo as 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE' | undefined
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Editar {vinculo ? tipoVinculoLabel[vinculo.tipoVinculo] ?? 'Vínculo' : 'Vínculo'}</DialogTitle>
-          <DialogDescription>
-            {vinculo ? `Alterando dados de ${vinculo.pessoaVinculada.nomeCompleto}.` : 'Carregando...'}
-          </DialogDescription>
-        </DialogHeader>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="space-y-4 py-2">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>E-mail</Label>
-                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@exemplo.com" />
-              </div>
-              <div className="space-y-2">
-                <Label>Telefone</Label>
-                <Input value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="(11) 99999-9999" maxLength={15} />
-              </div>
-              <div className="space-y-2">
-                <Label>Gênero</Label>
-                <Select value={form.genero} onValueChange={(v) => setForm({ ...form, genero: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    {generoOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {isAgregado && (
-                <div className="space-y-2">
-                  <Label>Profissão</Label>
-                  <Input value={form.profissao} onChange={(e) => setForm({ ...form, profissao: e.target.value })} placeholder="Profissão" />
-                </div>
-              )}
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-serif">
+            Editar {vinculo ? tipoVinculoLabel[vinculo.tipoVinculo] ?? 'Vínculo' : 'Vínculo'}
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="px-4 pb-6 space-y-4 mt-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-            {isAgregado && (
-              <div className="space-y-2">
-                <Label>Estado Civil</Label>
-                <Select value={form.estadoCivil} onValueChange={(v) => setForm({ ...form, estadoCivil: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    {estadoCivilOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {isAgregado && <Separator />}
-            {isAgregado && (
-              <>
-                <p className="text-sm font-medium text-foreground">Endereço</p>
-                <div className="space-y-2">
-                  <Label>CEP</Label>
-                  <Input value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} placeholder="00000-000" maxLength={9} />
-                </div>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2 space-y-2">
-                    <Label>Logradouro</Label>
-                    <Input value={form.logradouro} onChange={(e) => setForm({ ...form, logradouro: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Número</Label>
-                    <Input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Complemento</Label>
-                    <Input value={form.complemento} onChange={(e) => setForm({ ...form, complemento: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bairro</Label>
-                    <Input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Cidade</Label>
-                    <Input value={form.cidade} onChange={(e) => setForm({ ...form, cidade: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>UF</Label>
-                    <Input value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} maxLength={2} className="uppercase" />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving || isLoading}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Salvar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          ) : (
+            <PessoaFisicaForm
+              sessionType={tipoVinculo || 'DEPENDENTE'}
+              mode="edit"
+              onSubmit={handleSave}
+              onCancel={() => onOpenChange(false)}
+              initialData={pessoaData as unknown as Record<string, unknown> | undefined}
+              titularData={titularData}
+              planTipo="FAMILIAR"
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }
 
-// ─── Dialog: Adicionar Vínculo ───
+// ─── Dialog: Adicionar Vínculo (via PessoaFisicaForm) ───
 
 function AddVinculoDialog({
   open,
@@ -737,6 +412,7 @@ function AddVinculoDialog({
   tipoVinculo,
   onSuccess,
   eligibleAgregados = [],
+  titularData,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -744,66 +420,13 @@ function AddVinculoDialog({
   tipoVinculo: 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE'
   onSuccess: () => void
   eligibleAgregados?: Vinculo[]
+  titularData?: Record<string, unknown>
 }) {
-  const parentescoOptions = parentescoPorTipo[tipoVinculo] ?? []
-  const [form, setForm] = useState<Record<string, string>>({
-    nomeCompleto: '',
-    dataNascimento: '',
-    cpf: '',
-    parentesco: '',
-    genero: '',
-    estadoCivil: '',
-    profissao: '',
-    email: '',
-    telefone: '',
-    cep: '',
-    logradouro: '',
-    numero: '',
-    complemento: '',
-    bairro: '',
-    cidade: '',
-    estado: '',
-    agregadoPaiId: '',
-  })
   const [saving, setSaving] = useState(false)
+  const [selectedAgregadoPai, setSelectedAgregadoPai] = useState('')
 
-  const resetForm = () => {
-    setForm({
-      nomeCompleto: '', dataNascimento: '', cpf: '', parentesco: '',
-      genero: '', estadoCivil: '', profissao: '', email: '', telefone: '',
-      cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
-      agregadoPaiId: '',
-    })
-  }
-
-  const handleCepBlur = async () => {
-    const digits = form.cep.replace(/\D/g, '')
-    if (digits.length !== 8) return
-    try {
-      const res = await fetch(`/api/viacep?cep=${digits}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (!data.erro) {
-          setForm((prev) => ({
-            ...prev,
-            logradouro: data.logradouro || prev.logradouro,
-            bairro: data.bairro || prev.bairro,
-            cidade: data.cidade || prev.cidade,
-            estado: data.uf || prev.estado,
-          }))
-        }
-      }
-    } catch {
-      // Silêncio
-    }
-  }
-
-  const handleSubmit = async () => {
-    if (!form.nomeCompleto || !form.dataNascimento || !form.parentesco) {
-      toast.error('Preencha nome, data de nascimento e parentesco.')
-      return
-    }
-    if (tipoVinculo === 'SUB_DEPENDENTE' && !form.agregadoPaiId) {
+  const handleSubmit = async (data: Record<string, unknown>) => {
+    if (tipoVinculo === 'SUB_DEPENDENTE' && !selectedAgregadoPai) {
       toast.error('Selecione o agregado responsável.')
       return
     }
@@ -811,13 +434,12 @@ function AddVinculoDialog({
     setSaving(true)
     try {
       const payload = {
-        ...form,
+        ...data,
         tipoVinculo,
-        estadoCivil: form.estadoCivil || 'SOLTEIRO',
+        agregadoPaiId: tipoVinculo === 'SUB_DEPENDENTE' ? selectedAgregadoPai : undefined,
       }
-      // Limpar campos vazios
       Object.keys(payload).forEach((k) => {
-        if (payload[k] === '') payload[k] = undefined
+        if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k]
       })
 
       const res = await fetch(`/api/pessoas-fisicas/${titularId}/vinculos`, {
@@ -830,7 +452,6 @@ function AddVinculoDialog({
         throw new Error(err.error || 'Erro ao adicionar')
       }
       toast.success(`${tipoVinculoLabel[tipoVinculo]} adicionado com sucesso!`)
-      resetForm()
       onSuccess()
       onOpenChange(false)
     } catch (err: unknown) {
@@ -840,227 +461,45 @@ function AddVinculoDialog({
     }
   }
 
-  const needsEndereco = tipoVinculo === 'AGREGADO'
-  const needsContato = tipoVinculo === 'AGREGADO'
-  const needsProfissao = tipoVinculo === 'AGREGADO'
-  const needsEstadoCivil = tipoVinculo === 'AGREGADO'
-
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Adicionar {tipoVinculoLabel[tipoVinculo]}</DialogTitle>
-          <DialogDescription>
-            Preencha os dados do novo {tipoVinculoLabel[tipoVinculo].toLowerCase()}.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label>Nome Completo *</Label>
-            <Input
-              value={form.nomeCompleto}
-              onChange={(e) => setForm({ ...form, nomeCompleto: e.target.value })}
-              placeholder="Nome completo"
-            />
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Data de Nascimento *</Label>
-              <Input
-                type="date"
-                value={form.dataNascimento}
-                onChange={(e) => setForm({ ...form, dataNascimento: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Parentesco *</Label>
-              <Select
-                value={form.parentesco}
-                onValueChange={(v) => setForm({ ...form, parentesco: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {parentescoOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>CPF</Label>
-              <Input
-                value={form.cpf}
-                onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                placeholder="000.000.000-00"
-                maxLength={14}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Gênero</Label>
-              <Select
-                value={form.genero}
-                onValueChange={(v) => setForm({ ...form, genero: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {generoOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+    <Sheet open={open} onOpenChange={(v) => { if (!v) { onOpenChange(v); setSelectedAgregadoPai('') } }}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-serif">Adicionar {tipoVinculoLabel[tipoVinculo]}</SheetTitle>
+        </SheetHeader>
 
+        <div className="px-4 pb-6 space-y-4 mt-4">
+          {/* Sub-dependente: select parent agregado */}
           {tipoVinculo === 'SUB_DEPENDENTE' && eligibleAgregados.length > 0 && (
-            <div className="space-y-2">
-              <Label>Agregado Responsável *</Label>
-              <Select
-                value={form.agregadoPaiId}
-                onValueChange={(v) => setForm({ ...form, agregadoPaiId: v })}
-              >
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Agregado responsável *
+              </label>
+              <Select value={selectedAgregadoPai} onValueChange={setSelectedAgregadoPai}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o agregado" />
                 </SelectTrigger>
                 <SelectContent>
                   {eligibleAgregados.map((ag) => (
-                    <SelectItem key={ag.id} value={ag.pessoaVinculada.id}>{ag.pessoaVinculada.nomeCompleto}</SelectItem>
+                    <SelectItem key={ag.id} value={ag.pessoaVinculada.id}>
+                      {ag.pessoaVinculada.nomeCompleto}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          {needsEstadoCivil && (
-            <div className="space-y-2">
-              <Label>Estado Civil</Label>
-              <Select
-                value={form.estadoCivil}
-                onValueChange={(v) => setForm({ ...form, estadoCivil: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {estadoCivilOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {needsProfissao && (
-            <div className="space-y-2">
-              <Label>Profissão *</Label>
-              <Input
-                value={form.profissao}
-                onChange={(e) => setForm({ ...form, profissao: e.target.value })}
-                placeholder="Profissão"
-              />
-            </div>
-          )}
-
-          {needsContato && (
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>E-mail *</Label>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="email@exemplo.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Telefone *</Label>
-                <Input
-                  value={form.telefone}
-                  onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-                  placeholder="(11) 99999-9999"
-                  maxLength={15}
-                />
-              </div>
-            </div>
-          )}
-
-          {needsEndereco && (
-            <>
-              <Separator />
-              <p className="text-sm font-medium text-foreground">Endereço do Agregado</p>
-              <div className="space-y-2">
-                <Label>CEP *</Label>
-                <Input
-                  value={form.cep}
-                  onChange={(e) => setForm({ ...form, cep: e.target.value })}
-                  onBlur={handleCepBlur}
-                  placeholder="00000-000"
-                  maxLength={9}
-                />
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2 space-y-2">
-                  <Label>Logradouro *</Label>
-                  <Input
-                    value={form.logradouro}
-                    onChange={(e) => setForm({ ...form, logradouro: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Número</Label>
-                  <Input
-                    value={form.numero}
-                    onChange={(e) => setForm({ ...form, numero: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Complemento</Label>
-                  <Input
-                    value={form.complemento}
-                    onChange={(e) => setForm({ ...form, complemento: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bairro *</Label>
-                  <Input
-                    value={form.bairro}
-                    onChange={(e) => setForm({ ...form, bairro: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cidade *</Label>
-                  <Input
-                    value={form.cidade}
-                    onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>UF *</Label>
-                  <Input
-                    value={form.estado}
-                    onChange={(e) => setForm({ ...form, estado: e.target.value })}
-                    maxLength={2}
-                    className="uppercase"
-                  />
-                </div>
-              </div>
-            </>
-          )}
+          <PessoaFisicaForm
+            sessionType={tipoVinculo}
+            onSubmit={handleSubmit}
+            onCancel={() => { onOpenChange(false); setSelectedAgregadoPai('') }}
+            titularData={titularData}
+            planTipo="FAMILIAR"
+          />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false) }} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSubmit} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Adicionar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -1381,16 +820,9 @@ export function MeusDadosTab() {
       )}
 
       {/* Dialogs */}
-      <EditDadosDialog
-        open={editDadosOpen}
-        onOpenChange={setEditDadosOpen}
-        pessoa={pessoa}
-        onSuccess={refreshData}
-      />
-
-      <EditEnderecoDialog
-        open={editEnderecoOpen}
-        onOpenChange={setEditEnderecoOpen}
+      <EditPessoaDialog
+        open={editDadosOpen || editEnderecoOpen}
+        onOpenChange={(v) => { if (!v) { setEditDadosOpen(false); setEditEnderecoOpen(false) } }}
         pessoa={pessoa}
         onSuccess={refreshData}
       />
@@ -1410,6 +842,7 @@ export function MeusDadosTab() {
         tipoVinculo={addVinculoTipo}
         onSuccess={refreshData}
         eligibleAgregados={addVinculoTipo === 'SUB_DEPENDENTE' ? eligibleAgregadosForSub : []}
+        titularData={pessoa as unknown as Record<string, unknown>}
       />
 
       <EditVinculoDialog
@@ -1417,6 +850,7 @@ export function MeusDadosTab() {
         onOpenChange={(v) => { if (!v) setEditVinculoId(null) }}
         vinculo={vinculos.find((v) => v.id === editVinculoId) ?? null}
         onSuccess={refreshData}
+        titularData={pessoa as unknown as Record<string, unknown>}
       />
 
       {/* Confirmar Remoção */}
