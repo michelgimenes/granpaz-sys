@@ -25,19 +25,20 @@ import { useState } from 'react'
 
 const navItems: Array<{ id: DashboardTab; label: string; icon: React.ElementType; roles: string[] }> = [
   { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard, roles: ['SUPERADMIN', 'SUPERVISOR', 'FINANCEIRO', 'SUPORTE', 'CLIENTE'] },
-  { id: 'approval', label: 'Aprovações', icon: CheckSquare, roles: ['SUPERADMIN', 'SUPERVISOR'] },
-  { id: 'contracts', label: 'Contratos', icon: FileText, roles: ['SUPERADMIN', 'SUPERVISOR', 'SUPORTE'] },
+  { id: 'approval', label: 'Aprovações', icon: CheckSquare, roles: ['SUPERADMIN'] },
+  { id: 'contracts', label: 'Contratos', icon: FileText, roles: ['SUPERADMIN', 'SUPORTE'] },
   { id: 'financial', label: 'Financeiro', icon: Wallet, roles: ['SUPERADMIN', 'FINANCEIRO'] },
   { id: 'network', label: 'Rede / Patrocínio', icon: Network, roles: ['SUPERADMIN', 'SUPERVISOR'] },
-  { id: 'claims', label: 'Sinistros', icon: AlertTriangle, roles: ['SUPERADMIN', 'SUPERVISOR', 'SUPORTE'] },
+  { id: 'claims', label: 'Sinistros', icon: AlertTriangle, roles: ['SUPERADMIN', 'SUPORTE'] },
   { id: 'config', label: 'Configurações', icon: Settings, roles: ['SUPERADMIN'] },
   { id: 'seguradoras', label: 'Seguradoras', icon: Building2, roles: ['SUPERADMIN'] },
+  { id: 'usuarios', label: 'Usuários', icon: UserCircle, roles: ['SUPERADMIN'] },
   { id: 'audit', label: 'Auditoria', icon: ScrollText, roles: ['SUPERADMIN'] },
-  // ─── Itens exclusivos do perfil CLIENTE ───
-  { id: 'meus-dados', label: 'Meus Dados', icon: UserCircle, roles: ['CLIENTE'] },
-  { id: 'meu-plano', label: 'Meu Plano', icon: Home, roles: ['CLIENTE'] },
-  { id: 'minha-carteira', label: 'Minha Carteira', icon: HandCoins, roles: ['CLIENTE'] },
-  { id: 'minhas-indicacoes', label: 'Minhas Indicações', icon: UserPlus, roles: ['CLIENTE'] },
+  // ─── Itens do perfil CLIENTE (compartilhados com SUPERVISOR) ───
+  { id: 'meus-dados', label: 'Meus Dados', icon: UserCircle, roles: ['CLIENTE', 'SUPERVISOR'] },
+  { id: 'meu-plano', label: 'Meu Plano', icon: Home, roles: ['CLIENTE', 'SUPERVISOR'] },
+  { id: 'minha-carteira', label: 'Minha Carteira', icon: HandCoins, roles: ['CLIENTE', 'SUPERVISOR'] },
+  { id: 'minhas-indicacoes', label: 'Minhas Indicações', icon: UserPlus, roles: ['CLIENTE', 'SUPERVISOR'] },
 ]
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {

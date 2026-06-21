@@ -43,6 +43,10 @@ const SeguradorasTab = dynamic(
   () => import('@/components/dashboard/seguradoras-tab').then(mod => ({ default: mod.SeguradorasTab })),
   { ssr: false }
 )
+const UsuariosTab = dynamic(
+  () => import('@/components/dashboard/usuarios-tab').then(mod => ({ default: mod.UsuariosTab })),
+  { ssr: false }
+)
 
 // ─── Novos componentes para o perfil CLIENTE ───
 const MeusDadosTab = dynamic(
@@ -66,6 +70,7 @@ export function DashboardContent() {
       case 'claims': return <ClaimsTab />
       case 'config': return <ConfigTab />
       case 'seguradoras': return <SeguradorasTab />
+      case 'usuarios': return <UsuariosTab />
       case 'audit': return <AuditTab />
       case 'meus-dados': return <MeusDadosTab />
       case 'meu-plano': return <MeuPlanoTab />

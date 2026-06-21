@@ -244,7 +244,7 @@ function AdminOverview() {
 export function OverviewTab() {
   const { user, activeProfile } = useAppStore()
   const profile = activeProfile ?? user?.role
-  const isCliente = profile === 'CLIENTE'
+  const isCliente = profile === 'CLIENTE' || profile === 'SUPERVISOR'
 
   return (
     <div className="animate-fade-up">

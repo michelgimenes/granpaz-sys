@@ -133,7 +133,7 @@
 
 ✅ **Diretrizes de Isolamento de Funções**
 ├── [ ] **SuperAdmin:** Fila de Aprovação, CRUD Seguradoras/Regras, Gestão de Rede, Financeiro Global, Logs de Anonimização
-├── [ ] **Supervisor:** Mesmo acesso de Cliente/Revendedor, mais Visão Hierárquica e Auxílio Cadastral (Sem acesso a Aprovação/Financeiro/Configurações Globais)
+├── [ ] **Supervisor:** Acesso igual ao Cliente/Revendedor (meus dados, meu plano, minha carteira, minhas indicações), mais Visão Hierárquica da Rede/Patrocínio e Auxílio Cadastral. Sem acesso a: Aprovação, Contratos de Terceiros, Sinistros, Financeiro, Configurações Globais, Seguradoras ou Auditoria
 ├── [ ] **Financeiro:** Contas a Pagar, Inadimplência, Reconciliation, Aprovação de Saques > Limite, Gestão de Saldo Devedor (Sem acesso a Dados Cadastrais/Saúde/Cláusulas)
 ├── [ ] **Técnico/Suporte:** Correção Cadastral (Sem trava de idade exceto data_nasc), Logs, Diagnóstico (Sem acesso a Financeiro/Aprovação)
 └── [ ] **Cliente/Revendedor:** Dashboard, Autogestão, Indicações, Abatimento de Parcelas, Solicitação de Saque (Sem acesso a dados de terceiros)

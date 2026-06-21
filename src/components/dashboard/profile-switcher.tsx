@@ -20,7 +20,7 @@ const profiles = [
   {
     value: 'SUPERVISOR',
     label: 'Supervisor',
-    description: 'Visão hierárquica, auxílio cadastral, contratos, rede',
+    description: 'Acesso de cliente + visão hierárquica e rede (sem aprovação/sinistros/contratos)',
     icon: Users,
   },
   {

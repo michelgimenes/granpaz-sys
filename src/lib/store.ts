@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type View = 'landing' | 'checkout' | 'login' | 'dashboard'
-export type DashboardTab = 'overview' | 'approval' | 'contracts' | 'financial' | 'network' | 'claims' | 'config' | 'audit' | 'seguradoras' | 'meus-dados' | 'meu-plano' | 'minha-carteira' | 'minhas-indicacoes'
+export type DashboardTab = 'overview' | 'approval' | 'contracts' | 'financial' | 'network' | 'claims' | 'config' | 'audit' | 'seguradoras' | 'usuarios' | 'meus-dados' | 'meu-plano' | 'minha-carteira' | 'minhas-indicacoes'
 
 export interface User {
   id: string

@@ -217,7 +217,33 @@ Componente agnóstico que encapsula `Input`, `Select`, `DatePicker` e `MaskedInp
 │   └── Clicar na linha -> Navega para `/admin/aprovacao/:id`.
 ├── **Regra de Negócio:** A tabela **não** exibe dados clínicos ou de saúde. Exibe apenas dados cadastrais e financeiros do clube.
 
-### 3.5 Backoffice: Detalhe do Contrato (`/admin/aprovacao/:id`)
+### 3.5 Backoffice: Gestão de Usuários (`Usuários Tab`)
+
+```
+├── **Propósito:** SUPERADMIN gerencia usuários do sistema (CRUD + perfis).
+├── **Permissões:** `SUPERADMIN` apenas.
+├── **Estrutura:
+│   ├── **Header:** Título "Usuários" + Botão "Novo Usuário"
+│   ├── **Filtros:** Input de busca (nome/email) + Select role + Select status
+│   └── **Data Table:** Nome | Email | Perfil (Badge) | Status (Badge) | Criado em | Ações
+├── **Ações por linha:**
+│   ├── Editar (Sheet lateral com formulário)
+│   ├── Ativar/Desativar (toggle via PATCH)
+│   └── Resetar Senha (confirm dialog → exibe nova senha)
+├── **Sheet (Criar Usuário):**
+│   ├── Nome (input text)
+│   ├── Email (input email)
+│   ├── Perfil (select: SUPERADMIN/SUPERVISOR/FINANCEIRO/SUPORTE/CLIENTE)
+│   ├── Senha (input password — apenas create)
+│   └── Botões: Cancelar | Criar/Atualizar
+├── **Regra de Negócio:** Bloqueio de auto-desativação.
+└── **Estados:**
+    ├── **Loading:** Spinner centralizado
+    ├── **Empty:** "Nenhum usuário encontrado" com ilustração
+    └── **Error:** Toast de erro com mensagem da API
+```
+
+### 3.6 Backoffice: Detalhe do Contrato (`/admin/aprovacao/:id`)
 ├── **Propósito:** Aprovar/Rejeitar contrato e definir Capital Segurado.
 ├── **Estrutura:**
 │   ├── **Left Panel:** Árvore hierárquica de vínculos (Titular -> Dependentes/Agregados).

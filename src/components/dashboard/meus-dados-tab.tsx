@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -33,7 +33,8 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { formatCPF, formatDate, formatPhone, formatCEP } from '@/lib/helpers'
-import { PessoaFisicaForm } from '@/components/checkout/pessoa-fisica-form'
+import { DadosPessoaisForm, type DadosPessoaisFormHandle } from '@/components/checkout/dados-pessoais-form'
+import { EnderecoForm, type EnderecoFormHandle } from '@/components/checkout/endereco-form'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   UserCircle,
@@ -149,7 +150,7 @@ const parentescoPorTipo: Record<string, Array<{ value: string; label: string }>>
   ],
 }
 
-// ─── Dialog: Editar Pessoa (Titular/Agregado) com formulário completo ───
+// ─── Dialog: Editar Dados Pessoais (Titular) — sem endereço ───
 
 function EditPessoaDialog({
   open,
@@ -171,7 +172,6 @@ function EditPessoaDialog({
       const allowedFields = [
         'nomeCompleto', 'dataNascimento', 'genero', 'estadoCivil', 'profissao',
         'email', 'telefone',
-        'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
       ]
       allowedFields.forEach((field) => {
         const val = data[field]
@@ -207,8 +207,76 @@ function EditPessoaDialog({
         </SheetHeader>
 
         <div className="px-4 pb-6 space-y-4 mt-4">
-          <PessoaFisicaForm
+          <DadosPessoaisForm
             sessionType="TITULAR"
+            mode="edit"
+            onSubmit={handleSave}
+            onCancel={() => onOpenChange(false)}
+            initialData={pessoa as unknown as Record<string, unknown>}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ─── Dialog: Editar Endereço (Titular) ───
+
+function EditEnderecoDialog({
+  open,
+  onOpenChange,
+  pessoa,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  pessoa: PessoaFisica
+  onSuccess: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async (data: Record<string, unknown>) => {
+    setSaving(true)
+    try {
+      const payload: Record<string, string | undefined> = {}
+      const allowedFields = [
+        'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+      ]
+      allowedFields.forEach((field) => {
+        const val = data[field]
+        if (val && typeof val === 'string' && val.trim()) {
+          payload[field] = val
+        }
+      })
+
+      const res = await fetch(`/api/pessoas-fisicas/${pessoa.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Erro ao salvar')
+      }
+      toast.success('Endereço atualizado com sucesso!')
+      onSuccess()
+      onOpenChange(false)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="font-serif">Editar Endereço</SheetTitle>
+        </SheetHeader>
+
+        <div className="px-4 pb-6 space-y-4 mt-4">
+          <EnderecoForm
             mode="edit"
             onSubmit={handleSave}
             onCancel={() => onOpenChange(false)}
@@ -307,7 +375,7 @@ function EstadoCivilDialog({
   )
 }
 
-// ─── Dialog: Editar Vínculo (via PessoaFisicaForm) ───
+// ─── Dialog: Editar Vínculo (DadosPessoais + Endereco) ───
 
 function EditVinculoDialog({
   open,
@@ -335,13 +403,27 @@ function EditVinculoDialog({
     enabled: !!vinculo && open,
   })
 
-  const handleSave = async (data: Record<string, unknown>) => {
+  const tipoVinculo = vinculo?.tipoVinculo as 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE' | undefined
+  const showEndereco = tipoVinculo === 'AGREGADO'
+
+  const dadosRef = useRef<DadosPessoaisFormHandle>(null)
+  const enderecoRef = useRef<EnderecoFormHandle>(null)
+
+  const handleCombinedSave = async () => {
     if (!vinculo) return
+    if (!dadosRef.current?.validate()) return
+    if (showEndereco && !enderecoRef.current?.validate()) return
+
     setSaving(true)
     try {
+      const data = {
+        ...dadosRef.current?.getData(),
+        ...enderecoRef.current?.getData(),
+      }
       const payload: Record<string, string | undefined> = {}
       const allowedFields = [
-        'email', 'telefone', 'genero', 'profissao', 'estadoCivil',
+        'nomeCompleto', 'dataNascimento', 'genero', 'estadoCivil', 'profissao',
+        'email', 'telefone',
         'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
       ]
       allowedFields.forEach((field) => {
@@ -370,8 +452,6 @@ function EditVinculoDialog({
     }
   }
 
-  const tipoVinculo = vinculo?.tipoVinculo as 'DEPENDENTE' | 'AGREGADO' | 'SUB_DEPENDENTE' | undefined
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
@@ -387,15 +467,37 @@ function EditVinculoDialog({
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <PessoaFisicaForm
-              sessionType={tipoVinculo || 'DEPENDENTE'}
-              mode="edit"
-              onSubmit={handleSave}
-              onCancel={() => onOpenChange(false)}
-              initialData={pessoaData as unknown as Record<string, unknown> | undefined}
-              titularData={titularData}
-              planTipo="FAMILIAR"
-            />
+            <div className="space-y-4">
+              <DadosPessoaisForm
+                ref={dadosRef}
+                sessionType={tipoVinculo || 'DEPENDENTE'}
+                mode="edit"
+                initialData={pessoaData as unknown as Record<string, unknown> | undefined}
+                existingCpfs={undefined}
+              />
+
+              {showEndereco && (
+                <EnderecoForm
+                  ref={enderecoRef}
+                  mode="edit"
+                  initialData={pessoaData as unknown as Record<string, unknown> | undefined}
+                  titularData={titularData}
+                  showInheritOption
+                />
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+                <Button
+                  type="button"
+                  onClick={handleCombinedSave}
+                  disabled={saving}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {saving ? 'Salvando...' : 'Salvar'}
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </SheetContent>
@@ -403,7 +505,7 @@ function EditVinculoDialog({
   )
 }
 
-// ─── Dialog: Adicionar Vínculo (via PessoaFisicaForm) ───
+// ─── Dialog: Adicionar Vínculo (DadosPessoais + Endereco) ───
 
 function AddVinculoDialog({
   open,
@@ -424,16 +526,27 @@ function AddVinculoDialog({
 }) {
   const [saving, setSaving] = useState(false)
   const [selectedAgregadoPai, setSelectedAgregadoPai] = useState('')
+  const showEndereco = tipoVinculo === 'AGREGADO'
 
-  const handleSubmit = async (data: Record<string, unknown>) => {
+  const dadosRef = useRef<DadosPessoaisFormHandle>(null)
+  const enderecoRef = useRef<EnderecoFormHandle>(null)
+
+  const handleSubmit = async () => {
     if (tipoVinculo === 'SUB_DEPENDENTE' && !selectedAgregadoPai) {
       toast.error('Selecione o agregado responsável.')
       return
     }
 
+    if (!dadosRef.current?.validate()) return
+    if (showEndereco && !enderecoRef.current?.validate()) return
+
+    const dadosData = dadosRef.current?.getData() ?? {}
+    const enderecoData = showEndereco ? (enderecoRef.current?.getData() ?? {}) : {}
+    const data = { ...dadosData, ...enderecoData }
+
     setSaving(true)
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...data,
         tipoVinculo,
         agregadoPaiId: tipoVinculo === 'SUB_DEPENDENTE' ? selectedAgregadoPai : undefined,
@@ -490,13 +603,35 @@ function AddVinculoDialog({
             </div>
           )}
 
-          <PessoaFisicaForm
+          <DadosPessoaisForm
+            ref={dadosRef}
             sessionType={tipoVinculo}
-            onSubmit={handleSubmit}
-            onCancel={() => { onOpenChange(false); setSelectedAgregadoPai('') }}
-            titularData={titularData}
-            planTipo="FAMILIAR"
+            mode="create"
+            existingCpfs={undefined}
           />
+
+          {showEndereco && (
+            <EnderecoForm
+              ref={enderecoRef}
+              mode="create"
+              titularData={titularData}
+              showInheritOption
+            />
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" onClick={() => { onOpenChange(false); setSelectedAgregadoPai('') }}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {saving ? 'Adicionando...' : 'Adicionar'}
+            </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
@@ -821,8 +956,15 @@ export function MeusDadosTab() {
 
       {/* Dialogs */}
       <EditPessoaDialog
-        open={editDadosOpen || editEnderecoOpen}
-        onOpenChange={(v) => { if (!v) { setEditDadosOpen(false); setEditEnderecoOpen(false) } }}
+        open={editDadosOpen}
+        onOpenChange={setEditDadosOpen}
+        pessoa={pessoa}
+        onSuccess={refreshData}
+      />
+
+      <EditEnderecoDialog
+        open={editEnderecoOpen}
+        onOpenChange={setEditEnderecoOpen}
         pessoa={pessoa}
         onSuccess={refreshData}
       />

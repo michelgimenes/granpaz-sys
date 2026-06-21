@@ -213,6 +213,20 @@ Incidência EXCLUSIVA sobre:
 
 ---
 
+### 3.8 Módulo 8 — Autenticação e Gestão de Usuários
+
+**CRUD de usuários do sistema com controle de perfis RBAC.** Essencial para autonomia administrativa sem acesso direto ao banco.
+
+**Funcionalidades:**
+- [ ] Listagem de usuários com busca e filtros (perfil, status ativo/inativo)
+- [ ] Criação de usuário com atribuição de perfil (SUPERADMIN/SUPERVISOR/FINANCEIRO/SUPORTE/CLIENTE)
+- [ ] Edição de dados cadastrais, perfil e status ativo/inativo
+- [ ] Reset de senha (geração de senha temporária)
+- [ ] Registro de auditoria em todas as operações
+- [ ] Bloqueio de auto-desativação do SUPERADMIN
+
+---
+
 ## 4. Design System (Frontend)
 
 ### 4.1 Cores — Modelo OKLCH
@@ -311,7 +325,7 @@ Incidência EXCLUSIVA sobre:
 | Perfil | Acessos |
 | :--- | :--- |
 | **SuperAdmin** | Fila de Aprovação, CRUD Seguradoras/Regras, Gestão de Rede, Financeiro Global, Logs de Anonimização |
-| **Supervisor** | Visão hierárquica, auxílio cadastral (sem aprovação/financeiro/config) |
+| **Supervisor** | Acesso igual ao Cliente/Revendedor (meus dados, plano, carteira, indicações) + visão hierárquica da rede/patrocínio. Sem acesso a: aprovação, contratos de terceiros, sinistros, financeiro, seguradoras, configurações ou auditoria |
 | **Financeiro** | Contas a pagar, inadimplência, reconciliação, aprovação de saques > limite |
 | **Suporte** | Correção cadastral, logs, diagnóstico (sem financeiro/aprovação) |
 | **Cliente/Revendedor** | Dashboard, autogestão, indicações, abatimento de parcelas, solicitação de saque |

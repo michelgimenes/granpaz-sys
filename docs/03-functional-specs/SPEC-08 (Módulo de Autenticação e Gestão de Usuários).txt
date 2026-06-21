@@ -1,0 +1,372 @@
+# 📄 SPEC-08: Módulo de Autenticação e Gestão de Usuários
+**Sistema:** Saúde & Proteção (Clube de Benefícios e Cobertura Funeral)
+**Módulo:** 8. Autenticação, Autorização e Gestão de Usuários do Sistema
+
+---
+
+## 1. Metadados e Controle de Versão
+
+| Atributo | Valor |
+| :--- | :--- |
+| **ID do Ticket** | `SPF-AUTH-008` |
+| **Autor** | Principal Software Architect |
+| **Revisores** | Tech Lead Backend, Tech Lead Frontend, DPO, Head Jurídico |
+| **Aprovadores** | CTO |
+| **Data** | 21/06/2026 |
+| **Versão** | 1.0.0 |
+| **Status** | ✅ Aprovado para Desenvolvimento |
+
+### Changelog
+| Versão | Data | Autor | Descrição |
+| :--- | :--- | :--- | :--- |
+| 0.1.0 | 21/06/2026 | Arquitetura | Draft inicial — levantamento de lacunas de user management. |
+| 1.0.0 | 21/06/2026 | Arquitetura | Especificação: CRUD de usuários, gestão de perfis RBAC e interface admin. |
+
+### Links de Referência
+├── 🎨 **Figma:** `[PLACEHOLDER_FIGMA_BACKOFFICE_USUARIOS]`
+├── 🎫 **Jira:** `[PLACEHOLDER_JIRA_EPIC_AUTH]`
+├── 📖 **Swagger:** `[PLACEHOLDER_SWAGGER_V1_USERS]`
+└── 🗄️ **Repositório:** `[PLACEHOLDER_GIT_REPO]/spf-auth-service`
+
+---
+
+## 2. Contexto e Escopo
+
+### Problem Statement
+O sistema atualmente não possui interface ou endpoints dedicados ao gerenciamento de usuários. Os usuários são criados exclusivamente via seed de banco de dados, impossibilitando que administradores gerenciem contas (criar, editar, desativar, alterar permissões) sem acesso direto ao banco. A ausência de um módulo de gestão de usuários gera dependência operacional de DBAs e viola o princípio de autonomia administrativa.
+
+### Objetivos
+| Categoria | Métrica / KPI | Alvo |
+| :--- | :--- | :--- |
+| **Funcional** | CRUD completo de usuários via interface admin | 100% dos campos gerenciáveis |
+| **Segurança** | Alterações de role/perfil registradas em audit trail | 100% cobertura |
+| **UX** | Tempo para criar novo usuário | < 2 minutos |
+
+### Out of Scope (Não será implementado nesta versão)
+1. **OAuth / SSO:** Autenticação via Google, Facebook ou provedores externos.
+2. **Self-Registration (Signup):** Criação de conta pelo próprio usuário — apenas admin pode criar.
+3. **Forgot Password / Reset Automático:** Fluxo de recuperação de senha auto-serviço.
+4. **2FA / MFA:** Autenticação em dois fatores.
+5. **Logs de Login:** Histórico de acesso por usuário (será coberto em versão futura).
+
+### Premissas e Restrições
+├── **Stack:** Node.js/TypeScript, Next.js App Router, Prisma (SQLite), header-based auth (dev).
+├── **RBAC:** 5 perfis existentes (SUPERADMIN, SUPERVISOR, FINANCEIRO, SUPORTE, CLIENTE).
+├── **Auditoria:** Toda criação/alteração de usuário gera registro em `audit_logs`.
+└── **Segurança:** Apenas SUPERADMIN pode gerenciar usuários.
+
+### Glossário
+| Termo | Definição |
+| :--- | :--- |
+| **RBAC** | Role-Based Access Control — controle de acesso baseado em perfis. |
+| **Perfil (Role)** | Conjunto de permissões atribuído a um usuário. |
+| **Ativo/Inativo** | Estado do usuário: ativo pode logar, inativo não. |
+
+---
+
+## 3. Arquitetura e Design de Alto Nível
+
+### 3.1 Diagrama de Fluxo — Gestão de Usuários
+```mermaid
+sequenceDiagram
+    participant Admin as SuperAdmin
+    participant UI as Interface Usuários
+    participant API as API /api/usuarios
+    participant DB as PostgreSQL / SQLite
+    
+    Admin->>UI: Abre aba Usuários
+    UI->>API: GET /api/usuarios
+    API->>DB: SELECT * FROM users ORDER BY nome
+    DB-->>API: Lista de usuários
+    API-->>UI: JSON array
+    
+    Admin->>UI: Clica "Novo Usuário"
+    UI->>UI: Abre Sheet com formulário
+    Admin->>UI: Preenche dados + seleciona perfil
+    UI->>API: POST /api/usuarios
+    API->>API: Valida email único + sanitiza
+    API->>DB: INSERT INTO users
+    API->>DB: INSERT INTO audit_logs
+    API-->>UI: 201 Created
+    UI->>UI: Atualiza listagem + toast
+    
+    Admin->>UI: Clica editar usuário
+    UI->>API: PATCH /api/usuarios/[id]
+    API->>DB: UPDATE users SET role / ativo / nome / email
+    API->>DB: INSERT INTO audit_logs
+    API-->>UI: 200 OK
+    
+    Admin->>UI: Clica "Resetar Senha"
+    UI->>API: POST /api/usuarios/[id]/reset-senha
+    API->>API: Gera nova senha aleatória
+    API->>DB: UPDATE senhaHash
+    API->>DB: INSERT INTO audit_logs
+    API-->>UI: { novaSenha: "..." }
+```
+
+### 3.2 Architecture Decision Records (ADRs)
+| ID | Decisão | Alternativas | Justificativa | Consequências |
+| :--- | :--- | :--- | :--- | :--- |
+| **ADR-01** | **Header-based Auth (dev)** | JWT, NextAuth | Consistência com o restante do sistema. Migração para JWT será feita em versão futura. | Senhas armazenadas como hash simples. |
+| **ADR-02** | **SUPERADMIN como único gestor** | Role auto-gestão | Risco de conflito de acesso se perfis inferiores puderem gerenciar outros. SUPERADMIN gerencia todos. | SUPERADMIN não pode ser auto-desativado. |
+| **ADR-03** | **Sheet lateral para formulário** | Página dedicada / Modal | Consistência com SeguradorasTab e demais CRUDs admin. Drawer preserva contexto da listagem. | Formulário longo pode exigir scroll. |
+
+### 3.3 Modelo de Entidades
+O modelo `User` já existe no Prisma schema:
+
+```
+User {
+  id              String   @id @default(cuid())
+  nome            String
+  email           String   @unique
+  senhaHash       String
+  role            String   // SUPERADMIN / SUPERVISOR / FINANCEIRO / SUPORTE / CLIENTE
+  pessoaFisicaId  String?
+  ativo           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+}
+```
+
+---
+
+## 4. Especificação Funcional Detalhada
+
+### 4.1 Regras de Negócio (Determinísticas)
+| ID | Regra de Negócio (SE / ENTÃO / SENÃO) |
+| :--- | :--- |
+| **RN-01** | 🛡️ **SE** um usuário tentar acessar a aba Usuários **ENTÃO** verificar role = SUPERADMIN. **SENÃO** exibir "Acesso restrito". |
+| **RN-02** | 📧 **SE** um novo usuário for criado com email já existente **ENTÃO** rejeitar com `409 Conflict`. |
+| **RN-03** | 🔒 **SE** SUPERADMIN alterar a própria role **ENTÃO** permitir (autogestão). **SE** tentar auto-desativar, bloquear com erro. |
+| **RN-04** | 📋 **SE** qualquer criação/alteração de usuário **ENTÃO** gerar registro em `audit_logs` com valores anteriores e novos. |
+
+### 4.2 Critérios de Aceite (Gherkin)
+```gherkin
+Feature: Gestao de Usuarios
+
+Scenario: Criacao de novo usuario com sucesso
+    Given um SUPERADMIN logado
+    When o admin acessa a aba Usuarios
+    And clica em "Novo Usuario"
+    And preenche nome, email, seleciona role "SUPORTE" e senha
+    And clica em "Criar Usuario"
+    Then o sistema cria o usuario no banco
+    And exibe toast "Usuario criado com sucesso!"
+    And a listagem e atualizada
+
+Scenario: Bloqueio de email duplicado
+    Given um SUPERADMIN logado
+    And existe um usuario com email "admin@granpaz.com"
+    When o admin tenta criar outro usuario com mesmo email
+    Then o sistema retorna erro 409
+    And exibe mensagem "Email ja cadastrado"
+
+Scenario: Desativacao de usuario
+    Given um SUPERADMIN logado
+    And existe um usuario ativo "joao.silva@teste.com"
+    When o admin desativa este usuario
+    Then o sistema marca como ativo=false
+    And o usuario nao pode mais fazer login
+```
+
+### 4.3 Edge Cases e Exceções
+| Cenário | Condição / Falha | Comportamento Esperado |
+| :--- | :--- | :--- |
+| **EC-01: Auto-desativação** | SUPERADMIN tenta desativar a si mesmo. | Bloquear com erro: "Você não pode desativar seu próprio usuário." |
+| **EC-02: Último SUPERADMIN** | Tentativa de rebaixar o único SUPERADMIN restante. | Bloquear: "Deve haver pelo menos um SUPERADMIN ativo." |
+| **EC-03: Email inválido** | Admin digita email sem @. | Validar formato no frontend e backend. |
+| **EC-04: Senha fraca** | Admin define senha < 4 caracteres. | Validar tamanho mínimo (4 chars). |
+
+### 4.4 Validações de Entrada
+| Campo | Regra | Mensagem de Erro | HTTP Code |
+| :--- | :--- | :--- | :--- |
+| `nome` | String, 2-100 chars | "Nome deve ter entre 2 e 100 caracteres." | 422 |
+| `email` | Email válido + único | "Email inválido ou já cadastrado." | 409 / 422 |
+| `role` | Enum: SUPERADMIN/SUPERVISOR/FINANCEIRO/SUPORTE/CLIENTE | "Perfil inválido." | 422 |
+| `senha` | String, min 4 chars | "Senha deve ter no mínimo 4 caracteres." | 422 |
+
+---
+
+## 5. Especificação Não-Funcional
+
+### 5.1 Performance
+├── **Listagem:** `GET /api/usuarios` deve retornar em `< 200ms` para até 500 usuários.
+└── **Cache:** N/A — dados admin com baixa frequência de leitura.
+
+### 5.2 Segurança
+├── **AuthN/AuthZ:** Apenas SUPERADMIN pode acessar CRUD de usuários.
+├── **Sanitização:** Nome e email sanitizados (trim, remoção de espaços múltiplos).
+└── **Auditoria:** Toda ação registrada em `audit_logs`.
+
+### 5.3 Acessibilidade
+├── **A11y:** Formulário navegável por teclado. Foco visível obrigatório.
+├── **ARIA:** Labels em todos os campos, roles em botões e selects.
+└── **Contraste:** Mensagens de erro com fundo `--state-error/10` e texto `--state-error`.
+
+---
+
+## 6. Interface e Contratos
+
+### 6.1 API (OpenAPI 3.0)
+
+```yaml
+paths:
+  /api/usuarios:
+    get:
+      summary: Lista usuarios do sistema (paginado)
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema: { type: string, enum: [SUPERADMIN, SUPERVISOR, FINANCEIRO, SUPORTE, CLIENTE] }
+        - name: ativo
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200': { description: Array de usuarios }
+        '403': { description: Acesso negado }
+    
+    post:
+      summary: Cria novo usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome, email, role, senha]
+              properties:
+                nome: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, enum: [...] }
+                senha: { type: string, minLength: 4 }
+      responses:
+        '201': { description: Usuario criado }
+        '409': { description: Email ja cadastrado }
+
+  /api/usuarios/{id}:
+    get:
+      summary: Detalhes do usuario
+      responses:
+        '200': { description: Objeto usuario }
+    
+    patch:
+      summary: Atualiza dados do usuario
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome: { type: string }
+                email: { type: string }
+                role: { type: string }
+                ativo: { type: boolean }
+      responses:
+        '200': { description: Atualizado }
+
+  /api/usuarios/{id}/reset-senha:
+    post:
+      summary: Reseta a senha do usuario (gera nova)
+      responses:
+        '200': { description: { novaSenha: string } }
+```
+
+### 6.2 Respostas da API (Exemplos)
+
+**GET /api/usuarios — 200**
+```json
+[
+  {
+    "id": "clx...",
+    "nome": "Maria Silva",
+    "email": "maria.silva@demo.com",
+    "role": "CLIENTE",
+    "ativo": true,
+    "pessoaFisicaId": "clx...",
+    "createdAt": "2026-06-19T..."
+  }
+]
+```
+
+**POST /api/usuarios — 201**
+```json
+{
+  "id": "clx...",
+  "nome": "João Suporte",
+  "email": "joao@granpaz.com",
+  "role": "SUPORTE",
+  "ativo": true
+}
+```
+
+**POST /api/usuarios/[id]/reset-senha — 200**
+```json
+{
+  "novaSenha": "g7kH2pL9"
+}
+```
+
+---
+
+## 7. Especificação da Interface de Usuário
+
+### 7.1 Aba "Usuários" (Dashboard — SUPERADMIN)
+
+**Estrutura:**
+├── **Header:** Título "Usuários" + Subtítulo + Botão "Novo Usuário"
+├── **Filtros:** Input de busca (nome/email) + Select role + Select status (todos/ativos/inativos)
+├── **Tabela:** Nome | Email | Perfil | Status | Criado em | Ações
+└── **Ações por linha:** Editar (abre Sheet) | Resetar Senha | Ativar/Desativar
+
+### 7.2 Sheet — Criar/Editar Usuário
+
+**Campos (Criar):**
+├── Nome * (input text)
+├── Email * (input email)
+├── Perfil * (select: SUPERADMIN/SUPERVISOR/FINANCEIRO/SUPORTE/CLIENTE)
+├── Senha * (input password)
+└── Botões: Cancelar | Criar Usuário
+
+**Campos (Editar):**
+├── Nome (input text)
+├── Email (input email)
+├── Perfil (select)
+├── Ativo (toggle/badge clicável)
+└── Botões: Cancelar | Salvar Alterações
+
+### 7.3 Confirm Dialog — Resetar Senha
+├── Título: "Resetar Senha"
+├── Mensagem: "Uma nova senha será gerada para {nome}. Deseja continuar?"
+└── Botões: Cancelar | Confirmar (exibe nova senha em toast/dialog)
+
+---
+
+## 8. Estratégia de Entrega e Mitigação de Riscos
+
+### 8.1 Matriz de Riscos
+| Risco | Probabilidade | Impacto | Plano de Mitigação |
+| :--- | :--- | :--- | :--- |
+| SUPERADMIN acidentalmente se desativa | Baixa | Crítico | Bloqueio lógico no frontend e backend. |
+| Criação de usuário com email existente | Média | Médio | Unique constraint + validação prévia. |
+| Perda de acesso por alteração de role | Baixa | Alto | Log de auditoria + notificação. |
+
+### 8.2 Dependências
+├── **Prisma User model:** Já existe — nenhuma migration necessária.
+├── **Auth helpers:** `checkSuperAdmin()` já existe em `auth-helpers.ts`.
+└── **AuditLog model:** Já existe — integração direta.
+
+---
+
+## 9. Checklist de Validação do SPEC
+
+- [ ] SUPERADMIN é o único perfil que acessa a aba Usuários?
+- [ ] Criação de usuário valida email único?
+- [ ] Edição de usuário permite alterar nome, email, role, ativo?
+- [ ] Auto-desativação do SUPERADMIN é bloqueada?
+- [ ] Reset de senha gera senha aleatória e exibe ao admin?
+- [ ] Toda ação gera registro em `audit_logs`?
+- [ ] Listagem suporta busca por nome/email e filtro por role/status?
+- [ ] Interface segue o mesmo padrão visual de SeguradorasTab (tabela + Sheet)?

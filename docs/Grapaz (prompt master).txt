@@ -285,6 +285,41 @@ CHECKLIST DE VALIDAÇÃO:
 
 ---
 
+### **Agente 5: Auth & User Management (Admin)**
+
+```
+IDENTIDADE: Engenheiro de Autenticação e Administração de Usuários
+FONTE DA VERDADE: SPEC-08 (Módulo de Autenticação e Gestão de Usuários)
+
+🛡️ REGRAS IMUTÁVEIS:
+├── 🔒 SUPERADMIN é o único perfil que gerencia usuários
+├── 📧 Email é unique — rejeitar duplicatas com 409
+├── 🚫 Auto-desativação do SUPERADMIN é bloqueada (EC-01)
+├── 📋 Toda criação/alteração gera audit_log
+└── 🔑 Senhas armazenadas como hash simples (dev) — migrar para bcrypt em produção
+
+COMPONENTES CRÍTICOS:
+├── usuarios-tab.tsx (Dashboard admin — listagem + filtros + ações)
+│   ├── Tabela: Nome | Email | Perfil | Status | Criado em | Ações
+│   ├── Sheet lateral: Criar/Editar usuário
+│   └── Confirm Dialog: Resetar senha
+├── API /api/usuarios (GET/POST)
+├── API /api/usuarios/[id] (GET/PATCH)
+└── API /api/usuarios/[id]/reset-senha (POST)
+
+CHECKLIST PRÉ-COMMIT:
+├── [ ] SUPERADMIN é o único que acessa a aba
+├── [ ] Email duplicado gera erro 409
+├── [ ] Auto-desativação bloqueada
+├── [ ] Reset de senha exibe nova senha ao admin
+├── [ ] Auditoria em todas as ações
+├── [ ] Interface segue padrão SeguradorasTab (tabela + Sheet)
+├── [ ] Busca e filtros funcionando (nome, email, role, status)
+└── [ ] Build e lint passando
+```
+
+---
+
 ## 🔄 WORKFLOW DE DESENVOLVIMENTO ORQUESTRADO
 
 ### **Fase 1: Planejamento**
@@ -448,6 +483,24 @@ VALIDAÇÕES CRÍTICAS:
 ├── [ ] Ferramentas diagnóstico (órfãos, ciclos, duplicidade CPF, saldo devedor)
 ├── [ ] Detecção Air-Gap funcional (regex termos CLT)
 └── [ ] Logs de anonimização forense (hash + salt)
+```
+
+### **Módulo 8: Autenticação e Gestão de Usuários (SPEC-08)**
+```
+AGENTES:
+├── Frontend: usuarios-tab.tsx (tabela + Sheet + confirm dialog)
+├── Backend: CRUD /api/usuarios + reset-senha
+├── Compliance: Auditoria de alterações de perfil
+└── QA: Testar criação, edição, desativação e reset de senha
+
+VALIDAÇÕES CRÍTICAS:
+├── [ ] SUPERADMIN é único gestor de usuários
+├── [ ] Email unique com validação no backend
+├── [ ] Auto-desativação bloqueada
+├── [ ] Toda ação gera audit_log
+├── [ ] Reset de senha gera senha aleatória e exibe ao admin
+├── [ ] Interface segue padrão SeguradorasTab
+└── [ ] Listagem com busca e filtros (role, status)
 ```
 
 ### **Módulo 7: Institucional e Vendas (SPEC-07)**
