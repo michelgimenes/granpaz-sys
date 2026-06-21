@@ -89,5 +89,5 @@ Critérios de sucesso sólidos permitem que você trabalhe de forma independente
 
 ## Visão do Projeto
 
-Somente no inicio da sessão: Carregue o conteúdo dos documentos 'README.md' na raiz do projeto e '*PRD*.txt', sempre no inicio da sessão para contexto e visão geral do projeto; evite carregar o conteúdo do documento README.md se já foi carregado no inicio da sessão a menos que seja necessário.
+Somente no inicio da sessão: Carregue o conteúdo dos documentos 'README.md' na raiz do projeto, carregar os documentos 'Grapaz (PRD).md' e 'Grapaz (prompt master).txt' na pasta docs. Para desenvolvimento e manutenção da aplicação siga as instruções do documento 'Grapaz (prompt master).txt'; evite carregar o conteúdo desses documentos quando já foram carregados no inicio da sessão.
 

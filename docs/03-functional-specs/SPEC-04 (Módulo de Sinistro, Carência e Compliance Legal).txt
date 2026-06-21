@@ -1,0 +1,383 @@
+# 📄 SPEC-04: Módulo de Sinistro, Carência e Compliance Legal
+**Sistema:** Saúde & Proteção (Clube de Benefícios e Cobertura Funeral)
+**Módulo:** 4. Sinistro, Carência, Suspensão e Ciclo de Vida (Compliance)
+
+---
+
+## 1. Metadados e Controle de Versão
+
+| Atributo | Valor |
+| :--- | :--- |
+| **ID do Ticket** | `SPF-SIN-004` |
+| **Autor** | Principal Software Architect |
+| **Revisores** | Tech Lead Backend, DPO (Data Protection Officer), Head Jurídico, QA Lead |
+| **Aprovadores** | CTO, Compliance Officer |
+| **Data** | 20/06/2026 |
+| **Versão** | 1.0.0 |
+| **Status** | ✅ Aprovado para Desenvolvimento |
+
+### Changelog
+| Versão | Data | Autor | Descrição |
+| :--- | :--- | :--- | :--- |
+| 0.1.0 | 15/06/2026 | Arquitetura | Draft inicial baseado em levantamento de requisitos SUSEP/LGPD. |
+| 1.0.0 | 20/06/2026 | Arquitetura | Especificação exaustiva, Air-Gap de S3, Jobs de Compliance e Matriz de Carência. |
+
+### Links de Referência
+├── 🎨 **Figma:** `[PLACEHOLDER_FIGMA_SINISTRO_E_CICLO_DE_VIDA]`
+├── 🎫 **Jira:** `[PLACEHOLDER_JIRA_EPIC_COMPLIANCE]`
+├── 📖 **Swagger:** `[PLACEHOLDER_SWAGGER_V1_COMPLIANCE]`
+└── 🗄️ **Repositório:** `[PLACEHOLDER_GIT_REPO]/spf-compliance-workers`
+
+---
+
+## 2. Contexto e Escopo
+
+### Problem Statement
+O processamento de sinistros (óbito/invalidez) e a gestão do ciclo de vida do contrato envolvem dados de saúde sensíveis e regras de carência rígidas (Código Civil Art. 798). A persistência de dados clínicos (causa mortis, atestados) no banco de dados relacional principal viola a LGPD e expõe a empresa a riscos jurídicos catastróficos em caso de vazamento. Adicionalmente, a ausência de automação determinística para inadimplência (Suspensão/Notificação CDC), Arrependimento (7 dias) e Anonimização (Direito ao Esquecimento) gera passivos operacionais e multas do PROCON.
+
+Este módulo estabelece o **Air-Gap de Dados Clínicos** (isolamento em S3 com Hash SHA-256), o motor de validação de carência com prevalência da Apólice da Seguradora e os Workers de Compliance (Suspensão, Maioridade, LGPD) que garantem a conformidade contínua do ecossistema.
+
+### Objetivos
+| Categoria | Métrica / KPI | Alvo |
+| :--- | :--- | :--- |
+| **Compliance** | Taxa de vazamento de dados clínicos no DB Relacional | `0%` (Air-Gap Estrito) |
+| **Performance** | Latência p99 da API de Acionamento de Sinistro (`POST /sinistros`) | `< 400ms` (Upload S3 Assíncrono) |
+| **Confiabilidade** | Acurácia do Job de Suspensão por Inadimplência | `100%` (Zero falsos positivos) |
+| **Segurança** | Tempo de execução do Job de Anonimização LGPD (10k registros) | `< 5 minutos` |
+| **Negócio** | Notificações CDC enviadas dentro do SLA legal | `100%` antes da suspensão efetiva |
+
+### Out of Scope (Não será implementado nesta versão)
+1.  **Liquidação Financeira do Sinistro:** O sistema apenas valida carência e notifica a Seguradora. O pagamento da indenização é feito offline/pela Seguradora.
+2.  **Underwriting/Análise de Risco Inicial:** Coberto pelo Módulo 2 (Aprovação Manual).
+3.  **Gestão de Boletos e Abatimentos:** Coberto pelo Módulo 3 (Financeiro).
+4.  **Integração Direta com APIs de Cartórios:** Validação de óbito é manual via upload de documento pela família/admin.
+5.  **Módulo de Rede Multinível:** Estornos de bonificação são gatilhos publicados neste módulo, mas processados no Módulo 3.
+
+### Premissas e Restrições
+├── **Stack:** Node.js (Workers/BullMQ), PostgreSQL 15+, AWS S3 (IAM restrito), RabbitMQ/SQS.
+├── **Compliance:** LGPD (Art. 5º e 15), Código Civil (Art. 798 - Suicídio), CDC (Art. 49 - Arrependimento), SUSEP (Circular 666/2022).
+├── **Air-Gap Obrigatório:** DB relacional armazena APENAS o Hash SHA-256 do documento. O arquivo original reside em S3 com acesso via IAM Role restrita.
+└── **Prevalência Jurídica:** Em caso de divergência entre `configuracoes_regras_negocio` e a Apólice da Seguradora, a **Apólice prevalece** (`PREVALENCIA_APIOLICE_SOBRE_CONFIG = true`).
+
+### Glossário
+| Termo | Definição |
+| :--- | :--- |
+| **Air-Gap Clínico** | Isolamento arquitetural onde dados de saúde/óbito nunca tocam o DB relacional, apenas hashes de referência. |
+| **Carência (Art. 798 CC)** | Período legal de 24 meses onde suicídio não gera indenização de capital, apenas reembolso de reserva ou assistência básica. |
+| **Récita** | Fluxo de reativação de contrato suspenso, exigindo pagamento de atrasados e recálculo proporcional de carência. |
+| **Remissão** | Isenção automática de mensalidades para dependentes após óbito do Titular. |
+| **Direito ao Esquecimento** | Anonimização irreversível (LGPD) de dados pessoais após 5 anos do fim do vínculo contratual. |
+
+---
+
+## 3. Arquitetura e Design de Alto Nível
+
+### 3.1 Diagrama C4 - Container
+```mermaid
+graph TD
+    subgraph "Cliente / Admin"
+        App[App Mobile / Backoffice]
+    end
+    subgraph "Core Compliance"
+        API[API Gateway / Sinistro Service]
+        Worker[Compliance Workers<br/>Suspensão, LGPD, Maioridade]
+    end
+    subgraph "Data & Storage"
+        DB[(PostgreSQL<br/>sinistros, remissoes)]
+        S3[(AWS S3<br/>Bucket Privado<br/>IAM Restrito)]
+        MQ[Message Broker]
+    end
+    
+    App -- "1. Upload Doc" --> S3
+    App -- "2. POST Hash/Metadata" --> API
+    API -- "3. Valida Carência" --> DB
+    API -- "4. Publica Evento" --> MQ
+    MQ -- "5. Consome" --> Worker
+    Worker -- "6. Atualiza Status" --> DB
+```
+
+### 3.2 Diagrama de Fluxo de Dados (DFD) - Acionamento de Sinistro
+```mermaid
+sequenceDiagram
+    participant User as Família / Admin
+    participant S3 as AWS S3 (Privado)
+    participant API as Sinistro Service
+    participant DB as PostgreSQL
+    participant Seguradora as Seguradora (Webhook/Email)
+
+    User->>S3: 1. Upload Atestado (Presigned URL)
+    S3-->>User: 2. Retorna ETag/Hash
+    User->>API: 3. POST /sinistros {hash, tipo, data_ocorrencia}
+    API->>DB: 4. Busca contrato e data_aprovacao
+    API->>API: 5. Calcula Carência (Acidental/Natural/Suicídio)
+    alt Dentro da Carência
+        API->>DB: 6. Salva status = NEGADO_CARÊNCIA
+        API-->>User: 7. 422 Unprocessable Entity (Carência)
+    else Fora da Carência
+        API->>DB: 8. Salva status = EM_ANALISE
+        API->>Seguradora: 9. Notifica Sinistro (Apenas Hash + ID)
+        API-->>User: 10. 201 Created (Em Análise)
+    end
+```
+
+### 3.3 Architecture Decision Records (ADRs)
+| ID | Decisão | Alternativas Consideradas | Justificativa | Consequências |
+| :--- | :--- | :--- | :--- | :--- |
+| **ADR-01** | **Air-Gap de Dados Clínicos (S3 + Hash)** | Salvar `causa_mortis` e BLOB no DB. | LGPD e SUSEP. Minimiza superfície de ataque. DB relacional não deve conter dados de saúde. | Frontend deve fazer upload direto via Presigned URL. API valida apenas metadados. |
+| **ADR-02** | **Prevalência da Apólice sobre Config** | Config global sobrescreve tudo. | Segurança Jurídica. A Apólice é o contrato legal registrado na SUSEP. Config é apenas fallback. | Sistema deve ler metadados da Apólice antes de aplicar regras de `configuracoes_regras_negocio`. |
+| **ADR-03** | **Jobs de Compliance Assíncronos (BullMQ)** | Triggers de DB ou Cron síncrono. | Jobs de LGPD e Suspensão são pesados e não podem bloquear a API principal. Exigem retry e DLQ. | Necessário painel de monitoramento de filas (Bull Board). |
+| **ADR-04** | **Soft Delete para Anonimização LGPD** | Hard Delete (DELETE FROM). | SUSEP e Receita Federal exigem retenção de logs financeiros por 5+ anos. Hard Delete quebra integridade referencial financeira. | Dados cadastrais viram UUIDs/Hashes, mas FKs financeiras permanecem. |
+
+### 3.4 Modelo de Entidades (Relacionamentos Críticos)
+├── `contratos` (1) ──── (N) `sinistros`
+├── `contratos` (1) ──── (0..1) `remissoes_contrato`
+├── `pessoas_fisicas` (1) ──── (N) `logs_anonimizacao_lgpd`
+└── `sinistros` (1) ──── (1) `S3_Object` (Via `documento_s3_hash`)
+
+---
+
+## 4. Especificação Funcional Detalhada
+
+### 4.1 Regras de Negócio (Determinísticas)
+| ID | Regra de Negócio (SE / ENTÃO / SENÃO) |
+| :--- | :--- |
+| **RN-01** | 🛡️ **SE** upload de documento de sinistro **ENTÃO** o arquivo deve residir exclusivamente em S3 (Bucket Privado). O DB persiste apenas `documento_s3_hash` (SHA-256). **SENÃO** (se tentar salvar BLOB/Base64 no DB), a transação é abortada e alerta de segurança é disparado. |
+| **RN-02** | ⚠️ **SE** `tipo_sinistro` = `SUICIDIO` E `data_ocorrencia` < `data_aprovacao` + `MESES_CARENCIA_SUICIDIO` (Art. 798 CC) **ENTÃO** status = `NEGADO_CARÊNCIA` (Apenas assistência funeral básica, sem indenização de capital). **SENÃO**, segue para `EM_ANALISE`. |
+| **RN-03** | 🚨 **SE** Job Diário de Suspensão identificar `contas_a_pagar` vencida há > `DIAS_SUSPENSAO_INADIMPLENCIA` **ENTÃO** altera `contratos.status` para `SUSPENSO` e dispara Notificação CDC. **SENÃO** (se contrato já estiver `SUSPENSO` ou `CANCELADO`), ignora. |
+| **RN-04** | 💰 **SE** usuário solicitar cancelamento CDC E `data_atual` <= `data_inicio` + 7 dias **ENTÃO** status = `CANCELADO_CDC`, estorno integral, zero multa, estorno de bonificações em cascata. **SENÃO** (se > 7 dias), bloqueia botão e exige fluxo de cancelamento administrativo padrão. |
+| **RN-05** | ⚠️ **SE** Job de Maioridade identificar `FILHO` com `data_nascimento` + 21 anos <= `HOJE` **ENTÃO** preenche `data_fim_vinculo` e notifica Titular para conversão. **EXCEÇÃO:** Se o filho for inválido/incapaz (tag especial), o job ignora a expulsão. |
+| **RN-06** | 🔒 **SE** Job LGPD identificar `pessoa_fisica` com vínculo encerrado há > 5 anos **ENTÃO** anonimiza campos PII (Nome, CPF, Email) usando Hash SHA-256 + Salt, e registra em `logs_anonimizacao_lgpd`. **SENÃO** (se houver pendência financeira ativa), adia a anonimização. |
+| **RN-07** | 💰 **SE** `sinistro` do Titular for `APROVADO` **ENTÃO** cria `remissoes_contrato`. O prazo (`data_fim_remissao`) é calculado lendo primeiro a Apólice da Seguradora; se omisso, usa `MESES_REMISSAO_OBITO_PADRAO`. |
+
+### 4.2 Critérios de Aceite (Gherkin)
+```gherkin
+Feature: Validação de Carência de Sinistro (Art. 798 CC)
+
+Scenario: Suicídio dentro do prazo legal de 24 meses
+    Given um contrato aprovado há 12 meses
+    And a configuração MESES_CARENCIA_SUICIDIO é 24
+    When o admin registra sinistro tipo "SUICIDIO" com data de hoje
+    Then o sistema salva o sinistro com status "NEGADO_CARÊNCIA"
+    And o sistema bloqueia a liberação de indenização financeira
+    And o sistema mantém o direito à assistência funeral básica (conforme Apólice)
+    And o log de auditoria registra "Art. 798 CC aplicado"
+
+Scenario: Morte Acidental fora da carência de 72h
+    Given um contrato aprovado há 10 dias
+    And a configuração DIAS_CARENCIA_ACIDENTAL é 3 (72h)
+    When o admin registra sinistro tipo "OBITO_ACIDENTAL" ocorrido ontem
+    Then o sistema salva o sinistro com status "EM_ANALISE"
+    And o sistema publica evento "sinistro.aprovado_carncia" para notificar a Seguradora
+```
+
+```gherkin
+Feature: Arrependimento CDC (7 Dias)
+
+Scenario: Cancelamento dentro do prazo legal
+    Given um contrato com status "APROVADO" e data_inicio há 5 dias
+    When o titular clica em "Cancelar por Arrependimento" e confirma o modal
+    Then o status do contrato muda para "CANCELADO_CDC"
+    And o sistema gera estorno integral (100%) sem cobrança de multa
+    And todas as bonificações da árvore de patrocínio são estornadas (cascata)
+    And o evento "contrato.cancelado_cdc" é publicado para o Módulo Financeiro
+```
+
+### 4.3 Matriz de Estados (Sinistro e Contrato)
+```mermaid
+stateDiagram-v2
+    state Sinistro {
+        [*] --> EM_ANALISE: Submissão (Fora da Carência)
+        [*] --> NEGADO_CARÊNCIA: Submissão (Dentro da Carência)
+        EM_ANALISE --> APROVADO: Seguradora Valida
+        EM_ANALISE --> NEGADO_FRAUDE: Auditoria
+        EM_ANALISE --> NEGADO_EXCLUSAO: Doença Pré-Existente
+        APROVADO --> [*]
+        NEGADO_CARÊNCIA --> [*]
+    }
+
+    state Contrato_Ciclo_Vida {
+        [*] --> APROVADO: Módulo 2
+        APROVADO --> SUSPENSO: Job Inadimplência (D+X)
+        SUSPENSO --> APROVADO: Récita (Pagamento)
+        SUSPENSO --> CANCELADO: Inadimplência Crítica
+        APROVADO --> CANCELADO_CDC: Arrependimento (<= 7 dias)
+        APROVADO --> CANCELADO: Fraude / Solicitação
+    }
+```
+
+### 4.4 Edge Cases e Exceções (30% da Seção - Foco Crítico)
+| Cenário | Condição / Falha | Comportamento Esperado do Sistema |
+| :--- | :--- | :--- |
+| **EC-01: Race Condition (Job Suspensão vs Pagamento)** | Job de Suspensão roda às 02:00 AM. Cliente paga o boleto via PIX às 02:01 AM (Webhook). | O Job adquire lock pessimista (`FOR UPDATE`) na tabela `contratos`. Se o Webhook de pagamento atualizar o status da parcela para `PAGO` antes do commit do Job, o Job aborta a suspensão. Se o Job suspender primeiro, o Webhook deve reverter o status para `APROVADO` (Récita automática). |
+| **EC-02: Divergência de Remissão (Apólice vs Config)** | `MESES_REMISSAO_OBITO_PADRAO` = 3 meses. Mas a Apólice da Seguradora X especifica 6 meses em suas Condições Gerais. | 🚨 **PREVALÊNCIA:** O sistema lê o campo `clausulas_markdown` ou metadados da Apólice. Se encontrar menção a 6 meses, aplica 6 meses. O campo `origem_prazo` em `remissoes_contrato` deve ser salvo como `APOLICE_SEGURADORA` para auditoria SUSEP. |
+| **EC-03: Anonimização LGPD com FK Financeira** | Job LGPD tenta anonimizar titular que possui `saldo_devedor` ativo ou parcelas em aberto no Módulo 3. | O Job **aborta** a anonimização para aquele CPF específico. Loga em `logs_anonimizacao_lgpd` com motivo `PENDENCIA_FINANCEIRA`. Dados de saúde/clínicos podem ser anonimizados, mas dados cadastrais/financeiros são preservados até quitação (Art. 15, LGPD). |
+| **EC-04: Sinistro de Dependente Expulso por Maioridade** | Família tenta acionar sinistro para filho que completou 21 anos há 2 dias (Job já rodou e preencheu `data_fim_vinculo`). | API valida `data_ocorrencia` vs `data_fim_vinculo`. Se a data do óbito for **posterior** à expulsão, retorna `403 Forbidden` ("Vínculo inativo na data do evento"). Se o óbito ocorreu **antes** da expulsão (mas o registro é tardio), permite o processamento. |
+| **EC-05: Upload de Documento Corrompido/Zero Bytes** | Usuário faz upload de PDF corrompido para o S3. | O S3 aceita o upload, mas o hash gerado é inválido ou o Worker de validação de PDF (anti-vírus/integridade) falha. O sistema marca o sinistro como `EM_ANALISE` com flag `DOCUMENTO_PENDENTE_REVIEW` e notifica o Suporte Técnico. |
+| **EC-06: Notificação CDC Falha (Email/SMS Offline)** | Job de Suspensão altera status, mas o serviço de notificação (Twilio/SendGrid) está fora do ar. | A transação de DB **não** pode ser commitada sem a garantia de enfileiramento da notificação (Outbox Pattern). Se a fila estiver indisponível, o Job falha, mantém o contrato como `APROVADO` e alerta o DevOps. Suspender sem notificar viola o CDC e gera multa. |
+| **EC-07: Arrependimento CDC no Limite (Dia 7, 23:59)** | Usuário clica em cancelar às 23:59 do 7º dia. | O sistema calcula a diferença em milissegundos. Se `NOW() <= data_inicio + 7 dias`, processa como `CANCELADO_CDC`. O frontend deve exibir contador regressivo para evitar frustração do usuário. |
+| **EC-08: Récita com Recálculo de Carência** | Contrato suspenso por 60 dias é quitado (Récita). | O sistema não apenas reativa o status. Ele recalcula a carência proporcional: `nova_carencia = carencia_original + (dias_suspenso * fator_atuarial)`. O sistema bloqueia novos sinistros até o fim desta nova carência estendida. |
+
+### 4.5 Validações de Entrada
+| Campo | Regra | Mensagem de Erro | HTTP Code |
+| :--- | :--- | :--- | :--- |
+| `documento_s3_hash` | SHA-256 (64 chars hex) | "Hash do documento inválido." | 400 |
+| `data_ocorrencia` | `<= NOW()`, `>= data_aprovacao` | "Data do evento não pode ser futura ou anterior ao contrato." | 400 |
+| `tipo_sinistro` | Enum restrito | "Tipo de sinistro não suportado." | 400 |
+| `pessoa_vinculada_id` | Deve pertencer ao contrato e estar ativo na `data_ocorrencia` | "Pessoa não possuía vínculo ativo na data do evento." | 403 |
+
+---
+
+## 5. Especificação Não-Funcional
+
+### 5.1 Performance
+├── **Latência:** API de Acionamento (`POST /sinistros`) `< 400ms` (O upload pesado é direto para S3 via Presigned URL).
+├── **Throughput:** Jobs de Compliance (Suspensão/LGPD) devem processar 100.000 contratos em `< 15 minutos` (Janela noturna).
+└── **Carga:** O Job de Anonimização LGPD deve usar `batch size` de 1000 registros com `sleep` de 100ms entre lotes para não degradar o DB de produção.
+
+### 5.2 Escalabilidade
+├── **Workers:** BullMQ configurado com `concurrency: 5` para Jobs de LGPD e `concurrency: 20` para Notificações CDC.
+├── **DB:** Índices parciais em `contratos` para acelerar o Job de Suspensão (`WHERE status = 'APROVADO'`).
+└── **S3:** Lifecycle Policy configurada para mover documentos de sinistros para `Glacier` após 1 ano (redução de custo).
+
+### 5.3 Resiliência
+├── **SLO:** `99.9%` de disponibilidade para a API de Sinistros.
+├── **Outbox Pattern:** Notificações CDC são salvas em tabela `outbox_notifications` na mesma transação da mudança de status. Um Worker separado lê a tabela e dispara, garantindo entrega *at-least-once*.
+├── **Dead Letter Queue (DLQ):** Sinistros com hash corrompido ou falha de parsing de Apólice vão para DLQ para intervenção manual do Suporte.
+└── **Circuit Breaker:** Se a API da Seguradora (Webhook) cair, o sistema enfileira localmente e retenta com backoff exponencial (1h, 6h, 24h).
+
+### 5.4 Segurança
+├── **IAM Restrito:** O Bucket S3 de sinistros **não** possui ACL pública. O acesso é via `AssumeRole` com token de 15 minutos.
+├── **Criptografia:** S3 Server-Side Encryption (SSE-KMS). DB relacional não armazena dados clínicos.
+├── **Sanitização:** Logs de aplicação NUNCA devem printar o `documento_s3_hash` ou `pessoa_vinculada_id` em nível `INFO`, apenas `contrato_id`.
+└── **Auditoria:** Toda alteração de status de sinistro ou anonimização gera registro imutável em `audit_logs` (WORM storage).
+
+### 5.5 Observabilidade
+├── **Métricas (Prometheus):**
+│   ├── `compliance_suspensao_job_duration_seconds`
+│   ├── `compliance_lgpd_anonimizacao_total{status="sucesso|falha"}`
+│   └── `sinistros_negados_carncia_total` (Alerta se pico anômalo)
+├── **Logs Estruturados:** JSON contendo `trace_id`, `job_id`, `contratos_processados`.
+└── **Alertas (PagerDuty):**
+    ├── Job de Suspensão falhou 2 noites consecutivas (Crítico - Risco PROCON).
+    └── Fila de Notificações CDC com profundidade > 1000 por mais de 1 hora.
+
+### 5.6 Acessibilidade e i18n
+├── **A11y:** Modal de confirmação de Arrependimento CDC deve ter foco preso (Focus Trap) e leitura via Screen Reader clara sobre a irreversibilidade.
+└── **i18n:** Mensagens de negação de carência devem ser empáticas e claras, evitando juridiquês desnecessário no App do cliente, mas mantendo rigor técnico no Backoffice.
+
+---
+
+## 6. Interface e Contratos
+
+### 6.1 API (OpenAPI 3.0 - Trechos Críticos)
+```yaml
+paths:
+  /api/v1/sinistros:
+    post:
+      summary: Aciona novo sinistro (Air-Gap)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contrato_id: { type: string, format: uuid }
+                pessoa_vinculada_id: { type: string, format: uuid }
+                tipo_sinistro: { type: string, enum: [OBITO_NATURAL, OBITO_ACIDENTAL, SUICIDIO, INVALIDEZ_TOTAL] }
+                data_ocorrencia: { type: string, format: date }
+                documento_s3_hash: { type: string, description: "SHA-256 do arquivo no S3" }
+      responses:
+        '201': { description: Sinistro registrado e em análise }
+        '422': { description: Negado automaticamente por Carência Legal }
+        '403': { description: Vínculo inativo na data do evento }
+
+  /api/v1/contratos/{id}/cancelar-cdc:
+    post:
+      summary: Arrependimento CDC (7 dias)
+      responses:
+        '200': { description: Contrato cancelado, estorno iniciado }
+        '400': { description: Prazo de 7 dias expirado }
+```
+
+### 6.2 Banco de Dados (Schema & Índices - Notação em Árvore)
+> 🚨 **ATENÇÃO:** Schema alinhado com a Verdade Absoluta.
+
+#### Tabela: `sinistros`
+├── **Chaves:** `id` (PK), `contrato_id` (FK), `pessoa_vinculada_id` (FK)
+├── **Campos Críticos:**
+│   ├── `tipo_sinistro` (ENUM)
+│   ├── `data_ocorrencia` (DATE) - Base para cálculo de carência
+│   ├── `status` (ENUM: `EM_ANALISE`, `APROVADO`, `NEGADO_CARÊNCIA`, `NEGADO_FRAUDE`)
+│   └── `documento_s3_hash` (VARCHAR 64) - 🛡️ **AIR-GAP:** Nunca armazenar BLOB.
+└── **Índices:** `idx_sinistros_contrato` (contrato_id), `idx_sinistros_status` (status)
+
+#### Tabela: `remissoes_contrato`
+├── **Chaves:** `id` (PK), `contrato_id` (FK Unique)
+├── **Campos Críticos:**
+│   ├── `data_inicio_remissao` (DATE)
+│   ├── `data_fim_remissao` (DATE)
+│   ├── `meses_aplicados` (INT)
+│   └── `origem_prazo` (ENUM: `APOLICE_SEGURADORA`, `CONFIGURACAO_PADRAO`) - ⚖️ **AUDITORIA**
+└── **Constraint:** `UNIQUE (contrato_id)` - Apenas uma remissão ativa por contrato.
+
+#### Tabela: `logs_anonimizacao_lgpd`
+├── **Chaves:** `id` (PK), `pessoa_fisica_id` (FK)
+├── **Campos Críticos:**
+│   ├── `data_anonimizacao` (TIMESTAMP)
+│   ├── `motivo` (ENUM: `OBITO_5_ANOS`, `CANCELAMENTO_5_ANOS`)
+│   ├── `campos_anonimizados` (JSONB)
+│   └── `hash_original_salt` (VARCHAR 64) - 🔒 **INTEGRIDADE FORENSE**
+└── **Regra:** Imutável. Apenas INSERT.
+
+### 6.3 Eventos Assíncronos
+| Tópico | Evento | Payload | Garantia |
+| :--- | :--- | :--- | :--- |
+| `spf.contratos.v1` | `contrato.suspenso` | `{contrato_id, motivo, dias_atraso}` | At-least-once (Outbox) |
+| `spf.contratos.v1` | `contrato.cancelado_cdc` | `{contrato_id, valor_estorno}` | At-least-once (Gatilho p/ Módulo 3) |
+| `spf.sinistros.v1` | `sinistro.aprovado` | `{sinistro_id, contrato_id, capital_segurado}` | At-least-once |
+| `spf.compliance.v1` | `pessoa.anonimizada` | `{pessoa_id, timestamp}` | At-least-once |
+
+### 6.4 Mock Strategy
+├── **S3:** Em ambiente de dev, usar `LocalStack` ou MinIO para simular Presigned URLs.
+├── **Seguradora:** Mock que retorna `200 OK` aleatoriamente ou `400 Bad Request` para testar DLQ.
+└── **Tempo (Time Travel):** Jobs devem aceitar header `X-Mock-Date` ou variável de ambiente `SYSTEM_DATE` para testar cenários de carência e maioridade sem esperar meses.
+
+---
+
+## 7. Estratégia de Entrega e Mitigação de Riscos
+
+### 7.1 Plano de Rollback/Migração
+├── **Migração:** Jobs de LGPD e Suspensão serão deployados desativados (`Feature Flag`).
+├── **Backfill:** Job de LGPD rodará em modo `DRY_RUN` por 7 dias, apenas logando o que seria anonimizado, para validação do DPO.
+└── **Rollback:** Reversão do container dos Workers. Triggers de DB (se houver) devem ser versionadas via Flyway.
+
+### 7.2 Feature Flags
+├── `COMPLIANCE_AUTO_SUSPENSION_ENABLED`: Se `false`, o job apenas gera relatório, não altera status (Fase 1).
+├── `LGPD_ANONYMIZATION_ENABLED`: Controla o Job de Direito ao Esquecimento.
+└── `CDC_STRICT_MODE_ENABLED`: Se `true`, bloqueia cancelamento CDC se houver qualquer usage de serviço (edge case jurídico).
+
+### 7.3 Matriz de Riscos
+| Risco | Probabilidade | Impacto | Plano de Mitigação |
+| :--- | :--- | :--- | :--- |
+| **Vazamento de Atestados (S3)** | Baixa | Crítico (LGPD) | Bucket privado, IAM restrito, Logs de acesso CloudTrail, Criptografia KMS. |
+| **Multa PROCON (Suspensão sem Notificação)** | Média | Crítico | Outbox Pattern garante que a notificação CDC é enfileirada na mesma transação da suspensão. |
+| **Violação do Art. 798 CC (Suicídio)** | Baixa | Alto | Validação determinística hardcoded no Service. Testes unitários cobrindo exatamente 23 meses e 24 meses. |
+| **Anonimização Quebra Integridade Financeira** | Média | Alto | Job LGPD valida `saldo_devedor` e `contas_a_pagar` antes de anonimizar. Soft-delete de PII, não de FKs. |
+
+### 7.4 Dependências Externas
+├── **Módulo 3 (Financeiro):** Depende do evento `contrato.suspenso` para bloquear saques de revendedores inadimplentes.
+├── **Seguradora Parceira:** Depende da API de Webhook para receber hashes de sinistros.
+└── **DPO/Jurídico:** Aprovação final das mensagens de Notificação CDC e templates de e-mail de Anonimização.
+
+---
+
+## 8. Checklist de Validação do SPEC
+
+- [ ] **Air-Gap Clínico:** O DB relacional está 100% livre de campos como `causa_mortis`, `cid_10` ou BLOBs de atestados?
+- [ ] **Prevalência da Apólice:** O código de Remissão consulta a Apólice antes de usar o fallback de `configuracoes_regras_negocio`?
+- [ ] **Idempotência de Jobs:** O Job de Suspensão pode rodar duas vezes na mesma noite sem gerar notificações CDC duplicadas?
+- [ ] **Art. 798 CC:** O sistema distingue corretamente entre negação de *indenização* e manutenção de *assistência funeral* em casos de suicídio dentro da carência?
+- [ ] **Outbox Pattern:** A notificação de suspensão está atrelada transacionalmente à mudança de status no DB?
+- [ ] **LGPD Forense:** A tabela `logs_anonimizacao_lgpd` armazena o Hash com Salt para permitir auditoria futura sem expor o dado original?
+- [ ] **Edge Cases:** O sistema trata a tentativa de acionar sinistro para um dependente que foi expulso por maioridade ontem, mas cujo óbito ocorreu anteontem?
+- [ ] **QA Testability:** Os cenários Gherkin permitem que o QA crie testes de "Time Travel" para validar carências de 24 meses sem esperar 2 anos?

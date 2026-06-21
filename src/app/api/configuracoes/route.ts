@@ -127,7 +127,7 @@ export async function PUT(request: Request) {
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // SuperAdmin role check
-    const { authorized, user } = await checkSuperAdmin(userId)
+    const { authorized, user } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json(
         { error: 'Apenas SUPERADMIN pode alterar configurações' },

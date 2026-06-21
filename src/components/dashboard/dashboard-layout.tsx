@@ -1,6 +1,7 @@
 'use client'
 
 import { useAppStore, type DashboardTab } from '@/lib/store'
+import { ProfileSwitcher } from './profile-switcher'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -15,11 +16,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  UserCircle,
+  Home,
+  HandCoins,
+  UserPlus,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems: Array<{ id: DashboardTab; label: string; icon: React.ElementType; roles: string[] }> = [
-  { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard, roles: ['SUPERADMIN', 'SUPERVISOR', 'FINANCEIRO', 'SUPORTE'] },
+  { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard, roles: ['SUPERADMIN', 'SUPERVISOR', 'FINANCEIRO', 'SUPORTE', 'CLIENTE'] },
   { id: 'approval', label: 'Aprovações', icon: CheckSquare, roles: ['SUPERADMIN', 'SUPERVISOR'] },
   { id: 'contracts', label: 'Contratos', icon: FileText, roles: ['SUPERADMIN', 'SUPERVISOR', 'SUPORTE'] },
   { id: 'financial', label: 'Financeiro', icon: Wallet, roles: ['SUPERADMIN', 'FINANCEIRO'] },
@@ -28,14 +33,20 @@ const navItems: Array<{ id: DashboardTab; label: string; icon: React.ElementType
   { id: 'config', label: 'Configurações', icon: Settings, roles: ['SUPERADMIN'] },
   { id: 'seguradoras', label: 'Seguradoras', icon: Building2, roles: ['SUPERADMIN'] },
   { id: 'audit', label: 'Auditoria', icon: ScrollText, roles: ['SUPERADMIN'] },
+  // ─── Itens exclusivos do perfil CLIENTE ───
+  { id: 'meus-dados', label: 'Meus Dados', icon: UserCircle, roles: ['CLIENTE'] },
+  { id: 'meu-plano', label: 'Meu Plano', icon: Home, roles: ['CLIENTE'] },
+  { id: 'minha-carteira', label: 'Minha Carteira', icon: HandCoins, roles: ['CLIENTE'] },
+  { id: 'minhas-indicacoes', label: 'Minhas Indicações', icon: UserPlus, roles: ['CLIENTE'] },
 ]
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, currentDashboardTab, setDashboardTab, logout } = useAppStore()
+  const { user, activeProfile, currentDashboardTab, setDashboardTab, logout } = useAppStore()
   const [collapsed, setCollapsed] = useState(false)
 
+  const profile = activeProfile ?? user?.role
   const filteredNav = navItems.filter(item =>
-    user?.role && item.roles.includes(user.role)
+    profile && item.roles.includes(profile)
   )
 
   return (
@@ -83,6 +94,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </ul>
         </nav>
 
+        {/* Profile Switcher (dev only — SUPERADMIN) */}
+        <ProfileSwitcher />
+
         {/* Collapse toggle */}
         <div className="px-2 py-2 border-t border-primary-foreground/10">
           <button
@@ -101,7 +115,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <div className="px-3 mb-2">
               <p className="text-sm font-medium text-primary-foreground truncate">{user.nome}</p>
               <p className="text-xs text-primary-foreground/50 truncate">{user.email}</p>
-              <p className="text-xs text-gran-accent mt-0.5">{user.role}</p>
+              <p className="text-xs text-gran-accent mt-0.5">{activeProfile ?? user.role}</p>
             </div>
           )}
           <button

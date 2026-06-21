@@ -2,11 +2,12 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
 import crypto from 'crypto'
+import { canRunJob } from '@/lib/jobs-auth'
 
 /**
  * POST /api/compliance/lgpd
  * RN-06: LGPD anonymization job — Anonymize PII for ended contracts (5-year retention)
- * SuperAdmin only
+ * Accepts: SuperAdmin (manual) or JOB_API_KEY (cron)
  *
  * Suporta dois modos:
  * 1. Job automático (sem body): anonimiza pessoas com contratos cancelados há 5+ anos ou óbito há 5+ anos
@@ -14,16 +15,17 @@ import crypto from 'crypto'
  */
 export async function POST(request: Request) {
   try {
-    const { userId, ipAddress } = extractRequestMeta(request)
-
-    // SuperAdmin role check
-    const { authorized, user } = await checkSuperAdmin(userId)
-    if (!authorized) {
+    const jobAuth = await canRunJob(request)
+    if (!jobAuth.authorized) {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas SuperAdmin pode executar o job de anonimização LGPD.' },
+        { error: 'Acesso negado. Apenas SuperAdmin ou sistema (JOB_API_KEY) pode executar o job de anonimização LGPD.' },
         { status: 403 }
       )
     }
+
+    const userId = jobAuth.userId || 'system'
+    const ipAddress = jobAuth.isSystem ? null : extractRequestMeta(request).ipAddress
+    const userName = jobAuth.isSystem ? 'Sistema (cron)' : (await checkSuperAdmin(userId, request)).user?.nome
 
     const body = await request.json().catch(() => ({}))
     const { pessoaFisicaId, motivo: motivoManual } = body as { pessoaFisicaId?: string; motivo?: string }
@@ -81,17 +83,17 @@ export async function POST(request: Request) {
         .update(pessoa.nomeCompleto + salt)
         .digest('hex')
 
-      const camposAnonimizados: Record<string, string> = {
+      const camposAnonimizados: Record<string, string | null> = {
         nomeCompleto: pessoa.nomeCompleto,
-        cpf: pessoa.cpf ? 'REDACTED' : '',
-        email: pessoa.email ? 'REDACTED' : '',
-        telefone: pessoa.telefone ? 'REDACTED' : '',
-        cep: pessoa.cep ? 'REDACTED' : '',
-        logradouro: pessoa.logradouro ? 'REDACTED' : '',
-        numero: pessoa.numero ? 'REDACTED' : '',
-        complemento: pessoa.complemento ? 'REDACTED' : '',
-        bairro: pessoa.bairro ? 'REDACTED' : '',
-        profissao: pessoa.profissao ? 'REDACTED' : '',
+        cpf: pessoa.cpf ? 'REDACTED' : null,
+        email: pessoa.email ? 'REDACTED' : null,
+        telefone: pessoa.telefone ? 'REDACTED' : null,
+        cep: pessoa.cep ? 'REDACTED' : null,
+        logradouro: pessoa.logradouro ? 'REDACTED' : null,
+        numero: pessoa.numero ? 'REDACTED' : null,
+        complemento: pessoa.complemento ? 'REDACTED' : null,
+        bairro: pessoa.bairro ? 'REDACTED' : null,
+        profissao: pessoa.profissao ? 'REDACTED' : null,
       }
 
       await db.pessoaFisica.update({
@@ -128,7 +130,7 @@ export async function POST(request: Request) {
           ipAddress,
           valoresAnteriores: JSON.stringify({ nomeCompleto: pessoa.nomeCompleto, cpf: pessoa.cpf ? 'REDACTED' : null }),
           valoresNovos: JSON.stringify({ anonimizado: true, motivo: motivoManual }),
-          observacao: `LGPD: PII anonimizada manualmente. Motivo: ${motivoManual}. Executado por: ${user?.nome || userId}`,
+          observacao: `LGPD: PII anonimizada manualmente. Motivo: ${motivoManual}. Executado por: ${userName}`,
         },
       })
 
@@ -225,7 +227,7 @@ export async function POST(request: Request) {
         .digest('hex')
 
       // Record which fields are being anonymized
-      const camposAnonimizados: Record<string, string> = {}
+      const camposAnonimizados: Record<string, string | null> = {}
 
       // Anonymize PII fields
       const updateData: Record<string, any> = {
@@ -280,7 +282,7 @@ export async function POST(request: Request) {
           ipAddress,
           valoresAnteriores: JSON.stringify({ nomeCompleto: pessoa.nomeCompleto, cpf: pessoa.cpf ? 'REDACTED' : null }),
           valoresNovos: JSON.stringify({ anonimizado: true, motivo }),
-          observacao: `LGPD: PII anonimizada. Motivo: ${motivo}. Executado por: ${user?.nome || userId}`,
+          observacao: `LGPD: PII anonimizada. Motivo: ${motivo}. Executado por: ${userName}`,
         },
       })
     }

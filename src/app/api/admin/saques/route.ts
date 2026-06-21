@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const userId = request.headers.get('x-user-id')
 
     // ─── Role check: SuperAdmin or FINANCEIRO ───
-    const { authorized } = await checkFinanceiroOrAdmin(userId)
+    const { authorized } = await checkFinanceiroOrAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json(
         { error: 'Acesso restrito a administradores ou financeiro.' },

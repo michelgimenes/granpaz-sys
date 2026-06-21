@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Cookie, Settings, Shield } from 'lucide-react'
+import { loadGA4, unloadGA4, loadMetaPixel, unloadMetaPixel } from '@/lib/analytics'
 
 const COOKIE_CONSENT_KEY = 'granpaz_cookie_consent'
 
 interface CookiePreferences {
-  necessary: boolean // Sempre verdadeiro
+  necessary: boolean
   analytics: boolean
   marketing: boolean
   timestamp: number
@@ -15,6 +16,9 @@ interface CookiePreferences {
 
 /**
  * Banner de consentimento de cookies LGPD (SPEC-07 §5.4)
+ * 
+ * Gerencia o carregamento dinâmico de scripts GA4 e Meta Pixel
+ * baseado no consentimento explícito do usuário.
  * 
  * Este componente DEVE ser carregado via next/dynamic com { ssr: false }
  * para evitar hydration mismatch (localStorage não existe no servidor).
@@ -28,37 +32,65 @@ export function CookieConsent() {
   const [analytics, setAnalytics] = useState(false)
   const [marketing, setMarketing] = useState(false)
 
+  // GA4 Measurement ID from env vars (optional — only loads if defined)
+  const GA4_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID
+  // Meta Pixel ID from env vars (optional)
+  const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID
+
+  // Load scripts based on existing consent on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = localStorage.getItem(COOKIE_CONSENT_KEY)
+    if (!raw) return
+    try {
+      const prefs: CookiePreferences = JSON.parse(raw)
+      if (prefs.analytics) loadGA4(GA4_ID)
+      if (prefs.marketing) loadMetaPixel(META_PIXEL_ID)
+    } catch { /* ignore */ }
+  }, [GA4_ID, META_PIXEL_ID])
+
+  const applyConsent = useCallback((prefs: CookiePreferences) => {
+    localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs))
+    setVisible(false)
+
+    if (prefs.analytics) {
+      loadGA4(GA4_ID)
+    } else {
+      unloadGA4()
+    }
+
+    if (prefs.marketing) {
+      loadMetaPixel(META_PIXEL_ID)
+    } else {
+      unloadMetaPixel()
+    }
+  }, [GA4_ID, META_PIXEL_ID])
+
   const handleAcceptAll = () => {
-    const prefs: CookiePreferences = {
+    applyConsent({
       necessary: true,
       analytics: true,
       marketing: true,
       timestamp: Date.now(),
-    }
-    localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs))
-    setVisible(false)
+    })
   }
 
   const handleAcceptNecessary = () => {
-    const prefs: CookiePreferences = {
+    applyConsent({
       necessary: true,
       analytics: false,
       marketing: false,
       timestamp: Date.now(),
-    }
-    localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs))
-    setVisible(false)
+    })
   }
 
   const handleSavePreferences = () => {
-    const prefs: CookiePreferences = {
+    applyConsent({
       necessary: true,
       analytics,
       marketing,
       timestamp: Date.now(),
-    }
-    localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs))
-    setVisible(false)
+    })
   }
 
   if (!visible) return null

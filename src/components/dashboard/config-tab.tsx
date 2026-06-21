@@ -636,7 +636,9 @@ function ConfigListItem({
 
 export function ConfigTab() {
   const user = useAppStore((s) => s.user)
-  const isSuperAdmin = user?.role === 'SUPERADMIN'
+  const activeProfile = useAppStore((s) => s.activeProfile)
+  const profile = activeProfile ?? user?.role
+  const isSuperAdmin = profile === 'SUPERADMIN'
   const [editConfig, setEditConfig] = useState<ConfigItem | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [integrityDialogOpen, setIntegrityDialogOpen] = useState(false)

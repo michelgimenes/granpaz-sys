@@ -324,7 +324,7 @@ export function AuditTab() {
   const [page, setPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
 
-  const { data: logs = [], isLoading } = useQuery<AuditLog[]>({
+  const { data, isLoading } = useQuery<AuditLog[]>({
     queryKey: ['audit-logs', entityFilter],
     queryFn: async () => {
       const params = new URLSearchParams()
@@ -332,9 +332,12 @@ export function AuditTab() {
       params.set('limit', '500')
       const res = await fetch(`/api/audit-logs?${params.toString()}`)
       if (!res.ok) throw new Error('Erro ao carregar logs')
-      return res.json()
+      const json = await res.json()
+      return json.data ?? []
     },
   })
+
+  const logs = Array.isArray(data) ? data : []
 
   // Client-side filtering
   const filteredLogs = useMemo(() => {
@@ -441,7 +444,7 @@ export function AuditTab() {
               {/* Entity Filter */}
               <div className="space-y-1.5">
                 <Label className="text-xs">Entidade</Label>
-                <Select value={entityFilter} onValueChange={(v) => { setEntityFilter(v); setPage(1) }}>
+                <Select value={entityFilter} onValueChange={(v) => { setEntityFilter(v === '__all__' ? '' : v); setPage(1) }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Todas as Entidades" />
                   </SelectTrigger>

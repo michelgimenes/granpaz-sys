@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // SuperAdmin role check
-    const { authorized } = await checkSuperAdmin(userId)
+    const { authorized } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json(
         { error: 'Apenas SUPERADMIN pode executar scan CLT Air-Gap' },

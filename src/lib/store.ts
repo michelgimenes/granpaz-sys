@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type View = 'landing' | 'checkout' | 'login' | 'dashboard'
-export type DashboardTab = 'overview' | 'approval' | 'contracts' | 'financial' | 'network' | 'claims' | 'config' | 'audit' | 'seguradoras'
+export type DashboardTab = 'overview' | 'approval' | 'contracts' | 'financial' | 'network' | 'claims' | 'config' | 'audit' | 'seguradoras' | 'meus-dados' | 'meu-plano' | 'minha-carteira' | 'minhas-indicacoes'
 
 export interface User {
   id: string
@@ -20,12 +20,14 @@ interface AppStore {
   
   // User
   user: User | null
+  activeProfile: User['role'] | null
   
   // Actions
   setView: (view: View) => void
   setDashboardTab: (tab: DashboardTab) => void
   setCheckoutStep: (step: number) => void
   setUser: (user: User | null) => void
+  setActiveProfile: (profile: User['role']) => void
   logout: () => void
   
   // Checkout data
@@ -55,6 +57,7 @@ export const useAppStore = create<AppStore>((set) => ({
   currentDashboardTab: 'overview',
   checkoutStep: 0,
   user: null,
+  activeProfile: null,
   selectedPlanId: null,
   checkoutData: {
     titular: null,
@@ -69,8 +72,9 @@ export const useAppStore = create<AppStore>((set) => ({
   setView: (view) => set({ currentView: view }),
   setDashboardTab: (tab) => set({ currentDashboardTab: tab }),
   setCheckoutStep: (step) => set({ checkoutStep: step }),
-  setUser: (user) => set({ user }),
-  logout: () => set({ user: null, currentView: 'landing', currentDashboardTab: 'overview' }),
+  setUser: (user) => set({ user, activeProfile: user?.role ?? null }),
+  setActiveProfile: (profile) => set({ activeProfile: profile }),
+  logout: () => set({ user: null, activeProfile: null, currentView: 'landing', currentDashboardTab: 'overview' }),
   setSelectedPlanId: (id) => set({ selectedPlanId: id }),
   setCheckoutData: (data) => set((state) => ({ checkoutData: { ...state.checkoutData, ...data } })),
   resetCheckout: () => {

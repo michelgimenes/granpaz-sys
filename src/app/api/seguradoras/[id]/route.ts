@@ -51,7 +51,7 @@ export async function PUT(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // ─── L20: SuperAdmin role check ───
-    const { authorized } = await checkSuperAdmin(userId)
+    const { authorized } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso restrito a SuperAdmin.' }, { status: 403 })
     }
@@ -188,7 +188,7 @@ export async function DELETE(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // ─── L20: SuperAdmin role check ───
-    const { authorized } = await checkSuperAdmin(userId)
+    const { authorized } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso restrito a SuperAdmin.' }, { status: 403 })
     }

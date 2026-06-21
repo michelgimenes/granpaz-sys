@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // Auth check: financeiro or admin required
-    const { authorized } = await checkFinanceiroOrAdmin(userId)
+    const { authorized } = await checkFinanceiroOrAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso negado. Requer perfil Financeiro ou SuperAdmin.' }, { status: 403 })
     }

@@ -1,0 +1,345 @@
+# 📐 Documento de Especificação de Design para Frontend (Design System & UI Architecture)
+**Projeto:** Saúde & Proteção (Granpaz) | **Versão:** 1.0.0 (Impeccable Standard)
+**Autoria:** Especialista Sênior em Design de Produto e Engenharia Frontend
+
+---
+
+## SEÇÃO 1: FUNDAMENTOS E TOKENIZAÇÃO (A BASE TÉCNICA)
+
+A base do sistema utiliza o modelo de cores **OKLCH** para garantir uniformidade perceptual, acessibilidade estrita e suporte nativo a temas (Light/Dark). 
+> 🛡️ **Regra Imutável:** O uso de preto puro (`#000000` / `oklch(0 0 0)`) e branco puro (`#FFFFFF` / `oklch(1 0 0)`) é **estritamente proibido**. Todos os neutros possuem um *tint* (matiz) azul profundo (Hue 260) para reduzir fadiga visual e manter a identidade da marca.
+
+### 1.1 Paleta de Cores Semântica (OKLCH)
+
+```css
+:root {
+  /* 🎨 Superfícies e Fundos (Neutros com Tint Azul) */
+  --bg-app: oklch(0.985 0.002 260);       /* Fundo geral da aplicação (Light) */
+  --bg-surface: oklch(0.995 0.001 260);   /* Cards, painéis, sidebars (Light) */
+  --bg-app-dark: oklch(0.13 0.015 260);   /* Fundo geral (Dark - Navy Profundo) */
+  --bg-surface-dark: oklch(0.17 0.015 260); /* Cards (Dark) */
+
+  /* 📝 Tipografia */
+  --text-primary: oklch(0.15 0.02 260);   /* Texto principal (Navy, não preto) */
+  --text-muted: oklch(0.45 0.02 260);     /* Metadados, labels, placeholders */
+  --text-inverse: oklch(0.99 0.002 260);  /* Texto sobre fundos primários (Off-white) */
+
+  /* 🛡️ Brand & Identidade */
+  --brand-primary: oklch(0.55 0.18 260);  /* Brand Blue (Cruz da Logo, CTAs) */
+  --brand-accent: oklch(0.75 0.14 180);   /* Brand Cyan (Escudo, Destaques) */
+  
+  /* ⚠️ Estados e Feedback */
+  --state-success: oklch(0.65 0.16 145);  /* Aprovação, Saldo Disponível */
+  --state-warning: oklch(0.75 0.15 85);   /* Alertas, Carência, Saldo Bloqueado */
+  --state-error: oklch(0.55 0.22 25);     /* Erros, Saldo Devedor, Rejeição */
+  
+  /* 📏 Bordas e Foco */
+  --border-subtle: oklch(0.90 0.01 260);  /* Divisores estruturais */
+  --border-strong: oklch(0.70 0.02 260);  /* Inputs em hover */
+  --ring-focus: oklch(0.55 0.18 260 / 0.4); /* Anel de foco (Acessibilidade) */
+}
+```
+
+### 1.2 Tipografia Fluida e Hierarquia
+Fugindo de fontes genéricas, estabelecemos uma dualidade tipográfica que une a **confiança institucional** com a **precisão fintech**.
+├── **Display / Institucional (LP Granpaz):** `Fraunces` (Serifada moderna, empatia, família).
+├── **UI / Dados / Backoffice:** `Manrope` (Sans-serif geométrica, altíssima legibilidade em tabelas).
+└── **Mono / Hashes / CPF:** `JetBrains Mono` (Dados técnicos, IDs, Hashes S3).
+
+```css
+:root {
+  --font-display: 'Fraunces', serif;
+  --font-ui: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Escala Fluida (clamp(min, preferred, max)) */
+  --text-h1: clamp(2.25rem, 1.5vw + 1.8rem, 3.5rem);   /* Hero LP */
+  --text-h2: clamp(1.75rem, 1vw + 1.4rem, 2.25rem);    /* Page Titles */
+  --text-h3: clamp(1.25rem, 0.5vw + 1.1rem, 1.5rem);   /* Section Titles */
+  --text-body-lg: clamp(1.125rem, 0.2vw + 1rem, 1.25rem); /* Leitura LP */
+  --text-body: 1rem;                                    /* Corpo padrão */
+  --text-ui: 0.875rem;                                  /* Inputs, Tables, Badges */
+  --text-caption: 0.75rem;                              /* Labels, Timestamps */
+
+  --tracking-tight: -0.02em; /* Títulos */
+  --leading-snug: 1.2;       /* Títulos */
+  --leading-relaxed: 1.6;    /* Corpo (Leitura) */
+}
+```
+
+### 1.3 Espaçamento, Grid e Elevação
+├── **Base Grid:** Múltiplos de `8px` (`--space-1: 0.25rem` ... `--space-8: 2rem`).
+├── **Grid System:** CSS Grid de 12 colunas no Desktop, 4 colunas no Mobile. Gap padrão de `--space-6` (24px).
+└── **Elevação (Sombras Tintadas):** Nunca use sombras pretas. Use a cor do texto primário com baixa opacidade.
+
+```css
+:root {
+  --shadow-sm: 0 1px 2px 0 oklch(0.15 0.02 260 / 0.04);
+  --shadow-md: 0 4px 6px -1px oklch(0.15 0.02 260 / 0.06), 0 2px 4px -2px oklch(0.15 0.02 260 / 0.04);
+  --shadow-lg: 0 10px 15px -3px oklch(0.15 0.02 260 / 0.08);
+  --radius-sm: 0.375rem; /* 6px */
+  --radius-md: 0.5rem;   /* 8px */
+  --radius-lg: 1rem;     /* 16px */
+  --radius-full: 9999px;
+}
+```
+
+---
+
+## SEÇÃO 2: BIBLIOTECA DE COMPONENTES (ANATOMIA TÉCNICA)
+
+### 2.1 `Button` (Botão de Ação)
+├── **Variantes:** `primary` (Brand Blue), `secondary` (Outline), `ghost` (Text only), `destructive` (Error Red).
+├── **Sizes:** `sm` (32px height), `md` (40px height), `lg` (48px height).
+└── **Acessibilidade:** Min-width de 44px para touch targets. Foco visível obrigatório.
+
+**Matriz de Estados Interativos:**
+| Estado | Estilo Visual | Propriedades CSS |
+| :--- | :--- | :--- |
+| **Default** | Fundo `--brand-primary`, Texto `--text-inverse` | `background-color`, `color` |
+| **Hover** | Escurece 10% (Lightness -0.05) | `filter: brightness(0.95)` |
+| **Focus-visible** | Anel externo de 3px | `outline: 3px solid var(--ring-focus)` |
+| **Active** | Scale down sutil | `transform: scale(0.98)` |
+| **Disabled** | Opacidade 50%, cursor not-allowed | `opacity: 0.5`, `pointer-events: none` |
+| **Loading** | Spinner SVG à esquerda, texto "Processando..." | `opacity: 0.8`, `pointer-events: none` |
+
+**Microinterações:**
+├── **Easing:** `cubic-bezier(0.25, 1, 0.5, 1)` (Ease-Out-Quart).
+├── **Duração:** `150ms` para hover/active.
+└── **Animação:** Apenas `transform` e `opacity`.
+
+```tsx
+// Snippet de Uso
+<Button variant="primary" size="lg" isLoading={isSubmitting}>
+  🛡️ Quero Proteger Minha Família
+</Button>
+```
+
+### 2.2 `FormField` (Wrapper de Input com Acessibilidade)
+Componente agnóstico que encapsula `Input`, `Select`, `DatePicker` e `MaskedInput`.
+├── **Props:** `label`, `error`, `hint`, `required`, `htmlFor`.
+├── **Estados:** `default`, `hover`, `focus` (ring azul), `error` (borda vermelha, ícone de alerta).
+└── **A11y:** `aria-invalid="true"` e `aria-describedby="error-id"` quando em erro. `aria-live="polite"` na mensagem de erro para screen readers.
+
+### 2.3 `PessoaFisicaForm` (Formulário Contextual Multi-Step)
+🚨 **Componente Crítico de Negócio.** Não é um modal. É uma página dedicada ou Drawer (Slide-over) de largura total no mobile e 640px no desktop.
+├── **Contexto (`sessionType`):** `TITULAR` | `DEPENDENTE` | `AGREGADO` | `SUB_DEPENDENTE`.
+├── **Lógica Condicional:** 
+│   ├── Se `DEPENDENTE`: Oculta Profissão, Endereço, Contato.
+│   ├── Se `AGREGADO`: Exibe Profissão (Obrigatório), Endereço, Contato.
+│   └── Se `SUB_DEPENDENTE`: Injeta `agregado_pai_id` oculto.
+├── **Validação de Idade (RN-02):** 
+│   └── Tag amarela (`--state-warning`) surge via `transform: translateY(0)` se idade > limite de cobertura mas <= limite de cadastro: *"SEM DIREITO À PROTEÇÃO"*.
+└── **Identificação Unificada (CPF):** No `blur`, busca API. Se CPF existir e data divergir, bloqueia submit e exibe `Alert` destrutivo.
+
+### 2.4 `ComplianceBanner` (Disclaimer SUSEP / Air-Gap)
+🛡️ **Obrigatório em todas as telas públicas e de checkout.**
+├── **Conteúdo:** CNPJ da Estipulante, aviso de que o risco é da Seguradora Parceira, e aviso SUSEP.
+├── **Estilo:** Fundo `--bg-surface`, texto `--text-muted` em `--text-caption`.
+└── **Regra de Negócio:** O Frontend **NUNCA** renderiza o nome da Seguradora neste banner. O texto deve ser genérico: *"garantida pela Seguradora Parceira"*.
+
+---
+
+## SEÇÃO 3: MAPEAMENTO DE TELAS E PÁGINAS (ESPECIFICAÇÃO GRANULAR)
+
+### 3.1 Landing Page Granpaz (`/`)
+├── **Propósito:** Conversão de visitantes frios em leads/contratos.
+├── **Permissões:** Público (Não autenticado).
+├── **Estrutura Semântica:**
+│   ├── `<header>`: Logo, Link "Área do Cliente", CTA "Contratar".
+│   ├── `<main>`:
+│   │   ├── **Hero:** Headline (Fraunces), Sub-headline, CTA Principal, Imagem de família (foco em paz, não luto).
+│   │   ├── **Storytelling:** Comparativo "Família Despreparada" vs "Família Protegida".
+│   │   ├── **Benefícios:** Grid 2x2 (Custo Zero, Nacional, Indenização, Proteção em Vida).
+│   │   └── **FAQ:** Accordion (`<details>`/`<summary>` nativo) para quebra de objeções.
+│   └── `<footer>`: `ComplianceBanner` (Disclaimer SUSEP).
+├── **Estados:**
+│   ├── **Loading:** Skeleton do Hero e Benefits.
+│   └── **Sem Permissão:** N/A (Público).
+├── **Edge Cases:**
+│   └── Textos longos em FAQ: Accordion expande verticalmente com `grid-template-rows: 0fr` to `1fr` animation.
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│ [Logo Granpaz]                 [Área do Cliente] [CTA]   │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  A dor de uma perda não avisa...                         │
+│  [🛡️ Quero Proteger Minha Família Agora]                │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│  O que acontece quando o inesperado bate à porta?        │
+│  (Storytelling Comparativo)                              │
+├──────────────────────────────────────────────────────────┤
+│  [FAQ Accordion]                                         │
+├──────────────────────────────────────────────────────────┤
+│  ⚖️ Transparência e Segurança: Atuamos como Estipulante  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Checkout Público (`/checkout`)
+├── **Propósito:** Submissão do contrato e árvore de vínculos.
+├── **🚨 Air-Gap de Seguradora:** O DOM **NUNCA** contém `seguradora_id` ou `capital_segurado`. O usuário seleciona apenas o `plano_id` (Produto Comercial).
+├── **Estrutura (Stepper):**
+│   ├── **Step 1:** Seleção de Plano (Individual vs Familiar).
+│   ├── **Step 2:** Cadastro Titular (`PessoaFisicaForm` session=TITULAR).
+│   ├── **Step 3:** Vínculos (Dependentes/Agregados). Botão "Adicionar" abre Drawer.
+│   └── **Step 4:** Resumo Financeiro e Assinatura Digital.
+├── **Lógica Condicional (RN-05):**
+│   └── Se Plano = `INDIVIDUAL`: Checkbox de dependentes é ocultado via CSS (`display: none`) e validação de backend bloqueia injeção.
+├── **Ações:**
+│   └── **Submit:** Trigger `POST /contratos`. Feedback: Botão entra em `Loading`. Sucesso: Redireciona para `/sucesso`. Erro 409 (CPF já ativo): Exibe `Toast` com link para `/login`.
+
+### 3.3 Dashboard Revendedor (`/app/dashboard`)
+├── **Propósito:** Autogestão, visualização de rede e carteira.
+├── **Estrutura:**
+│   ├── `<aside>`: Sidebar de navegação (Dashboard, Minha Rede, Financeiro, Indicações).
+│   └── `<main>`:
+│       ├── **Wallet Cards:** Grid 3 colunas.
+│       │   ├── Saldo Disponível (`--state-success`)
+│       │   ├── A Receber (`--text-muted`)
+│       │   └── Saldo Devedor (`--state-error` - *Oculto se 0*)
+│       ├── **Network Tree:** Visualização da árvore de patrocínio (Accordion no Mobile, Grafo no Desktop).
+│       └── **Recent Indications:** Tabela com status dos contratos indicados.
+├── **Estados:**
+│   ├── **Empty State (Rede):** "Sua rede começa com você. Compartilhe seu link..." + CTA `Copiar Link`.
+│   └── **Error State (Saldo):** Se API falhar, exibe Card com "Saldo Indisponível" e botão "Tentar Novamente".
+├── **Edge Cases:**
+│   └── **Saldo Devedor:** Se `saldo_devedor > 0`, o Card assume borda vermelha, ícone de alerta e o botão "Solicitar Saque" fica `Disabled` com Tooltip: *"Regularize seu saldo devedor antes de sacar"*.
+
+### 3.4 Backoffice: Fila de Aprovação (`/admin/aprovacao`)
+├── **Propósito:** SuperAdmin analisa e aprova contratos (Underwriting manual).
+├── **Permissões:** `SUPERADMIN` apenas.
+├── **Estrutura:**
+│   ├── **Filtros:** Data, Status, Revendedor.
+│   └── **Data Table:** Lista de contratos `AGUARDANDO_APROVACAO`.
+├── **Ações:**
+│   └── Clicar na linha -> Navega para `/admin/aprovacao/:id`.
+├── **Regra de Negócio:** A tabela **não** exibe dados clínicos ou de saúde. Exibe apenas dados cadastrais e financeiros do clube.
+
+### 3.5 Backoffice: Detalhe do Contrato (`/admin/aprovacao/:id`)
+├── **Propósito:** Aprovar/Rejeitar contrato e definir Capital Segurado.
+├── **Estrutura:**
+│   ├── **Left Panel:** Árvore hierárquica de vínculos (Titular -> Dependentes/Agregados).
+│   └── **Right Panel (Sticky):** Formulário de Aprovação.
+│       ├── Input: `capital_segurado_informado` (Moeda).
+│       ├── Input: `codigo_seguradora_informado` (Texto).
+│       ├── Select: `seguradora_id` (Dropdown).
+│       └── Botões: `Aprovar` (Primary), `Rejeitar` (Destructive).
+├── **Lógica Condicional:**
+│   └── Botão `Aprovar` fica `Disabled` até que Capital e Código sejam preenchidos.
+├── **Ações:**
+│   ├── **Aprovar:** Trigger `POST /aprovar`. Atomicidade: Muda status, libera bonificações, gera PDF. Feedback: `Toast` de sucesso + Redirect para Fila.
+│   └── **Rejeitar:** Abre Drawer lateral pedindo `motivo_rejeicao` (min 10 chars). Estorna bonificações em cascata.
+
+---
+
+## SEÇÃO 4: FLUXOS DE NAVEGAÇÃO E JORNADA DO USUÁRIO
+
+### 4.1 Fluxo de Contratação (Checkout Público)
+```text
+[Landing Page] --(CTA)--> [Step 1: Plano] --(Select)--> [Step 2: Titular]
+                                                            |
+                                                            v (CPF Blur -> API)
+                                                      [Identificação Unificada]
+                                                            |
+                              +-----------------------------+-----------------------------+
+                              |                                                           |
+                              v (CPF Novo)                                                v (CPF Existente, Data Igual)
+                     [Habilita Campos]                                           [Modal: Reutilizar Dados?]
+                              |                                                           |
+                              +-----------------------------+-----------------------------+
+                                                            |
+                                                            v
+                                                   [Step 3: Vínculos] --(Drawer)--> [PessoaFisicaForm]
+                                                            |
+                                                            v
+                                                   [Step 4: Resumo] --(Submit)--> [/sucesso]
+```
+
+### 4.2 Fluxo de Aprovação (Backoffice)
+```text
+[Fila de Aprovação] --(Click)--> [Detalhe Contrato]
+                                      |
+                                      +--(Preenche Capital/Código)--> [Botão Aprovar]
+                                      |                                     |
+                                      |                                     v (Transação Atômica)
+                                      |                               [Status: APROVADO]
+                                      |                               [Bonificações: LIBERADO]
+                                      |                               [Gera PDF Assincrono]
+                                      |
+                                      +--(Click Rejeitar)--> [Drawer Motivo] --> [Status: REJEITADO]
+                                                                     [Bonificações: ESTORNADO]
+```
+
+### 4.3 Estados de Sessão e Persistência
+├── **Autenticação:** JWT com refresh token. Sessão expira em 24h.
+├── **Persistência de Draft:** O Checkout salva o estado do formulário no `sessionStorage` a cada step. Se o usuário recarregar a página, os dados são restaurados.
+├── **Timeout:** Se inativo por 15 min no Checkout, exibe Toast de aviso. Aos 20 min, limpa `sessionStorage` por segurança (LGPD).
+
+---
+
+## SEÇÃO 5: ESPECIFICAÇÕES DE HANDOFF (A PONTE DESIGN-DEV)
+
+### 5.1 Naming Convention
+| Nome no Design (Figma) | Classe CSS / Token | Componente React |
+| :--- | :--- | :--- |
+| `Button / Primary / Lg` | `.btn-primary .btn-lg` | `<Button variant="primary" size="lg" />` |
+| `Input / Text / Error` | `.input-field .is-invalid` | `<FormField error="..."><Input /></FormField>` |
+| `Tag / Status / Ativo` | `.badge .badge-success` | `<Badge status="success">Aprovado</Badge>` |
+| `Tag / Status / Devedor` | `.badge .badge-error` | `<Badge status="error">Saldo Devedor</Badge>` |
+| `Card / Wallet` | `.wallet-card` | `<WalletCard type="disponivel" value={500} />` |
+
+### 5.2 Assets e Ícones
+├── **Biblioteca:** `Lucide React` (Consistência, stroke 2px).
+├── **Formato:** SVG inline via componente.
+├── **Coloração:** `stroke="currentColor"` para herdar cor do texto pai.
+└── **Tamanhos:** Base 24x24. Ícones de navegação 20x20. Ícones de Hero 48x48.
+
+### 5.3 Copywriting e I18n (Blindagem Jurídica SUSEP)
+🚨 **REGRA CRÍTICA:** O Frontend deve atuar como a última barreira de compliance. Textos dinâmicos devem respeitar o glossário do sistema. O Code Review deve rejeitar PRs com termos proibidos.
+
+| ❌ PROIBIDO (Risco SUSEP/Trabalhista) | ✅ OBRIGATÓRIO (Compliance) |
+| :--- | :--- |
+| "Comissão", "Comissionamento" | **"Bonificação"**, "Remuneração Comercial" |
+| "Nosso Seguro", "Nós Garantimos" | **"Proteção Garantida pela Seguradora Parceira"** |
+| "Meta de Vendas", "Chefe", "Salário" | **"Objetivo Comercial"**, "Patrocinador", "Saldo" |
+| "Cancelar Seguro" | **"Cancelar Proteção / Benefício"** |
+| "Corretora" | **"Administradora de Benefícios / Estipulante"** |
+
+*Nota de I18n:* Botões e CTAs devem prever expansão de texto de até **30%** (ex: tradução para Espanhol) sem quebrar o layout. Usar `padding` horizontal generoso (`px-6`) em vez de `width` fixa.
+
+---
+
+## SEÇÃO 6: VALIDAÇÃO DE QUALIDADE (CHECKLIST IMPERATIVO)
+
+Antes de aprovar qualquer Pull Request de UI ou entrega de Design, o Engenheiro/Designer deve validar contra os **Anti-Patterns do Framework Impeccable**:
+
+### 6.1 Verificação de Cores e Contraste
+- [x] **Zero Puros:** Confirmar que `#000000` e `#FFFFFF` não existem no CSS final (substituídos por `oklch` com tint).
+- [x] **Contraste WCAG AA:** Todo texto `--text-muted` sobre `--bg-surface` atinge no mínimo 4.5:1?
+- [x] **Sem Texto Cinza em Fundos Coloridos:** Tags de status usam fundo colorido com opacidade (`bg-brand/10`) e texto da cor base (`text-brand`), nunca texto cinza sobre fundo colorido.
+
+### 6.2 Verificação de Tipografia
+- [x] **Escala Fluida:** Todos os títulos usam `clamp()` para evitar quebras em telas ultrawide ou mobile pequeno.
+- [x] **Hierarquia Clara:** Diferenciação via peso (`font-weight`) e tamanho, não apenas cor.
+- [x] **Line-height:** Textos de parágrafo (LP) usam `1.6` para leitura confortável.
+
+### 6.3 Verificação de Movimento e Performance
+- [x] **Apenas Transform/Opacity:** Confirmar que nenhuma animação altera `width`, `height`, `top`, `left` ou `margin` (evita *layout thrashing*).
+- [x] **Respeito ao Usuário:** Todas as animações estão envoltas em `@media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }`?
+- [x] **Easing Corporativo:** Confirmar ausência de easings `bounce` ou `elastic`. Uso estrito de `ease-out-quart`.
+
+### 6.4 Verificação de Layout e Interação
+- [x] **Fim do "Card Hell":** A tela de Dashboard usa espaço em branco, tipografia e bordas sutis (`border-b`) para agrupar informações, em vez de colocar cada métrica dentro de uma caixa com sombra?
+- [x] **Anti-Modal:** O fluxo de contratação (`PessoaFisicaForm`) e a Árvore de Rede ocupam páginas dedicadas ou *Slide-overs* (Drawers), respeitando a regra de não usar modais para fluxos complexos?
+- [x] **Mobile Intacto:** No mobile, a Árvore de Patrocínio foi adaptada para Accordion/Lista, mantendo 100% da funcionalidade e dados do Desktop (sem "amputação" de features)?
+- [x] **Foco Visível:** É possível navegar por todo o formulário de contratação e aprovar contratos no Backoffice usando apenas a tecla `Tab`? O anel de foco (`--ring-focus`) está visível e não é ocultado por `outline: none`?
+
+### 6.5 Verificação de Compliance e Negócio
+- [x] **Air-Gap de Seguradora:** O DOM do Checkout Público contém zero referências a `seguradora_id` ou `capital_segurado`?
+- [x] **Disclaimer SUSEP:** O `ComplianceBanner` está presente no rodapé da LP e do Checkout?
+- [x] **Glossário Proibido:** O código fonte foi varrido por regex para garantir a ausência de termos como "nosso seguro" ou "comissão"?
+
+---
+*Este documento é a fonte da verdade para a interface. Qualquer desvio destes tokens, regras de copywriting ou padrões de interação deve ser tratado como **Bug de Compliance ou Dívida Técnica Severidade 1**.*

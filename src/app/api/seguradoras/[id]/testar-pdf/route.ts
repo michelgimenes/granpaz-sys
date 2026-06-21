@@ -18,7 +18,7 @@ export async function POST(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // ─── SuperAdmin role check ───
-    const { authorized } = await checkSuperAdmin(userId)
+    const { authorized } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso restrito a SuperAdmin.' }, { status: 403 })
     }

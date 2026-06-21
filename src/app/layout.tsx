@@ -111,6 +111,87 @@ export default function RootLayout({
             }),
           }}
         />
+        {/* Schema.org — Article (SPEC-07 §6.2) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Article",
+              headline: "Proteção Familiar Granpaz: Como garantir o futuro de quem você ama",
+              description: "Descubra como o Plano Granpaz oferece assistência funeral em todo o Brasil e amparo financeiro para sua família.",
+              author: {
+                "@type": "Organization",
+                name: "Saúde & Proteção Administração de Benefícios",
+              },
+              publisher: {
+                "@type": "Organization",
+                name: "Granpaz",
+              },
+              datePublished: "2025-01-01",
+              dateModified: new Date().toISOString().split('T')[0],
+            }),
+          }}
+        />
+        {/* Schema.org — FAQ (SPEC-07 §6.2) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: [
+                {
+                  "@type": "Question",
+                  name: "Isso não é para mim, deve ser muito caro...",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "O Plano Granpaz custa a partir de R$ 29,90 por mês para o titular. Cobertura completa para toda a família com assistência funeral nacional e amparo financeiro em caso de fatalidades.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "Como minha família vai acionar isso na hora da dor?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Pelo aplicativo exclusivo Granpaz ou pelo telefone de atendimento 24 horas. Toda a documentação é digital e o suporte é imediato.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "O plano só vale na minha cidade?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Não! O Granpaz oferece cobertura em todo o Brasil, com assistência funeral onde você estiver.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "Posso confiar na Saúde & Proteção?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "A Saúde & Proteção Administração de Benefícios (CNPJ: 35.898.940/0001-24) é uma administradora de benefícios que atua com transparência como Estipulante de seguros coletivos, em parceria com seguradoras devidamente autorizadas pela SUSEP.",
+                  },
+                },
+              ],
+            }),
+          }}
+        />
+        {/* Schema.org — BreadcrumbList (SPEC-07 §6.2) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "BreadcrumbList",
+              itemListElement: [
+                { "@type": "ListItem", position: 1, name: "Início", item: "https://granpaz.com.br" },
+                { "@type": "ListItem", position: 2, name: "Plano Familiar", item: "https://granpaz.com.br/#plano" },
+                { "@type": "ListItem", position: 3, name: "Contratar", item: "https://granpaz.com.br/#checkout" },
+              ],
+            }),
+          }}
+        />
       </head>
       <body
         className={`${fraunces.variable} ${manrope.variable} ${jetbrainsMono.variable} font-sans antialiased bg-background text-foreground`}

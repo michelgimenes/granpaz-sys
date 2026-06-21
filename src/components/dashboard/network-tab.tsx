@@ -365,8 +365,9 @@ function TreeNodeItem({
 
 export function NetworkTab() {
   const queryClient = useQueryClient()
-  const { user } = useAppStore()
-  const isSuperAdmin = user?.role === 'SUPERADMIN'
+  const { user, activeProfile } = useAppStore()
+  const profile = activeProfile ?? user?.role
+  const isSuperAdmin = profile === 'SUPERADMIN'
 
   // ─── State ───
   const [treeSearch, setTreeSearch] = useState('')

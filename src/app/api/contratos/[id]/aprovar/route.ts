@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
+import { isFeatureEnabled } from '@/lib/flags'
 
 /**
  * POST /api/contratos/[id]/aprovar
@@ -28,7 +29,7 @@ export async function POST(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // ─── L31: SuperAdmin role check ───
-    const { authorized } = await checkSuperAdmin(userId)
+    const { authorized } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso restrito a SuperAdmin.' }, { status: 403 })
     }
@@ -223,6 +224,50 @@ export async function POST(
         }),
       },
     })
+
+    // ─── P1.4: Webhook notification ───
+    const webhookEnabled = await isFeatureEnabled('NOTIFICACAO_WEBHOOK')
+    if (webhookEnabled) {
+      try {
+        const webhookUrl = process.env.WEBHOOK_NOTIFICACAO_URL
+        if (webhookUrl) {
+          const notificacaoPayload = {
+            event: 'CONTRATO_APROVADO',
+            contratoId: id,
+            titularId: contrato.titularId,
+            timestamp: new Date().toISOString(),
+          }
+
+          // Fire-and-forget: log and send, never block
+          fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(notificacaoPayload),
+          }).catch(err => {
+            console.error('Webhook notification failed (non-blocking):', err)
+          })
+
+          await db.auditLog.create({
+            data: {
+              entidade: 'Contrato',
+              entidadeId: id,
+              acao: 'NOTIFICACAO_ENVIADA',
+              atorId: userId,
+              ipAddress: ipAddress || null,
+              valoresNovos: JSON.stringify({
+                webhookUrl,
+                event: 'CONTRATO_APROVADO',
+                titulo: 'Contrato Aprovado',
+                mensagem: `Seu contrato foi aprovado. A partir de agora você e sua família estão protegidos.`,
+              }),
+              observacao: `Notificação de aprovação enviada via webhook para ${webhookUrl}`,
+            },
+          })
+        }
+      } catch (notifError) {
+        console.error('Notification error (non-blocking):', notifError)
+      }
+    }
 
     // Fetch updated contrato for response
     const contratoAtualizado = await db.contrato.findUnique({

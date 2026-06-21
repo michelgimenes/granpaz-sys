@@ -191,8 +191,10 @@ function PaginationControls({
 
 export function FinancialTab() {
   const user = useAppStore((s) => s.user)
+  const activeProfile = useAppStore((s) => s.activeProfile)
+  const profile = activeProfile ?? user?.role
   const queryClient = useQueryClient()
-  const isAdmin = user?.role === 'SUPERADMIN' || user?.role === 'FINANCEIRO'
+  const isAdmin = profile === 'SUPERADMIN' || profile === 'FINANCEIRO'
 
   // ── Wallet query ──
   const {

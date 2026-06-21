@@ -58,7 +58,7 @@ export async function PATCH(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // SuperAdmin check for status changes
-    const { authorized, user } = await checkSuperAdmin(userId)
+    const { authorized, user } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json({ error: 'Acesso negado. Apenas SuperAdmin pode alterar status de sinistro.' }, { status: 403 })
     }

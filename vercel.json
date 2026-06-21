@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/jobs/recorrencia",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/compliance/suspensao-auto",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/compliance/maioridade",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/compliance/lgpd",
+      "schedule": "0 9 * * 1"
+    }
+  ]
+}

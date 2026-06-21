@@ -1,24 +1,26 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
+import { canRunJob } from '@/lib/jobs-auth'
 
 /**
  * POST /api/compliance/maioridade
  * RN-05: Maioridade job — Expire dependentes FILHO who turned 21
- * SuperAdmin only (simulates a scheduled job)
+ * Accepts: SuperAdmin (manual) or JOB_API_KEY (cron)
  */
 export async function POST(request: Request) {
   try {
-    const { userId, ipAddress } = extractRequestMeta(request)
-
-    // SuperAdmin role check
-    const { authorized, user } = await checkSuperAdmin(userId)
-    if (!authorized) {
+    const jobAuth = await canRunJob(request)
+    if (!jobAuth.authorized) {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas SuperAdmin pode executar o job de maioridade.' },
+        { error: 'Acesso negado. Apenas SuperAdmin ou sistema (JOB_API_KEY) pode executar o job de maioridade.' },
         { status: 403 }
       )
     }
+
+    const userId = jobAuth.userId || 'system'
+    const ipAddress = jobAuth.isSystem ? null : extractRequestMeta(request).ipAddress
+    const userName = jobAuth.isSystem ? 'Sistema (cron)' : (await checkSuperAdmin(userId, request)).user?.nome
 
     const today = new Date()
 
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
           vinculosSkipped: vinculosSkipped.length,
           dataExecucao: today.toISOString(),
         }),
-        observacao: `Job de maioridade executado por ${user?.nome || userId}. ${vinculosExpirados.length} vínculos expirados, ${vinculosSkipped.length} skipped (tags especiais).`,
+        observacao: `Job de maioridade executado por ${userName}. ${vinculosExpirados.length} vínculos expirados, ${vinculosSkipped.length} skipped (tags especiais).`,
       },
     })
 

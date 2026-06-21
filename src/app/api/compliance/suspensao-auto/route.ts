@@ -2,24 +2,26 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { checkSuperAdmin, extractRequestMeta } from '@/lib/auth-helpers'
 import { getConfigInt } from '@/lib/validations'
+import { canRunJob } from '@/lib/jobs-auth'
 
 /**
  * POST /api/compliance/suspensao-auto
  * RN-03: Auto-suspension job — Suspend contracts with overdue bills past DIAS_SUSPENSAO_INADIMPLENCIA
- * SuperAdmin only (simulates a scheduled job)
+ * Accepts: SuperAdmin (manual) or JOB_API_KEY (cron)
  */
 export async function POST(request: Request) {
   try {
-    const { userId, ipAddress } = extractRequestMeta(request)
-
-    // SuperAdmin role check
-    const { authorized, user } = await checkSuperAdmin(userId)
-    if (!authorized) {
+    const jobAuth = await canRunJob(request)
+    if (!jobAuth.authorized) {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas SuperAdmin pode executar o job de auto-suspensão.' },
+        { error: 'Acesso negado. Apenas SuperAdmin ou sistema (JOB_API_KEY) pode executar o job de auto-suspensão.' },
         { status: 403 }
       )
     }
+
+    const userId = jobAuth.userId || 'system'
+    const ipAddress = jobAuth.isSystem ? null : extractRequestMeta(request).ipAddress
+    const userName = jobAuth.isSystem ? 'Sistema (cron)' : (await checkSuperAdmin(userId, request)).user?.nome
 
     const today = new Date()
     const diasSuspensao = await getConfigInt('DIAS_SUSPENSAO_INADIMPLENCIA')
@@ -114,7 +116,7 @@ export async function POST(request: Request) {
             status: 'SUSPENSO',
             dataSuspensao: new Date().toISOString(),
           }),
-          observacao: `Auto-suspensão por inadimplência. Titular: ${info.titularNome}. Dias em atraso: ${info.diasAtraso}. Contas vencidas: ${info.contasVencidas}. Limite: ${diasSuspensao} dias. Executado por: ${user?.nome || userId}`,
+          observacao: `Auto-suspensão por inadimplência. Titular: ${info.titularNome}. Dias em atraso: ${info.diasAtraso}. Contas vencidas: ${info.contasVencidas}. Limite: ${diasSuspensao} dias. Executado por: ${userName}`,
         },
       })
 

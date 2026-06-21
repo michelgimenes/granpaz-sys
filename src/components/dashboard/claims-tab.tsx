@@ -179,8 +179,10 @@ function getAuthHeaders(userId?: string): Record<string, string> {
 export function ClaimsTab() {
   const queryClient = useQueryClient()
   const user = useAppStore((s) => s.user)
-  const isSuperAdmin = user?.role === 'SUPERADMIN'
-  const isFinanceiroOrAdmin = user?.role === 'SUPERADMIN' || user?.role === 'FINANCEIRO'
+  const activeProfile = useAppStore((s) => s.activeProfile)
+  const profile = activeProfile ?? user?.role
+  const isSuperAdmin = profile === 'SUPERADMIN'
+  const isFinanceiroOrAdmin = profile === 'SUPERADMIN' || profile === 'FINANCEIRO'
 
   // ── Form state ──
   const [showForm, setShowForm] = useState(false)

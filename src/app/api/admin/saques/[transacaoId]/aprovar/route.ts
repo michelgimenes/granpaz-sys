@@ -22,7 +22,7 @@ export async function POST(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // ─── Role check: SuperAdmin or FINANCEIRO ───
-    const { authorized } = await checkFinanceiroOrAdmin(userId)
+    const { authorized } = await checkFinanceiroOrAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json(
         { error: 'Acesso restrito a administradores ou financeiro.' },

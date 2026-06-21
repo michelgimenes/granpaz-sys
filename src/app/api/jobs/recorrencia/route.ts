@@ -1,21 +1,22 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import { canRunJob } from '@/lib/jobs-auth'
 
 /**
  * POST /api/jobs/recorrencia
  * Job diário de recorrência (§4.4): Gera novas contas_a_pagar para contratos APROVADOS
  * cuja última parcela quitada/vencida foi há mais de 5 dias.
  *
- * Autorização: Apenas SuperAdmin (x-user-role) ou sistema (x-api-key = JOB_API_KEY)
+ * Autorização: SuperAdmin (x-user-id + x-user-role) ou sistema (x-api-key = JOB_API_KEY)
  */
 export async function POST(request: Request) {
   try {
-    // Verificar autorização (apenas SuperAdmin ou sistema)
-    const userRole = request.headers.get('x-user-role')
-    const apiKey = request.headers.get('x-api-key')
-    if (userRole !== 'SUPERADMIN' && apiKey !== process.env.JOB_API_KEY) {
+    const jobAuth = await canRunJob(request)
+    if (!jobAuth.authorized) {
       return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 })
     }
+
+    const userId = jobAuth.userId || 'system'
 
     const today = new Date()
     const fiveDaysAgo = new Date(today)
@@ -106,8 +107,8 @@ export async function POST(request: Request) {
         entidade: 'Sistema',
         entidadeId: 'recorrencia_job',
         acao: 'JOB_RECURRENCE',
-        atorId: request.headers.get('x-user-id') || 'system',
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
+        atorId: userId,
+        ipAddress: null,
         valoresNovos: JSON.stringify({
           parcelasGeradas,
           contratosVerificados: contratosAtivos.length,

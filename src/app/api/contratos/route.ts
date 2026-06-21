@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     // ─── Filters ───
     const status = searchParams.get('status')
     const seguradoraId = searchParams.get('seguradoraId')
+    const titularId = searchParams.get('titularId')
     const dataInicioStart = searchParams.get('dataInicio_start')
     const dataInicioEnd = searchParams.get('dataInicio_end')
 
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
     const where: Record<string, unknown> = {}
     if (status) where.status = status
     if (seguradoraId) where.seguradoraId = seguradoraId
+    if (titularId) where.titularId = titularId
     if (dataInicioStart || dataInicioEnd) {
       where.dataInicio = {}
       if (dataInicioStart) where.dataInicio.gte = new Date(dataInicioStart)
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
           where: { titularRaizId: contrato.titularId, dataFimVinculo: null },
           include: {
             pessoaVinculada: {
-              select: { id: true, nomeCompleto: true, tipoRegistro: true, dataNascimento: true, cpf: true },
+              select: { id: true, nomeCompleto: true, tipoRegistro: true, dataNascimento: true, cpf: true, estadoCivil: true },
             },
           },
         })

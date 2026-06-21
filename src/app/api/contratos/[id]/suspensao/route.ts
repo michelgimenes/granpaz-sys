@@ -17,7 +17,7 @@ export async function POST(
     const { userId, ipAddress } = extractRequestMeta(request)
 
     // SuperAdmin role check
-    const { authorized, user } = await checkSuperAdmin(userId)
+    const { authorized, user } = await checkSuperAdmin(userId, request)
     if (!authorized) {
       return NextResponse.json(
         { error: 'Acesso negado. Apenas SuperAdmin pode suspender/reativar contratos.' },

@@ -81,6 +81,8 @@ function renderMarkdown(md: string): string {
 export function SeguradorasTab() {
   const queryClient = useQueryClient()
   const user = useAppStore((s) => s.user)
+  const activeProfile = useAppStore((s) => s.activeProfile)
+  const profile = activeProfile ?? user?.role
 
   // Form dialog
   const [formOpen, setFormOpen] = useState(false)
@@ -115,7 +117,7 @@ export function SeguradorasTab() {
   })
 
   // SuperAdmin check
-  if (user?.role !== 'SUPERADMIN') {
+  if (profile !== 'SUPERADMIN') {
     return (
       <div className="animate-fade-up">
         <Card className="border-border/50">

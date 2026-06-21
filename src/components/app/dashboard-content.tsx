@@ -44,6 +44,16 @@ const SeguradorasTab = dynamic(
   { ssr: false }
 )
 
+// ─── Novos componentes para o perfil CLIENTE ───
+const MeusDadosTab = dynamic(
+  () => import('@/components/dashboard/meus-dados-tab').then(mod => ({ default: mod.MeusDadosTab })),
+  { ssr: false }
+)
+const MeuPlanoTab = dynamic(
+  () => import('@/components/dashboard/meu-plano-tab').then(mod => ({ default: mod.MeuPlanoTab })),
+  { ssr: false }
+)
+
 export function DashboardContent() {
   const { currentDashboardTab } = useAppStore()
 
@@ -57,6 +67,10 @@ export function DashboardContent() {
       case 'config': return <ConfigTab />
       case 'seguradoras': return <SeguradorasTab />
       case 'audit': return <AuditTab />
+      case 'meus-dados': return <MeusDadosTab />
+      case 'meu-plano': return <MeuPlanoTab />
+      case 'minha-carteira': return <FinancialTab />
+      case 'minhas-indicacoes': return <NetworkTab />
       default: return <OverviewTab />
     }
   }
